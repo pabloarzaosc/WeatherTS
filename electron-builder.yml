@@ -38,3 +38,11 @@ publish:
   provider: github
   owner: pabloarzaosc
   repo: WeatherTS
+  # Private repo: electron-updater needs a token to read releases. It is read
+  # from the environment AT BUILD TIME and written into resources/app-update.yml
+  # inside the installer -- deliberately never hardcoded here, so no secret ever
+  # lands in git. Build with WEATHERTS_UPDATE_TOKEN set or the updater ships
+  # blind. Use a fine-grained, read-only, single-repo PAT: this value is
+  # extractable from any installed copy of the app.
+  private: true
+  token: ${env.WEATHERTS_UPDATE_TOKEN}
