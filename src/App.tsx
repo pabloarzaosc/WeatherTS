@@ -1,0 +1,69 @@
+import { MapView } from "./map/MapView";
+import { TopBar } from "./ui/TopBar";
+import { TabsBar } from "./ui/TabsBar";
+import { DataPanel } from "./ui/DataPanel";
+import { StatusBar } from "./ui/StatusBar";
+import { ZoomControls } from "./ui/ZoomControls";
+import { MeasureTool } from "./ui/MeasureTool";
+import { AlertController } from "./ui/AlertController";
+import { AlertPanel } from "./ui/AlertPanel";
+import { OutlookLegend } from "./ui/OutlookLegend";
+import { MapContextMenu } from "./ui/sounding/MapContextMenu";
+import { SoundingViewer } from "./ui/sounding/SoundingViewer";
+import { MapTimeline } from "./ui/MapTimeline";
+import { RadarHud } from "./ui/RadarHud";
+import { DayLoadOverlay } from "./ui/DayLoadOverlay";
+import { AnimationModal } from "./ui/AnimationModal";
+import { UpdateBanner } from "./ui/UpdateBanner";
+import { useAppStore } from "./store/useAppStore";
+import { selectRailOpen, useAlertStore } from "./store/useAlertStore";
+import { useLayoutStore } from "./store/useLayoutStore";
+
+export default function App() {
+  // The HUD's left inset (--map-left) has to follow the panel, or the product
+  // picker and colour bar stay parked in the panel's old column once it closes.
+  const leftPanelOpen = useAppStore((s) => s.leftPanelOpen);
+  // Same idea on the right: the alert rail is a column, so the map and every
+  // right-anchored HUD element shrink by --alert-w while it's open.
+  const alertsOpen = useAlertStore(selectRailOpen);
+  // Which side each docked region took. The CSS turns these into --pad-left /
+  // --pad-right, and everything over the map follows from those two.
+  const panelSide = useLayoutStore((s) => s.panelSide);
+  const alertSide = useLayoutStore((s) => s.alertSide);
+  return (
+    <div
+      className={`app${leftPanelOpen ? "" : " app--panel-closed"}${
+        alertsOpen ? " app--alerts-open" : ""
+      }`}
+      data-panel={panelSide}
+      data-alerts={alertSide}
+    >
+      <MapView />
+      {/* alerts orchestration (fetches NWS data; renders nothing) */}
+      <AlertController />
+      {/* HUD overlay: click-through container; each child re-enables pointer events */}
+      <div className="hud">
+        <div className="watermark">
+          WEATHER<span>TS</span>
+        </div>
+        <TopBar />
+        <TabsBar />
+        <DataPanel />
+        <MeasureTool />
+        <OutlookLegend />
+        <AlertPanel />
+        <ZoomControls />
+        <StatusBar />
+        <SoundingViewer />
+        <RadarHud />
+        <MapTimeline />
+        <DayLoadOverlay />
+        <UpdateBanner />
+      </div>
+      {/* map right-click menu (renders its own fixed overlay) */}
+      <MapContextMenu />
+      {/* the Customize Animation dialog (top-bar video icon) */}
+      <AnimationModal />
+    </div>
+  );
+}

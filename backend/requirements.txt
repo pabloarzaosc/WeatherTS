@@ -1,0 +1,14 @@
+# Install order matters on Python 3.13 (see README.md):
+#   pip install -r requirements.txt
+#   pip install sharppy --no-deps
+numpy>=2.1
+scipy
+python-dateutil
+requests
+fastapi
+uvicorn[standard]
+qtpy
+PyQt5
+# NadoCast vector outlook: eccodes reads the GRIB2 grid, matplotlib contours it.
+matplotlib
+eccodes

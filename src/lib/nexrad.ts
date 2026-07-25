@@ -1,0 +1,151 @@
+// Client for the NEXRAD Level III radar backend. The backend decodes the scan
+// (Unidata S3 -> MetPy) and ships the raw polar data; the colouring and drawing
+// happen in the browser (see radarMesh.ts / nexradGlLayer.ts).
+
+import { BACKEND_BASE } from './apiConfig';
+const BASE = BACKEND_BASE;
+
+export interface NexradSite {
+  id: string; // 3-letter (S3 prefix), e.g. "ATX"
+  icao: string; // display, e.g. "KATX"
+  name: string;
+  lat: number;
+  lon: number;
+  country: string | null;
+  online?: boolean;
+}
+
+export interface NexradProduct {
+  id: string;
+  label: string;
+  units: string;
+}
+export interface NexradPalette {
+  id: string;
+  label: string;
+}
+
+export interface TiltOption {
+  code: string; // wire product code, e.g. "N0B"
+  tilt: string | null; // slot char ("0","A","1","B","2","3"); null = no tilts
+  elev: number | null; // nominal VCP elevation for the label
+  /** Level II only: this cut really is 0.5° (the low, split cuts). */
+  superRes?: boolean;
+}
+
+/** A moment (reflectivity, velocity, ...) and the cuts it's published at. */
+export interface ProductFamily {
+  id: string;
+  label: string;
+  units: string;
+  kind: string;
+  tilts: TiltOption[];
+  /** Level II can serve this field at 0.5° (720 radials). */
+  superRes?: boolean;
+  /** Tilt slots where Level II is actually super-res (the low, split cuts). */
+  superResTilts?: string[];
+  /** Toolbox button label, e.g. "REF", "SRM". */
+  short?: string;
+  source?: "level2" | "level3";
+}
+
+/**
+ * The single product list the picker shows. Each moment appears once, already
+ * resolved to its best source: Level III for almost everything (it carries the
+ * loop and the archive), Level II only where it genuinely wins (CC, ZDR, SW,
+ * PHI, CFP). The `source` on each family says which one it ended up being.
+ */
+export type ProductGrids = ProductFamily[];
+
+/**
+ * The wire code for a family+tilt. The backend already resolves the source --
+ * Level II wherever it carries the field, Level III otherwise -- so the tilt
+ * option's `code` is authoritative and there's nothing to choose here.
+ */
+export function wireCode(fam: ProductFamily, tiltSlot: string | null): string | null {
+  const opt = fam.tilts.find((t) => t.tilt === tiltSlot) ?? fam.tilts[0];
+  return opt?.code ?? null;
+}
+
+export interface NexradScan {
+  key: string;
+  time: number; // unix seconds (UTC)
+}
+
+export interface PaletteDef {
+  label: string;
+  pal: string; // raw .pal table
+}
+
+/** The .pal tables + which one each product kind defaults to. Fetched once. */
+export async function fetchPaletteTables(): Promise<{
+  palettes: Record<string, PaletteDef>;
+  kindDefaults: Record<string, string>;
+}> {
+  const r = await fetch(`${BASE}/api/nexrad/palettes.json`);
+  if (!r.ok) throw new Error(`palettes ${r.status}`);
+  return r.json();
+}
+
+/** Raw polar scan (binary) for client-side GPU rendering. */
+export async function fetchScanData(
+  site: string,
+  product: string,
+  key = "",
+  signal?: AbortSignal,
+): Promise<ArrayBuffer> {
+  const url =
+    `${BASE}/api/nexrad/data?site=${encodeURIComponent(site)}` +
+    `&product=${encodeURIComponent(product)}` +
+    (key ? `&key=${encodeURIComponent(key)}` : "");
+  const r = await fetch(url, { signal });
+  if (!r.ok) {
+    let detail = `HTTP ${r.status}`;
+    try {
+      const b = await r.json();
+      if (b?.detail) detail = String(b.detail);
+    } catch {
+      /* binary endpoint -> body may not be JSON */
+    }
+    throw new Error(detail);
+  }
+  return r.arrayBuffer();
+}
+
+export async function fetchNexradSites(): Promise<NexradSite[]> {
+  const r = await fetch(`${BASE}/api/nexrad/sites`, { cache: "no-store" });
+  if (!r.ok) throw new Error(`sites ${r.status}`);
+  return (await r.json()).sites;
+}
+
+export async function fetchNexradMeta(): Promise<{
+  products: NexradProduct[];
+  catalog: ProductFamily[];
+  grids: ProductGrids;
+  palettes: NexradPalette[];
+  defaultProduct: string;
+}> {
+  const r = await fetch(`${BASE}/api/nexrad/meta`);
+  if (!r.ok) throw new Error(`meta ${r.status}`);
+  return r.json();
+}
+
+/** Scans available for a UTC date ("" = today/live). `limit` thins them evenly. */
+export async function fetchNexradScans(
+  site: string,
+  product: string,
+  date: string,
+  limit = 0,
+  /** Unix seconds: archive playback starts here. 0/undefined = live. */
+  start = 0,
+): Promise<{ scans: NexradScan[]; archiveStart: string }> {
+  const url =
+    `${BASE}/api/nexrad/scans?site=${encodeURIComponent(site)}` +
+    `&product=${encodeURIComponent(product)}` +
+    (date ? `&date=${encodeURIComponent(date)}` : "") +
+    (limit ? `&limit=${limit}` : "") +
+    (start ? `&start=${start}` : "");
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`scans ${r.status}`);
+  return r.json();
+}

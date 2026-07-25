@@ -1,0 +1,237 @@
+"""
+FastAPI server for the SHARPpy sounding viewer.
+
+Run (from backend/):
+    .venv/Scripts/python.exe -m uvicorn main:app --port 8787 --reload
+"""
+from __future__ import annotations
+
+import base64
+import json
+import struct
+
+from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+
+import sounding_core
+import nadocast_core
+import raob_core
+import surface_obs
+import nexrad_core
+import nexrad_level2
+
+app = FastAPI(title="WeatherTS Sounding API", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
+# Polar scans are ~5 MB of float32 that is >80% NaN -> compresses to a fraction.
+# level 6, not the default 9: on a radar scan 9 costs ~600 ms of CPU to save
+# ~5% over 6, which takes ~20 ms.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
+
+
+@app.get("/health")
+def health():
+    return {"ok": True, "service": "sounding", "engine": "SHARPpy"}
+
+
+@app.get("/api/models")
+def models():
+    return {"models": sounding_core.list_models(), "default": sounding_core.DEFAULT_MODEL}
+
+
+@app.get("/api/sounding")
+def sounding(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+    model: str = Query(sounding_core.DEFAULT_MODEL),
+    hour: int = Query(0, ge=0, le=384),
+):
+    try:
+        return sounding_core.build_sounding(lat, lon, model, hour)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/raob")
+def raob(
+    station: str = Query(...),
+    name: str = Query(""),
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+    hour: int = Query(0, ge=0),
+    wmo: str = Query(""),
+):
+    try:
+        return raob_core.build_raob(station, name, lat, lon, hour, wmo)
+    except raob_core.NoObservationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/nexrad/sites")
+def nexrad_sites():
+    try:
+        return {"sites": nexrad_core.list_sites()}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/nexrad/meta")
+def nexrad_meta():
+    return {
+        "products": nexrad_core.list_products(),
+        # `catalog` stays as the flat Level III list for anything still reading it.
+        "catalog": nexrad_core.product_catalog(),
+        # One product list, each moment from its best source (Level III unless
+        # Level II genuinely wins: CC, ZDR, SW, PHI, CFP). No more picking the
+        # worse source of a product that's in both.
+        "grids": nexrad_level2.merged_catalog(nexrad_core.product_catalog()),
+        "palettes": nexrad_core.list_palettes(),
+        "defaultProduct": nexrad_core.DEFAULT_PRODUCT,
+    }
+
+
+@app.get("/api/nexrad/palettes.json")
+def nexrad_palettes():
+    """Raw .pal tables so the client can colour the mesh itself (instant swaps)."""
+    return {
+        "palettes": {
+            pid: {"label": spec["label"], "pal": spec["pal"]}
+            for pid, spec in nexrad_core.PALETTES.items()
+        },
+        "kindDefaults": nexrad_core._KIND_DEFAULT_PALETTE,
+    }
+
+
+@app.get("/api/nexrad/data")
+def nexrad_data(
+    site: str = Query(...),
+    product: str = Query(nexrad_core.DEFAULT_PRODUCT),
+    key: str = Query(""),
+):
+    """Binary polar scan.
+
+    Layout: [4-byte header len][JSON header][az f32 * (nAz+1)][lut f32 * 256]
+            [codes u8 * nAz*nGates]
+    Gates stay in their native 8-bit codes; the client maps them through the lut.
+    See nexrad_core.polar_data for why.
+    """
+    try:
+        # "L2..." products come from a live Level II volume (super-res); the rest
+        # from Level III. Same wire format either way.
+        if product.upper().startswith("L2"):
+            out = nexrad_level2.polar_data_l2(site, product.upper(), key or "")
+        else:
+            out = nexrad_core.polar_data(site, product, key or None)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    header = json.dumps(out["meta"]).encode("utf-8")
+    body = (
+        struct.pack("<I", len(header))
+        + header
+        + out["az"].astype("<f4").tobytes()
+        + out["lut"].astype("<f4").tobytes()
+        + out["codes"].tobytes()
+    )
+    return Response(
+        content=body,
+        media_type="application/octet-stream",
+        # a published scan never changes -- let the browser keep it
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@app.get("/api/nexrad/scans")
+def nexrad_scans(
+    site: str = Query(...),
+    product: str = Query(nexrad_core.DEFAULT_PRODUCT),
+    date: str = Query(""),
+    limit: int = Query(0, ge=0, le=500),
+    start: int = Query(0, ge=0),
+):
+    try:
+        # Level II frames are whole volumes off the live chunk bucket, which
+        # keeps a few hundred of them. Each is ~7 MB, so the loop is capped
+        # tighter than the Level III one.
+        if product.upper().startswith("L2"):
+            vols = nexrad_level2.list_volumes(site, min(limit or 30, nexrad_level2.MAX_LOOP),
+                                              start=start or None)
+            return {"scans": [{"key": v["key"], "time": v["time"]} for v in vols],
+                    "archiveStart": nexrad_core.ARCHIVE_START}
+        return {
+            "scans": nexrad_core.list_scans(site, product, date or None, limit,
+                                            start=start or None),
+            "archiveStart": nexrad_core.ARCHIVE_START,
+        }
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/nexrad/render")
+def nexrad_render(
+    site: str = Query(...),
+    product: str = Query(nexrad_core.DEFAULT_PRODUCT),
+    palette: str = Query(""),
+    key: str = Query(""),
+):
+    try:
+        out = nexrad_core.render(site, product, palette or None, key or None)
+        return {
+            "image": base64.b64encode(out["png"]).decode("ascii"),
+            "bounds": out["bounds"],
+            "meta": out["meta"],
+        }
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/surface-obs")
+def surface_obs_endpoint(bbox: str = Query(...)):
+    try:
+        return surface_obs.fetch_surface_obs(bbox)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/surface-obs/history")
+def surface_obs_history(station: str = Query(..., min_length=2), hours: int = Query(24, ge=1, le=48)):
+    try:
+        return {"observations": surface_obs.fetch_surface_history(station, hours)}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/nadocast")
+def nadocast(
+    hazard: str = Query("tornado"),
+    model: str = Query("auto"),
+):
+    try:
+        return nadocast_core.build_nadocast(hazard, model)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
+    
+    import sys
+    import uvicorn
+
+    port = 8787
+    args = sys.argv[1:]
+    for i, arg in enumerate(args):
+        if arg == "--port" and i + 1 < len(args):
+            port = int(args[i + 1])
+
+    print(f"Starting WeatherTS backend on port {port}...")
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")

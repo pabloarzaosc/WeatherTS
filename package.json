@@ -1,0 +1,37 @@
+{
+  "name": "weatherts",
+  "private": true,
+  "version": "0.2.5",
+  "type": "module",
+  "main": "electron/main.js",
+  "scripts": {
+    "electron:dev": "electron .",
+    "backend:build": "cd backend && .venv\\Scripts\\pyinstaller.exe --noconfirm --clean weatherts-backend.spec",
+    "electron:build": "npm run backend:build && npm run build && electron-builder --win",
+    "electron:publish": "npm run backend:build && npm run build && electron-builder --win --publish always",
+    "electron:pack": "electron-builder --dir",
+    "dev": "vite",
+    "backend": "cd backend && .venv/Scripts/python -m uvicorn main:app --port 8787",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "gifenc": "^1.0.3",
+    "lucide-react": "^1.21.0",
+    "maplibre-gl": "^5.24.0",
+    "mp4-muxer": "^5.2.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "electron": "^35.0.0",
+    "electron-builder": "^26.15.3",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4"
+  }
+}

@@ -1,0 +1,40 @@
+appId: com.weatherts.app
+productName: WeatherTS
+artifactName: WeatherTS-Setup-${version}.${ext}
+directories:
+  output: release
+files:
+  - electron/**
+  - dist/**
+  - package.json
+extraResources:
+  - from: backend/dist/weatherts-backend.exe
+    to: backend/weatherts-backend.exe
+win:
+  icon: build/icon.ico
+  target: nsis
+nsis:
+  oneClick: false
+  perMachine: true
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: true
+  runAfterFinish: true
+  installerLanguages:
+    - pt_BR
+    - en_US
+  language: 1046
+  include: build/installer.nsh
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: WeatherTS
+  uninstallDisplayName: WeatherTS
+asar: true
+compression: maximum
+electronDist: node_modules/electron/dist
+publish:
+  provider: github
+  owner: pabloarzaosc
+  repo: WeatherTS

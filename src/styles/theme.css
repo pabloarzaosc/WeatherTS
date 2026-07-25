@@ -1,0 +1,51 @@
+/* Design tokens + the single fixed gray palette. Every UI color is a variable. */
+:root {
+  --topbar-h: 44px;
+  --tabsbar-h: 38px;
+  --panel-w: 320px;
+  /* Left inset for anything floating over the map. On desktop it clears the
+     side panel; on mobile the panel becomes an overlay, so this collapses to a
+     plain margin and every HUD element follows without its own breakpoint. */
+  --map-left: calc(var(--panel-w) + 14px);
+  /* The alert rail is a docked column like the side panel, not a floating card:
+     it PUSHES the map. 0 when closed, so every right-anchored HUD element can
+     offset by it unconditionally.
+     --map-right is NOT derived here: var() in a custom property resolves against
+     the element it is declared on, so a :root definition would bake in this 0
+     and ignore the .app--alerts-open override. It lives on .app, the element
+     that override lands on. */
+  --alert-w: 0px;
+  --status-h: 30px;
+  --timeline-h: 46px; /* global map timeline bar height */
+  --dock-h: calc(var(--status-h) + var(--timeline-h)); /* bottom reserved strip */
+  --radius: 12px;
+  --radius-sm: 9px;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --t-fast: 0.12s;
+  --t: 0.2s;
+  --t-slow: 0.34s;
+
+  /* gray theme */
+  --bg: #0c0f13;
+  --panel: rgba(22, 26, 31, 0.8);
+  --panel-solid: #16191e;
+  --panel-2: rgba(255, 255, 255, 0.045);
+  --border: rgba(190, 200, 210, 0.12);
+  --border-strong: rgba(190, 200, 210, 0.22);
+  --text: #e9edf2;
+  --text-dim: #a6afba;
+  --text-faint: #6b7480;
+  --accent: #3b82f6;
+  --accent-strong: #2563eb;
+  --accent-soft: rgba(59, 130, 246, 0.16);
+  --accent-ring: rgba(59, 130, 246, 0.45);
+  /* danger / "not working" red -- radar offline, failed scans, dead sites */
+  --danger: #f26d6d;
+  --danger-soft: rgba(222, 80, 80, 0.14);
+  --danger-border: rgba(222, 80, 80, 0.44);
+  --shadow: 0 10px 34px rgba(0, 0, 0, 0.5);
+  --track: rgba(190, 200, 210, 0.18);
+}

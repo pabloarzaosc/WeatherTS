@@ -1,0 +1,205 @@
+"""
+Surface observations (METAR station plots).
+
+Proxies the Aviation Weather Center METAR API (global, free, no key) for a map
+bounding box and returns a GeoJSON FeatureCollection with the decoded fields a
+station-plot renderer needs: temp/dewpoint (C), wind dir/speed/gust (kt),
+altimeter (mb), visibility, sky cover, plus a couple of derived values.
+"""
+from __future__ import annotations
+
+import math
+import time
+from datetime import datetime
+from typing import Any, Optional
+
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+AWC_URL = "https://aviationweather.gov/api/data/metar"
+
+_HTTP_TIMEOUT = (8, 25)
+_SESSION = requests.Session()
+_SESSION.mount(
+    "https://",
+    HTTPAdapter(
+        max_retries=Retry(
+            total=3, connect=3, read=2, backoff_factor=0.5,
+            status_forcelist=(429, 500, 502, 503, 504),
+            allowed_methods=frozenset(["GET"]),
+        )
+    ),
+)
+
+_CACHE: dict[str, tuple[float, dict]] = {}
+_TTL = 120.0  # obs update ~hourly; a short cache is plenty and spares the API
+_HISTORY_TTL = 180.0
+
+
+def _num(v) -> Optional[float]:
+    try:
+        if v is None:
+            return None
+        f = float(v)
+        return f if math.isfinite(f) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _wdir(v) -> Optional[int]:
+    # AWC returns an int, 0 (calm), or "VRB" (variable) -> no fixed direction.
+    if isinstance(v, (int, float)):
+        return int(v)
+    return None
+
+
+def _rh(temp: Optional[float], dewp: Optional[float]) -> Optional[float]:
+    if temp is None or dewp is None:
+        return None
+    try:
+        e = math.exp((17.625 * dewp) / (243.04 + dewp))
+        es = math.exp((17.625 * temp) / (243.04 + temp))
+        return round(100.0 * e / es, 0)
+    except (ValueError, ZeroDivisionError):
+        return None
+
+
+def _theta_e(temp: Optional[float], dewp: Optional[float], pres_mb: Optional[float]) -> Optional[float]:
+    # Simple equivalent potential temperature estimate (K); good enough for a plot.
+    if temp is None or pres_mb is None:
+        return None
+    tk = temp + 273.15
+    theta = tk * (1000.0 / pres_mb) ** 0.2854
+    if dewp is None:
+        return round(theta, 0)
+    # mixing ratio from dewpoint
+    e = 6.112 * math.exp((17.67 * dewp) / (dewp + 243.5))
+    w = 0.622 * e / max(pres_mb - e, 1e-3)
+    lv = 2.5e6
+    cp = 1004.0
+    return round(theta * math.exp(lv * w / (cp * tk)), 0)
+
+
+def fetch_surface_obs(bbox: str) -> dict:
+    """bbox = 'lat0,lon0,lat1,lon1'. Returns a GeoJSON FeatureCollection."""
+    key = bbox
+    now = time.time()
+    hit = _CACHE.get(key)
+    if hit and now - hit[0] < _TTL:
+        return hit[1]
+
+    resp = _SESSION.get(AWC_URL, params={"bbox": bbox, "format": "json"}, timeout=_HTTP_TIMEOUT)
+    resp.raise_for_status()
+    try:
+        rows = resp.json()
+    except ValueError:
+        rows = []
+    if not isinstance(rows, list):
+        rows = []
+
+    features = [_feature_from_metar(m) for m in rows]
+    features = [f for f in features if f is not None]
+    fc = {"type": "FeatureCollection", "features": features}
+    _CACHE[key] = (now, fc)
+    return fc
+
+
+def fetch_surface_history(station: str, hours: int = 24) -> list[dict]:
+    """Return recent normalized METAR observations for one station."""
+    station = station.strip().upper()
+    hours = max(1, min(int(hours), 48))
+    key = f"history:{station}:{hours}"
+    now = time.time()
+    hit = _CACHE.get(key)
+    if hit and now - hit[0] < _HISTORY_TTL:
+        return hit[1].get("observations", [])
+    resp = _SESSION.get(
+        AWC_URL,
+        params={"ids": station, "hours": hours, "format": "json"},
+        timeout=_HTTP_TIMEOUT,
+    )
+    resp.raise_for_status()
+    rows = resp.json()
+    if not isinstance(rows, list):
+        rows = []
+    observations = [_feature_from_metar(m) for m in rows]
+    observations = [f["properties"] | {"lat": f["geometry"]["coordinates"][1],
+                                       "lon": f["geometry"]["coordinates"][0]}
+                    for f in observations if f is not None]
+    observations.sort(key=lambda item: _timestamp_value(item.get("obsTime")) or 0)
+    result = {"observations": observations}
+    _CACHE[key] = (now, result)
+    return observations
+
+
+def _feature_from_metar(m: dict) -> Optional[dict]:
+    if not isinstance(m, dict):
+        return None
+    lat = _num(m.get("lat"))
+    lon = _num(m.get("lon"))
+    if lat is None or lon is None:
+        return None
+    temp = _num(m.get("temp"))
+    dewp = _num(m.get("dewp"))
+    wspd = _num(m.get("wspd"))
+    wgst = _num(m.get("wgst"))
+    altim = _num(m.get("altim"))
+    visib = m.get("visib")
+    cover = m.get("cover") or _top_cover(m.get("clouds"))
+    return {
+        "type": "Feature",
+        "geometry": {"type": "Point", "coordinates": [lon, lat]},
+        "properties": {
+            "id": m.get("icaoId"),
+            "name": m.get("name"),
+            "temp": temp,
+            "dewp": dewp,
+            "wdir": _wdir(m.get("wdir")),
+            "wspd": wspd,
+            "wgst": wgst,
+            "altim": altim,
+            "visib": _visib_num(visib),
+            "cover": cover,
+            "rh": _rh(temp, dewp),
+            "thetae": _theta_e(temp, dewp, altim),
+            "obsTime": m.get("obsTime"),
+        },
+    }
+
+
+def _timestamp_value(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+        return number / 1000 if number > 10_000_000_000 else number
+    except (TypeError, ValueError):
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return None
+
+
+def _top_cover(clouds) -> Optional[str]:
+    if not isinstance(clouds, list) or not clouds:
+        return None
+    order = {"SKC": 0, "CLR": 0, "FEW": 1, "SCT": 2, "BKN": 3, "OVC": 4}
+    best = None
+    for c in clouds:
+        cov = (c or {}).get("cover")
+        if cov in order and (best is None or order[cov] > order[best]):
+            best = cov
+    return best
+
+
+def _visib_num(v) -> Optional[float]:
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).replace("+", "").strip()
+    try:
+        return float(s)
+    except ValueError:
+        return None
