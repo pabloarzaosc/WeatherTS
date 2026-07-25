@@ -2,7 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   isElectron: true,
-  appVersion: '0.1.0',
+  // No hardcoded version here: it drifted to 0.1.0 while the app shipped 0.2.x.
+  // getVersion() below asks the main process for app.getVersion(), which is
+  // always the real packaged version.
 
   // Auto-update channels
   onUpdateStatus: (cb) => ipcRenderer.on('update:status', (_e, status) => cb(status)),

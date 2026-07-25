@@ -160,10 +160,12 @@ function setupAutoUpdater() {
   });
 
   autoUpdater.on('update-downloaded', () => {
+    // Hand control to the banner, which offers "Restart & install now" and
+    // "Later". Force-quitting here raced that banner off the screen ~800 ms
+    // after it appeared, so "Later" never worked and the restart looked like a
+    // crash. autoInstallOnAppQuit is on, so "Later" still applies the update
+    // the next time the app closes.
     mainWindow?.webContents.send('update:downloaded');
-    // The user already confirmed the update in the banner; finish it without
-    // requiring a second click or a separate installer.
-    setTimeout(() => autoUpdater.quitAndInstall(false, true), 800);
   });
 
   autoUpdater.on('error', (err) => {
