@@ -226,17 +226,52 @@ function combineZoneGeometries(geometries: Array<GeoJSON.Geometry | null>): GeoJ
   return { type: "MultiPolygon", coordinates: polygons };
 }
 
-/** Planar |area| of a ring. Only ever used as a relative weight, so working in
- *  raw lon/lat degrees (no projection) is fine. */
-function ringAreaAbs(ring: GeoJSON.Position[]): number {
-  if (ring.length < 3) return 0;
-  let sum = 0;
-  for (let i = 0; i < ring.length; i++) {
-    const [x1, y1] = ring[i];
-    const [x2, y2] = ring[(i + 1) % ring.length];
-    sum += x1 * y2 - x2 * y1;
+/**
+ * Planar centroid and |area| of a ring, by the shoelace formula. Only ever fed
+ * to a nearest-site comparison, so raw lon/lat degrees (no projection) are fine.
+ *
+ * Not the mean of the vertices, which is what this used to be: NWS zone rings
+ * carry their vertices very unevenly -- dense along coastlines and ragged county
+ * borders, sparse along straight edges -- so a vertex mean drifts toward
+ * whichever side happens to be drawn in more detail.
+ */
+function ringCentroid(ring: GeoJSON.Position[]): { x: number; y: number; area: number } | null {
+  if (ring.length === 0) return null;
+  // A GeoJSON ring repeats its first position as its last. Drop the duplicate:
+  // the shoelace sum is unaffected, but it would otherwise weigh that one corner
+  // twice in the degenerate-ring fallback below.
+  const closed =
+    ring.length > 1 &&
+    ring[0][0] === ring[ring.length - 1][0] &&
+    ring[0][1] === ring[ring.length - 1][1];
+  const pts = closed ? ring.slice(0, -1) : ring;
+  if (pts.length === 0) return null;
+
+  let twiceArea = 0;
+  let x = 0;
+  let y = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [x1, y1] = pts[i];
+    const [x2, y2] = pts[(i + 1) % pts.length];
+    const cross = x1 * y2 - x2 * y1;
+    twiceArea += cross;
+    x += (x1 + x2) * cross;
+    y += (y1 + y2) * cross;
   }
-  return Math.abs(sum) / 2;
+
+  if (Math.abs(twiceArea) < 1e-12) {
+    // A single point or a collinear sliver: the shoelace centroid is 0/0, but
+    // the vertex mean still names a point on the shape.
+    let mx = 0;
+    let my = 0;
+    for (const [px, py] of pts) {
+      mx += px;
+      my += py;
+    }
+    return { x: mx / pts.length, y: my / pts.length, area: 0 };
+  }
+
+  return { x: x / (twiceArea * 3), y: y / (twiceArea * 3), area: Math.abs(twiceArea) / 2 };
 }
 
 /**
@@ -255,17 +290,11 @@ export function alertCentroid(geometry: GeoJSON.Geometry | null): [number, numbe
   for (const rings of polys) {
     const outer = rings[0];
     if (!outer || outer.length === 0) continue;
-    let cx = 0;
-    let cy = 0;
-    for (const [x, y] of outer) {
-      cx += x;
-      cy += y;
-    }
-    cx /= outer.length;
-    cy /= outer.length;
-    const w = ringAreaAbs(outer) || 1e-9; // a degenerate ring still counts, faintly
-    sx += cx * w;
-    sy += cy * w;
+    const c = ringCentroid(outer);
+    if (!c) continue;
+    const w = c.area || 1e-9; // a degenerate ring still counts, faintly
+    sx += c.x * w;
+    sy += c.y * w;
     sw += w;
   }
   if (sw === 0) return null;
