@@ -56,6 +56,17 @@ function getFreePort(preferredPort) {
   });
 }
 
+function setSplashStatus(text) {
+  // Best effort: the splash may already have been replaced by the real app, or
+  // the window closed. Either way this is cosmetic and must never throw.
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents
+    .executeJavaScript(
+      `(() => { const el = document.getElementById('splash-status'); if (el) el.textContent = ${JSON.stringify(text)}; })()`
+    )
+    .catch(() => {});
+}
+
 async function waitForBackend(port) {
   // PyInstaller one-file extracts ~170 MB to %TEMP% on first launch and
   // Windows Defender (or any AV) scans it before the bootloader runs. That
@@ -78,6 +89,13 @@ async function waitForBackend(port) {
     if (i % 20 === 0 && i > 0) {
       const secs = ((Date.now() - start) / 1000).toFixed(0);
       backendLog += `waiting for backend (${secs}s elapsed)...\n`;
+      // Say why the wait is long rather than leaving a silent screen: on a cold
+      // start this is the antivirus scanning the extracted runtime.
+      setSplashStatus(
+        secs >= 20
+          ? `preparando o servidor local — a primeira execução é mais lenta (${secs}s)`
+          : `iniciando o servidor local… (${secs}s)`
+      );
     }
     await new Promise(r => setTimeout(r, 500));
   }
@@ -114,12 +132,60 @@ function createWindow() {
   });
 
   mainWindow.removeMenu();
-  
-  // Show splash/loading state
+
+  // Splash. This is on screen for as long as the backend takes to answer, which
+  // on a cold first run is tens of seconds, so it carries a live status line
+  // (see setSplashStatus) instead of a bare "Loading". Colours and type are the
+  // app's own tokens from theme.css, inlined because a data: URL has no CSS.
   mainWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`
     <html>
-      <body style="background-color: #0b0e13; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: sans-serif;">
-        <h1>Loading WeatherTS...</h1>
+      <head><meta charset="utf-8"></head>
+      <body>
+        <style>
+          body {
+            margin: 0; height: 100vh; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; gap: 20px;
+            background: #0c0f13; color: #e9edf2; user-select: none;
+            font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            -webkit-font-smoothing: antialiased;
+          }
+          .mark {
+            font-family: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
+            font-size: 25px; font-weight: 700; letter-spacing: 0.22em;
+            animation: rise .55s cubic-bezier(.2,.7,.3,1) both;
+          }
+          .mark span { color: #3b82f6; }
+          .bar {
+            width: 186px; height: 2px; border-radius: 2px; overflow: hidden;
+            background: rgba(190,200,210,0.18);
+            animation: rise .55s cubic-bezier(.2,.7,.3,1) .08s both;
+          }
+          .bar i {
+            display: block; width: 38%; height: 100%; border-radius: 2px;
+            background: #3b82f6; animation: slide 1.2s ease-in-out infinite;
+          }
+          .status {
+            font-family: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
+            font-size: 11px; letter-spacing: 0.04em; color: #6b7480;
+            min-height: 14px; text-align: center; padding: 0 24px;
+            animation: rise .55s cubic-bezier(.2,.7,.3,1) .16s both;
+          }
+          @keyframes slide {
+            0% { transform: translateX(-110%); }
+            100% { transform: translateX(370%); }
+          }
+          @keyframes rise {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: none; }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .bar i { animation: none; width: 100%; opacity: .45; }
+            .mark, .bar, .status { animation: none; }
+          }
+        </style>
+        <div class="mark">WEATHER<span>TS</span></div>
+        <div class="bar"><i></i></div>
+        <div class="status" id="splash-status">iniciando…</div>
       </body>
     </html>
   `));
@@ -219,6 +285,21 @@ app.whenReady().then(async () => {
   createWindow();
   setupAutoUpdater();
 
+  // Check right away, in parallel with the backend coming up, rather than
+  // waiting on the window. This almost always resolves while the splash is
+  // still on screen -- which is fine, and is the point: the result lands in
+  // pendingUpdateInfo, and the banner pulls it the moment it mounts. Tying the
+  // check to the window instead is what made it unreliable.
+  if (app.isPackaged) {
+    const check = (label) => {
+      autoUpdater.checkForUpdates().catch((err) => {
+        console.error(`${label} update check failed:`, err);
+      });
+    };
+    check('Initial');
+    setInterval(() => check('Periodic'), 30 * 60 * 1000);
+  }
+
   let assignedPort = PREFERRED_BACKEND_PORT;
 
   if (app.isPackaged) {
@@ -232,6 +313,7 @@ app.whenReady().then(async () => {
 
     const backendPath = path.join(process.resourcesPath, 'backend', 'weatherts-backend.exe');
     console.log(`Starting backend on port ${assignedPort}:`, backendPath);
+    setSplashStatus('iniciando o servidor local…');
 
     backendProcess = spawn(backendPath, ['--port', String(assignedPort)], {
       env: { ...process.env, QT_QPA_PLATFORM: 'offscreen' },
@@ -271,30 +353,14 @@ app.whenReady().then(async () => {
     return;
   }
 
+  setSplashStatus('carregando o mapa…');
+
   if (app.isPackaged) {
     const indexUrl = pathToFileURL(path.join(__dirname, '../dist/index.html'));
     indexUrl.searchParams.set('backendPort', String(assignedPort));
     mainWindow.loadURL(indexUrl.toString());
   } else {
     mainWindow.loadURL('http://localhost:1420');
-  }
-
-  // Main drives the checks. Handing the first one to the renderer instead was a
-  // mistake: it stopped happening altogether (0.2.9 logged no "Checking for
-  // update" at all), and the ordering problem it was meant to solve is better
-  // handled by pendingUpdateInfo, which lets a late renderer pull what was
-  // already found.
-  //
-  // Re-check periodically too, so a release published while the app is open is
-  // noticed without a restart.
-  if (app.isPackaged) {
-    const check = (label) => {
-      autoUpdater.checkForUpdates().catch((err) => {
-        console.error(`${label} update check failed:`, err);
-      });
-    };
-    setTimeout(() => check('Initial'), 3000);
-    setInterval(() => check('Periodic'), 30 * 60 * 1000);
   }
 });
 
