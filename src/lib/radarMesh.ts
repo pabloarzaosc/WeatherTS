@@ -123,7 +123,7 @@ export function buildMesh(
 
   // Smoothing source. The old smooth only averaged the 4 gates at each corner,
   // which leaves gate interiors at their raw value -- so with a banded palette
-  // the effect was invisible ("smooth não funciona"). Now, when smoothing is on,
+  // the effect was invisible ("smooth does nothing"). Now, when smoothing is on,
   // the value field is first blurred with a 3x3 mean (azimuth wraps; range is
   // bounded), so gradients show across the whole echo, not just at gate seams.
   // Gates that were empty STAY empty -- we never smear an echo into clear air.

@@ -93,8 +93,8 @@ async function waitForBackend(port) {
       // start this is the antivirus scanning the extracted runtime.
       setSplashStatus(
         secs >= 20
-          ? `preparando o servidor local — a primeira execução é mais lenta (${secs}s)`
-          : `iniciando o servidor local… (${secs}s)`
+          ? `preparing the local server — the first run is slower (${secs}s)`
+          : `starting the local server… (${secs}s)`
       );
     }
     await new Promise(r => setTimeout(r, 500));
@@ -185,7 +185,7 @@ function createWindow() {
         </style>
         <div class="mark">WEATHER<span>TS</span></div>
         <div class="bar"><i></i></div>
-        <div class="status" id="splash-status">iniciando…</div>
+        <div class="status" id="splash-status">starting…</div>
       </body>
     </html>
   `));
@@ -319,7 +319,7 @@ app.whenReady().then(async () => {
 
     const backendPath = path.join(process.resourcesPath, 'backend', 'weatherts-backend.exe');
     console.log(`Starting backend on port ${assignedPort}:`, backendPath);
-    setSplashStatus('iniciando o servidor local…');
+    setSplashStatus('starting the local server…');
 
     backendProcess = spawn(backendPath, ['--port', String(assignedPort)], {
       env: { ...process.env, QT_QPA_PLATFORM: 'offscreen' },
