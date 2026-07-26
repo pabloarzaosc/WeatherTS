@@ -18,6 +18,28 @@ type UpdateStatus =
 
 const api = () => (window as any).electronAPI;
 
+// GitHub's releases.atom feed carries the release body as rendered HTML, and
+// electron-updater hands it over untouched, so dropping it straight into JSX
+// prints the raw tags ("<h2>Novidades</h2><ul><li>..."). Flatten it to text
+// rather than reaching for dangerouslySetInnerHTML: these notes are remote
+// content and this renderer runs with webSecurity disabled.
+function notesToText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "• ")
+    .replace(/<\/(li|h[1-6]|p|ul|ol|blockquote)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    // &amp; last, so text that was legitimately escaped is not decoded twice
+    .replace(/&amp;/g, "&")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export function UpdateBanner() {
   const [status, setStatus] = useState<UpdateStatus>("idle");
   const [info, setInfo] = useState<UpdateInfo | null>(null);
@@ -88,6 +110,7 @@ export function UpdateBanner() {
 
   // Full banner: update available
   if (status === "available" && info) {
+    const notes = notesToText(info.releaseNotes || "");
     return (
       <div className="update-banner">
         <button
@@ -104,12 +127,10 @@ export function UpdateBanner() {
             Update available: {info.releaseName}
           </span>
         </div>
-        {info.releaseNotes && (
+        {notes && (
           <div className="update-banner__notes">
             <div className="update-banner__notes-label">Changelog</div>
-            <div className="update-banner__notes-body">
-              {info.releaseNotes}
-            </div>
+            <div className="update-banner__notes-body">{notes}</div>
           </div>
         )}
         <div className="update-banner__actions">
