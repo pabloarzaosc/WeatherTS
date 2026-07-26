@@ -126,7 +126,7 @@ function createWindow() {
     backgroundColor: '#0b0e13',
     title: 'WeatherTS — Geo Workstation',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       webSecurity: false
     }
   });
@@ -271,7 +271,13 @@ function setupAutoUpdater() {
 
   // IPC: what the checker already found, if anything. The banner asks for this
   // on mount so an update discovered before it existed is not lost.
-  ipcMain.handle('update:pending', () => pendingUpdateInfo);
+  ipcMain.handle('update:pending', () => {
+    // Logged because the renderer reaching this at all is the signal that the
+    // preload bridge is alive. When the bridge was broken this handler was
+    // never called, and the silence was indistinguishable from "no update".
+    console.log('[updater] renderer asked for pending update ->', pendingUpdateInfo?.version ?? 'none');
+    return pendingUpdateInfo;
+  });
 
   // IPC: get current version
   ipcMain.handle('app:version', () => {

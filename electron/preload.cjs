@@ -1,4 +1,11 @@
-import { contextBridge, ipcRenderer } from 'electron';
+// CommonJS, and named .cjs deliberately. Electron loads preload scripts as
+// CommonJS and does not honour package.json "type": "module" for them, so the
+// previous ESM `import` here threw a SyntaxError before contextBridge ever ran.
+// window.electronAPI was therefore never defined in the packaged app, and both
+// consumers fail soft -- apiConfig uses `?.` and the update banner does
+// `if (!a) return` -- so nothing surfaced the breakage while the update banner
+// silently never appeared. Keep this file CJS.
+const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   isElectron: true,
