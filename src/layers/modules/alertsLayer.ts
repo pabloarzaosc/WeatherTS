@@ -193,6 +193,11 @@ export const alertsLayer: LayerModule = {
   // top of the fill -- radar, in particular, should cover the shading but never
   // hide where the warning actually is.
   topLayerIds() {
-    return [OUTLINE];
+    // Both, not just the outline. The manager lifts exactly what is listed
+    // here, so naming only OUTLINE left FILL wherever it happened to sit --
+    // which, once the radar module added its mesh, was underneath it: turning
+    // on a radar site made the shaded alert areas vanish and left bare outlines.
+    // FILL first so OUTLINE is moved last and stays on top of it.
+    return [FILL, OUTLINE];
   },
 };
