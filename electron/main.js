@@ -11,6 +11,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let mainWindow = null;
+// Last update the checker found, kept so a renderer that mounts *after* the
+// check resolved can still ask for it. Pushing alone is not enough: the send
+// goes nowhere if no listener is attached yet, and nothing reports the loss.
+let pendingUpdateInfo = null;
 let backendProcess = null;
 let backendLog = '';
 const PREFERRED_BACKEND_PORT = 47837;
@@ -142,6 +146,7 @@ function setupAutoUpdater() {
       releaseNotes: notes || info.releaseName || '',
       releaseName: info.releaseName || `v${info.version}`
     };
+    pendingUpdateInfo = releaseInfo;
     mainWindow?.webContents.send('update:available', releaseInfo);
   });
 
@@ -197,6 +202,10 @@ function setupAutoUpdater() {
   ipcMain.on('update:install', () => {
     autoUpdater.quitAndInstall(false, true);
   });
+
+  // IPC: what the checker already found, if anything. The banner asks for this
+  // on mount so an update discovered before it existed is not lost.
+  ipcMain.handle('update:pending', () => pendingUpdateInfo);
 
   // IPC: get current version
   ipcMain.handle('app:version', () => {
@@ -270,21 +279,22 @@ app.whenReady().then(async () => {
     mainWindow.loadURL('http://localhost:1420');
   }
 
-  // The first check is fired by the renderer, once UpdateBanner has actually
-  // attached its IPC listeners. A timer here could not know that: if the check
-  // resolved before the React tree mounted, update:available was sent to nobody
-  // and the banner never appeared, with nothing logged to explain it.
+  // Main drives the checks. Handing the first one to the renderer instead was a
+  // mistake: it stopped happening altogether (0.2.9 logged no "Checking for
+  // update" at all), and the ordering problem it was meant to solve is better
+  // handled by pendingUpdateInfo, which lets a late renderer pull what was
+  // already found.
   //
-  // Re-check periodically as well, so a release published while the app is
-  // already open is still noticed, and so a check that happens to land before
-  // GitHub's releases feed lists the new version recovers on its own instead of
-  // waiting for the next restart.
+  // Re-check periodically too, so a release published while the app is open is
+  // noticed without a restart.
   if (app.isPackaged) {
-    setInterval(() => {
+    const check = (label) => {
       autoUpdater.checkForUpdates().catch((err) => {
-        console.error('Periodic update check failed:', err);
+        console.error(`${label} update check failed:`, err);
       });
-    }, 30 * 60 * 1000);
+    };
+    setTimeout(() => check('Initial'), 3000);
+    setInterval(() => check('Periodic'), 30 * 60 * 1000);
   }
 });
 

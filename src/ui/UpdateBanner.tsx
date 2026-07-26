@@ -79,11 +79,15 @@ export function UpdateBanner() {
       setTimeout(() => setStatus("idle"), 6000);
     });
 
-    // Start the first check only now that every listener above is attached.
-    // Main used to kick it off on a 3s timer, which could resolve before this
-    // component mounted -- update:available was then delivered to nobody and
-    // the banner silently never appeared.
-    a.checkForUpdates();
+    // Main starts its own check on a timer, which may well resolve before this
+    // component exists -- that push would then reach nobody. So pull whatever
+    // it already found. Optional-chained because older builds lack the channel.
+    a.getPendingUpdate?.().then((pending: UpdateInfo | null) => {
+      if (!pending) return;
+      setInfo(pending);
+      setStatus("available");
+      setDismissed(false);
+    });
   }, []);
 
   if (dismissed && status !== "downloaded") return null;

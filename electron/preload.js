@@ -17,6 +17,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   downloadUpdate: () => ipcRenderer.send('update:download'),
   installUpdate: () => ipcRenderer.send('update:install'),
 
+  // Pull model, so an update found before the banner mounted is not lost.
+  getPendingUpdate: () => ipcRenderer.invoke('update:pending'),
+
   getVersion: () => ipcRenderer.invoke('app:version'),
   getBackendPort: () => ipcRenderer.invoke('backend:port'),
 });
