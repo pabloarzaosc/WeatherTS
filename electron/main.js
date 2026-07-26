@@ -173,8 +173,11 @@ function setupAutoUpdater() {
     mainWindow?.webContents.send('update:error', err.message);
   });
 
-  // IPC: user triggers update check
+  // IPC: renderer triggers a check (on mount, and from any manual trigger)
   ipcMain.on('update:check', () => {
+    // There is no update feed to talk to in dev, and calling through would
+    // surface an error toast on every reload.
+    if (!app.isPackaged) return;
     autoUpdater.checkForUpdates().catch((err) => {
       console.error('Check for updates failed:', err);
       mainWindow?.webContents.send('update:error', err.message);
@@ -267,13 +270,21 @@ app.whenReady().then(async () => {
     mainWindow.loadURL('http://localhost:1420');
   }
 
-  // Check for updates 3 seconds after app is ready (only in packaged builds)
+  // The first check is fired by the renderer, once UpdateBanner has actually
+  // attached its IPC listeners. A timer here could not know that: if the check
+  // resolved before the React tree mounted, update:available was sent to nobody
+  // and the banner never appeared, with nothing logged to explain it.
+  //
+  // Re-check periodically as well, so a release published while the app is
+  // already open is still noticed, and so a check that happens to land before
+  // GitHub's releases feed lists the new version recovers on its own instead of
+  // waiting for the next restart.
   if (app.isPackaged) {
-    setTimeout(() => {
+    setInterval(() => {
       autoUpdater.checkForUpdates().catch((err) => {
-        console.error('Initial update check failed:', err);
+        console.error('Periodic update check failed:', err);
       });
-    }, 3000);
+    }, 30 * 60 * 1000);
   }
 });
 

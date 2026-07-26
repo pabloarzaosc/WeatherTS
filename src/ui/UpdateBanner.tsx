@@ -78,6 +78,12 @@ export function UpdateBanner() {
       setStatus("error");
       setTimeout(() => setStatus("idle"), 6000);
     });
+
+    // Start the first check only now that every listener above is attached.
+    // Main used to kick it off on a 3s timer, which could resolve before this
+    // component mounted -- update:available was then delivered to nobody and
+    // the banner silently never appeared.
+    a.checkForUpdates();
   }, []);
 
   if (dismissed && status !== "downloaded") return null;
