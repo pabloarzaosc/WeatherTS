@@ -3515,6 +3515,18 @@ html[data-reduce-motion="true"] *::after {
   word-break: break-word;
 }
 .sfcobs__error svg { flex: 0 0 auto; }
+.sfcobs__error span { flex: 1 1 auto; min-width: 0; }
+.sfcobs__retry {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: 1px solid var(--danger-border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--danger);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.sfcobs__retry:hover { background: var(--danger-border); }
 .sfcobs__field { display: flex; flex-direction: column; gap: 5px; }
 .sfcobs__label { font-size: 11px; color: var(--text-dim); }
 .sfcobs__field select {

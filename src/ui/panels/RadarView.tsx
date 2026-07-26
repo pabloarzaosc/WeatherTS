@@ -97,6 +97,18 @@ export function RadarView() {
         <div className="sfcobs__error" role="alert">
           <AlertTriangle size={14} />
           <span>{error}</span>
+          <button
+            type="button"
+            className="sfcobs__retry"
+            onClick={() => {
+              // Clear first so the panel shows the attempt rather than sitting
+              // on the stale message; loadCatalog restores it if it fails again.
+              useNexradStore.setState({ error: null });
+              void useNexradStore.getState().loadCatalog();
+            }}
+          >
+            Retry
+          </button>
         </div>
       )}
 

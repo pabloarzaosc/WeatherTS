@@ -374,6 +374,11 @@ interface NexradState {
   clear: () => void;
 }
 
+/** The catalog load in flight, if any. The radar layer calls loadCatalog from
+ *  every addTo, and the panel's retry button can fire while one is running, so
+ *  they share a single attempt instead of stampeding the backend. */
+let catalogInFlight: Promise<void> | null = null;
+
 export const useNexradStore = create<NexradState>((set, get) => ({
   sites: [],
   products: [],
@@ -408,63 +413,59 @@ export const useNexradStore = create<NexradState>((set, get) => ({
 
   loadCatalog: async () => {
     if (get().sites.length && get().products.length) return;
-    try {
-      const [sites, meta, pals] = await Promise.all([
-        fetchNexradSites(),
-        fetchNexradMeta(),
-        fetchPaletteTables(),
-      ]);
-      // Resolve the wire code from the freshly-loaded catalog rather than
-      // trusting the bootstrap default: the catalog decides the source, so a
-      // hardcoded "N0B" would silently pin reflectivity to Level III.
-      const grids = meta.grids ?? [];
-      const pool = [...grids, ...meta.catalog];
-      const fam = pool.find((f) => f.id === get().family) ?? pool[0];
-      const resolved = fam ? wireCode(fam, get().tilt) : null;
-      set({
-        sites,
-        products: meta.products,
-        catalog: meta.catalog,
-        grids: meta.grids ?? [],
-        palettes: meta.palettes,
-        palTables: pals.palettes,
-        kindDefaults: pals.kindDefaults,
-        family: fam?.id ?? get().family,
-        product: resolved ?? get().product ?? meta.defaultProduct,
-        frames: clampFrames(resolved ?? get().product, get().frames),
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      // A packaged app can race the backend during startup. Retry once before
-      // exposing the error instead of leaving the catalog permanently empty.
-      await new Promise((resolve) => window.setTimeout(resolve, 1000));
-      try {
-        const [sites, meta, pals] = await Promise.all([
-          fetchNexradSites(),
-          fetchNexradMeta(),
-          fetchPaletteTables(),
-        ]);
-        const grids = meta.grids ?? [];
-        const pool = [...grids, ...meta.catalog];
-        const fam = pool.find((f) => f.id === get().family) ?? pool[0];
-        const resolved = fam ? wireCode(fam, get().tilt) : null;
-        set({
-          sites,
-          products: meta.products,
-          catalog: meta.catalog,
-          grids,
-          palettes: meta.palettes,
-          palTables: pals.palettes,
-          kindDefaults: pals.kindDefaults,
-          family: fam?.id ?? get().family,
-          product: resolved ?? get().product ?? meta.defaultProduct,
-          frames: clampFrames(resolved ?? get().product, get().frames),
-          error: null,
-        });
-      } catch (retryErr) {
-        const retryMessage = retryErr instanceof Error ? retryErr.message : String(retryErr);
-        set({ error: `${message}; retry: ${retryMessage}` });
+    if (catalogInFlight) {
+      await catalogInFlight;
+      return;
+    }
+
+    catalogInFlight = (async () => {
+      // The packaged app can race its own backend during startup, and the
+      // backend can also go away mid-session. Retrying just once left the
+      // catalog permanently empty on failure -- the panel showed
+      // "Radar site (0)" with no route back short of restarting the app -- so
+      // back off and keep trying for a few seconds before giving up.
+      const backoffMs = [0, 800, 2500, 6000];
+      let lastMessage = "";
+      for (const wait of backoffMs) {
+        if (wait) await new Promise((resolve) => window.setTimeout(resolve, wait));
+        try {
+          const [sites, meta, pals] = await Promise.all([
+            fetchNexradSites(),
+            fetchNexradMeta(),
+            fetchPaletteTables(),
+          ]);
+          // Resolve the wire code from the freshly-loaded catalog rather than
+          // trusting the bootstrap default: the catalog decides the source, so a
+          // hardcoded "N0B" would silently pin reflectivity to Level III.
+          const grids = meta.grids ?? [];
+          const pool = [...grids, ...meta.catalog];
+          const fam = pool.find((f) => f.id === get().family) ?? pool[0];
+          const resolved = fam ? wireCode(fam, get().tilt) : null;
+          set({
+            sites,
+            products: meta.products,
+            catalog: meta.catalog,
+            grids,
+            palettes: meta.palettes,
+            palTables: pals.palettes,
+            kindDefaults: pals.kindDefaults,
+            family: fam?.id ?? get().family,
+            product: resolved ?? get().product ?? meta.defaultProduct,
+            frames: clampFrames(resolved ?? get().product, get().frames),
+            error: null,
+          });
+          return;
+        } catch (err) {
+          lastMessage = err instanceof Error ? err.message : String(err);
+        }
       }
+      set({ error: `Radar catalog unavailable: ${lastMessage}` });
+    })();
+
+    try {
+      await catalogInFlight;
+    } finally {
+      catalogInFlight = null;
     }
   },
 
