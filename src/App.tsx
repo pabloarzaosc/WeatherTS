@@ -15,6 +15,8 @@ import { RadarHud } from "./ui/RadarHud";
 import { DayLoadOverlay } from "./ui/DayLoadOverlay";
 import { AnimationModal } from "./ui/AnimationModal";
 import { UpdateBanner } from "./ui/UpdateBanner";
+import { QuickStart } from "./ui/QuickStart";
+import { WhatsNew } from "./ui/WhatsNew";
 import { useAppStore } from "./store/useAppStore";
 import { selectRailOpen, useAlertStore } from "./store/useAlertStore";
 import { useLayoutStore } from "./store/useLayoutStore";
@@ -64,6 +66,10 @@ export default function App() {
       <MapContextMenu />
       {/* the Customize Animation dialog (top-bar video icon) */}
       <AnimationModal />
+      {/* first-run setup and the release log; both self-mount and stay hidden
+          until they have a reason to appear, or Settings opens them */}
+      <QuickStart />
+      <WhatsNew />
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { RotateCcw, Trash2, Upload } from "lucide-react";
+import { Compass, RotateCcw, Sparkles, Trash2, Upload } from "lucide-react";
 
 import { useAppStore } from "../../store/useAppStore";
+import { useOnboardingStore } from "../../store/useOnboardingStore";
 import { useNexradStore } from "../../store/useNexradStore";
 import { usePaletteStore } from "../../store/usePaletteStore";
 import { layoutIsCustom, useLayoutStore, type Side } from "../../store/useLayoutStore";
@@ -283,6 +284,34 @@ export function SettingsContent() {
       </section>
 
       <PaletteSettings />
+
+      <section className="content__sec">
+        <h4 className="content__label">Guides</h4>
+        <div className="set__guides">
+          <button
+            type="button"
+            className="set__guide"
+            onClick={() => useOnboardingStore.getState().openQuickStart()}
+          >
+            <Compass size={14} />
+            <span>
+              <b>Quick start</b>
+              <i>Re-run the setup pass</i>
+            </span>
+          </button>
+          <button
+            type="button"
+            className="set__guide"
+            onClick={() => useOnboardingStore.getState().openWhatsNew()}
+          >
+            <Sparkles size={14} />
+            <span>
+              <b>What&rsquo;s new</b>
+              <i>Release log for every version</i>
+            </span>
+          </button>
+        </div>
+      </section>
 
       <button type="button" className="btn-reset" onClick={resetDefaults}>
         <RotateCcw size={14} /> Restore defaults
