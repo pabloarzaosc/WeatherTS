@@ -5919,3 +5919,142 @@ html[data-reduce-motion="true"] *::after {
 .set__guide > span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .set__guide b { font-size: 12.5px; font-weight: 600; color: var(--text); }
 .set__guide i { font-style: normal; font-size: 11px; color: var(--text-faint); }
+
+/* ---- Login gate -----------------------------------------------------------
+   Fills the window before anything else mounts, in the same instrument
+   language as the splash: wordmark, hairline rules, mono micro-labels. */
+.gate {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 24px;
+  background: var(--bg);
+}
+.gate--quiet { gap: 20px; }
+.gate__mark {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: var(--text);
+}
+.gate__mark span { color: var(--accent); }
+.gate__spin { animation: gate-spin 0.9s linear infinite; color: var(--accent); }
+@keyframes gate-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gate__spin { animation: none; }
+}
+
+.gate__card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 13px;
+  width: min(340px, 100%);
+  padding: 26px 24px 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel-solid);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  animation: fade-up var(--t) var(--ease-out) both;
+}
+.gate__card .gate__mark { text-align: center; }
+.gate__kicker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin-top: -6px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.gate__field { display: flex; flex-direction: column; gap: 5px; }
+.gate__field > span {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.gate__field input {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 13px;
+}
+.gate__field input:focus {
+  outline: none;
+  border-color: rgba(59, 130, 246, 0.55);
+}
+.gate__field input:disabled { opacity: 0.55; }
+
+.gate__error {
+  padding: 8px 11px;
+  border: 1px solid var(--danger-border);
+  border-radius: 9px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.gate__submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 3px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+.gate__submit:hover:not(:disabled) { background: #2f6fd8; }
+.gate__submit:disabled { opacity: 0.7; }
+
+.gate__note {
+  margin: 4px 0 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+/* Sits above the HUD so the reason the app opened without a check is visible. */
+.gate__offline {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-solid);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  pointer-events: none;
+}

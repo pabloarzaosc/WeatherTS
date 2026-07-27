@@ -16,6 +16,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.9",
     "electron-updater": "^6.8.9",
     "gifenc": "^1.0.3",
     "lucide-react": "^1.21.0",

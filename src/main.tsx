@@ -12,6 +12,7 @@ import "./styles/sounding.css";
 import "./layers";
 
 import App from "./App";
+import { LoginGate } from "./ui/LoginGate";
 import { useAppStore } from "./store/useAppStore";
 import { useSoundingViewerStore } from "./store/useSoundingViewerStore";
 import { applyReduceMotion } from "./lib/theme";
@@ -36,8 +37,13 @@ if (persistedView !== "catalog" && persistedView !== "layers" && persistedView !
 applyReduceMotion(useAppStore.getState().reduceMotion);
 useAppStore.subscribe((s) => s.reduceMotion, applyReduceMotion);
 
+// The gate wraps App rather than living inside it: nothing of the workspace --
+// no map, no layer fetches, no onboarding -- should mount before a session is
+// accepted.
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    <LoginGate>
+      <App />
+    </LoginGate>
   </React.StrictMode>,
 );
