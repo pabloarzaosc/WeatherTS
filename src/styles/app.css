@@ -6058,3 +6058,4 @@ html[data-reduce-motion="true"] *::after {
   color: var(--text-faint);
   pointer-events: none;
 }
+.gate__field input::placeholder { color: var(--text-faint); opacity: 0.7; }

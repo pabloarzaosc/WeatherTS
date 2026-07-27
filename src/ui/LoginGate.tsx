@@ -108,6 +108,7 @@ export function LoginGate({ children }: { children: ReactNode }) {
             ref={userRef}
             type="text"
             value={username}
+            placeholder="yourname"
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}

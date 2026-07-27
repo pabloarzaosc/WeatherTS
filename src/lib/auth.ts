@@ -26,8 +26,23 @@ const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_AhX1NQFvuufEV4_3YLNQXQ_uE73b5H2
  */
 const USER_DOMAIN = "users.weatherts.invalid";
 
-export const usernameToEmail = (username: string) =>
-  `${username.trim().toLowerCase()}@${USER_DOMAIN}`;
+/**
+ * Accepts either the bare username or the full address. Appending the domain
+ * unconditionally turned a pasted `dev@users.weatherts.invalid` into
+ * `dev@users.weatherts.invalid@users.weatherts.invalid`, which matches nobody
+ * and is reported as a wrong password -- and pasting the address the account
+ * was created with is the obvious thing to try.
+ */
+export const usernameToEmail = (input: string) => {
+  const v = input.trim().toLowerCase();
+  return v.includes("@") ? v : `${v}@${USER_DOMAIN}`;
+};
+
+/** The name to show and store, with any domain trimmed back off. */
+export const displayUsername = (input: string) => {
+  const v = input.trim().toLowerCase();
+  return v.includes("@") ? v.slice(0, v.indexOf("@")) : v;
+};
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
@@ -96,13 +111,14 @@ export type AuthOutcome =
  * revoked dev cannot keep a live session.
  */
 export async function signIn(username: string, password: string): Promise<AuthOutcome> {
-  const clean = username.trim().toLowerCase();
+  const typed = username.trim();
+  const clean = displayUsername(typed);
   if (!clean || !password) {
     return { ok: false, reason: "credentials", message: "Enter a username and password." };
   }
 
   const { data, error } = await supabase.auth.signInWithPassword({
-    email: usernameToEmail(clean),
+    email: usernameToEmail(typed),
     password,
   });
 
