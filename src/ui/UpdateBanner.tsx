@@ -19,10 +19,19 @@ type UpdateStatus =
 
 const api = () => (window as any).electronAPI;
 
+/** Bytes as MB/GB. The installer is ~285 MB, so MB is the useful unit. */
+function fmtSize(n: number): string {
+  if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(2)} GB`;
+  if (n >= 1024 ** 2) return `${Math.round(n / 1024 ** 2)} MB`;
+  return `${Math.max(1, Math.round(n / 1024))} KB`;
+}
+
 export function UpdateBanner() {
   const [status, setStatus] = useState<UpdateStatus>("idle");
   const [info, setInfo] = useState<UpdateInfo | null>(null);
   const [progress, setProgress] = useState(0);
+  const [rate, setRate] = useState<number | null>(null);
+  const [bytes, setBytes] = useState<{ done: number; total: number } | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [showUpToDate, setShowUpToDate] = useState(false);
 
@@ -32,6 +41,10 @@ export function UpdateBanner() {
 
     a.onUpdateStatus((s: string) => {
       if (s === "checking") setStatus("checking");
+      // "downloading" used to fall through here, so the banner stayed on the
+      // "Download & install" button after the click and only switched once the
+      // first progress event arrived -- which can be a long wait, or never.
+      if (s === "downloading") setStatus("downloading");
       if (s === "up-to-date") {
         setStatus("up-to-date");
         setShowUpToDate(true);
@@ -45,8 +58,11 @@ export function UpdateBanner() {
       setDismissed(false);
     });
 
-    a.onUpdateProgress((p: { percent: number }) => {
+    a.onUpdateProgress((p: { percent: number; bytesPerSecond?: number; transferred?: number; total?: number }) => {
+      setStatus("downloading");
       setProgress(p.percent);
+      setRate(p.bytesPerSecond ?? null);
+      setBytes(p.transferred != null && p.total != null ? { done: p.transferred, total: p.total } : null);
     });
 
     a.onUpdateDownloaded(() => {
@@ -126,7 +142,17 @@ export function UpdateBanner() {
           <button
             type="button"
             className="update-banner__btn update-banner__btn--primary"
-            onClick={() => api()?.downloadUpdate()}
+            onClick={() => {
+              // Switch the banner on the click rather than waiting for main to
+              // echo a status back. Connecting to GitHub and getting the first
+              // byte takes a moment, and a button that looks inert for that long
+              // reads as broken.
+              setStatus("downloading");
+              setProgress(0);
+              setRate(null);
+              setBytes(null);
+              api()?.downloadUpdate();
+            }}
           >
             <Download size={13} />
             Download &amp; install
@@ -146,23 +172,35 @@ export function UpdateBanner() {
     );
   }
 
-  // Downloading progress
+  // Downloading. Until the first progress event lands there is no percentage to
+  // show, so the bar runs indeterminate rather than sitting at a frozen 0%.
   if (status === "downloading" || (status === "available" && progress > 0)) {
+    const started = progress > 0;
     return (
       <div className="update-banner">
         <div className="update-banner__head">
           <Download size={16} />
           <span className="update-banner__title">
-            Downloading update...
+            {started ? "Downloading update" : "Starting download…"}
           </span>
-          <span className="update-banner__pct">{Math.round(progress)}%</span>
+          {started && <span className="update-banner__pct">{Math.round(progress)}%</span>}
         </div>
-        <div className="update-banner__bar">
+        <div className={`update-banner__bar${started ? "" : " is-indeterminate"}`}>
           <div
             className="update-banner__bar-fill"
-            style={{ width: `${progress}%` }}
+            style={started ? { width: `${progress}%` } : undefined}
           />
         </div>
+        {started && (
+          <div className="update-banner__meta">
+            {bytes && (
+              <span>
+                {fmtSize(bytes.done)} of {fmtSize(bytes.total)}
+              </span>
+            )}
+            {rate != null && rate > 0 && <span>{fmtSize(rate)}/s</span>}
+          </div>
+        )}
       </div>
     );
   }
@@ -199,3 +237,4 @@ export function UpdateBanner() {
 
   return null;
 }
+

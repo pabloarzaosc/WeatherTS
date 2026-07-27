@@ -196,6 +196,14 @@ function createWindow() {
 function setupAutoUpdater() {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
+  // Fetch the installer in one stream instead of reassembling it from blockmap
+  // ranges. Differential download is meant to save bandwidth, but this artifact
+  // is ~285 MB and nearly all of it changes between builds -- the 166 MB
+  // backend binary is rebuilt every time -- so it saves almost nothing while
+  // issuing hundreds of HTTP range requests against GitHub's asset CDN. Those
+  // stall: a download stopped at 119 MB with no progress events reaching the
+  // banner, which read to the user as the update button doing nothing.
+  autoUpdater.disableDifferentialDownload = true;
 
   autoUpdater.on('checking-for-update', () => {
     mainWindow?.webContents.send('update:status', 'checking');

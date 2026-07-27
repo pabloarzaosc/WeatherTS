@@ -5392,6 +5392,33 @@ html[data-reduce-motion="true"] *::after {
   background: var(--accent);
   transition: width 0.3s var(--ease);
 }
+/* Before the first progress event there is no percentage to draw, so the bar
+   sweeps instead of sitting at a frozen 0% that reads as a stalled download. */
+.update-banner__bar.is-indeterminate .update-banner__bar-fill {
+  width: 38%;
+  transition: none;
+  animation: update-sweep 1.15s ease-in-out infinite;
+}
+@keyframes update-sweep {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(370%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .update-banner__bar.is-indeterminate .update-banner__bar-fill {
+    width: 100%;
+    animation: none;
+    opacity: 0.5;
+  }
+}
+.update-banner__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 7px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
 .update-banner__actions {
   display: flex;
   gap: 6px;
