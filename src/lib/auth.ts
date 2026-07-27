@@ -132,12 +132,21 @@ export async function signIn(username: string, password: string): Promise<AuthOu
     .eq("id", uid)
     .maybeSingle();
 
-  if (profile && profile.active === false) {
+  // A profile is required, not merely respected when present. Signing up is
+  // reachable with the publishable key -- it ships in every installer -- so an
+  // outsider can obtain a genuine session. Only accounts an admin issued get a
+  // profile row, which is what actually decides membership; treating a missing
+  // row as "fine" would have let exactly those accounts through.
+  if (!profile || profile.active === false) {
     await supabase.auth.signOut();
-    return { ok: false, reason: "revoked", message: "This account no longer has access." };
+    return {
+      ok: false,
+      reason: "revoked",
+      message: profile ? "This account no longer has access." : "This account is not authorised.",
+    };
   }
 
-  const name = profile?.username ?? clean;
+  const name = profile.username ?? clean;
   write(K_GRACE, String(Date.now()));
   write(K_WHO, name);
   return { ok: true, username: name };
