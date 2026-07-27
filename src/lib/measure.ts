@@ -291,7 +291,14 @@ export class MeasureLabels {
       m.setLngLat(l.lngLat);
       const el = m.getElement();
       el.textContent = l.text;
-      el.className = `measure-label${l.variant ? ` measure-label--${l.variant}` : ""}`;
+      // Touch only our own classes. Assigning className wiped the
+      // `maplibregl-marker` class Marker puts on the element, and with it the
+      // absolute positioning that pins the chip to its point -- the div then
+      // fell back into normal flow and stretched the full width of the map,
+      // stacking the readouts as bars across it.
+      el.classList.add("measure-label");
+      el.classList.toggle("measure-label--total", l.variant === "total");
+      el.classList.toggle("measure-label--seg", l.variant === "seg");
     });
   }
 
