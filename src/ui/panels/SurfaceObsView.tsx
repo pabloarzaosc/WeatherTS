@@ -1,3 +1,5 @@
+import { AlertTriangle, Loader2 } from "lucide-react";
+
 import { useAppStore } from "../../store/useAppStore";
 import {
   useSurfaceObsStore,
@@ -83,6 +85,9 @@ export function SurfaceObsView() {
   const maxAgeMin = useSurfaceObsStore((s) => s.maxAgeMin);
   const fadeStale = useSurfaceObsStore((s) => s.fadeStale);
   const gustHighlight = useSurfaceObsStore((s) => s.gustHighlight);
+  const layerBusy = useSurfaceObsStore((s) => s.layerBusy);
+  const layerError = useSurfaceObsStore((s) => s.layerError);
+  const layerLastUpdatedAt = useSurfaceObsStore((s) => s.layerLastUpdatedAt);
 
   const setDisplayMode = useSurfaceObsStore((s) => s.setDisplayMode);
   const toggleElement = useSurfaceObsStore((s) => s.toggleElement);
@@ -102,6 +107,9 @@ export function SurfaceObsView() {
   const activePreset = ELEMENT_PRESETS.find((p) =>
     (Object.keys(p.elements) as (keyof StationElements)[]).every((k) => p.elements[k] === elements[k]),
   );
+  const updatedLabel = layerLastUpdatedAt
+    ? new Date(layerLastUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : null;
 
   return (
     <div className="sfx">
@@ -115,6 +123,21 @@ export function SurfaceObsView() {
         <span className="sfx__power-txt">Surface observations</span>
         <span className="sfx__power-state">{enabled ? "LIVE" : "OFF"}</span>
       </button>
+      <div className={`sfx__status${layerError ? " is-error" : ""}`}>
+        {layerBusy ? (
+          <>
+            <Loader2 size={13} className="sfx__status-spin" /> Syncing observations...
+          </>
+        ) : layerError ? (
+          <>
+            <AlertTriangle size={13} /> Could not refresh observations: {layerError}
+          </>
+        ) : enabled && updatedLabel ? (
+          <>Updated at {updatedLabel}</>
+        ) : (
+          <>Ready</>
+        )}
+      </div>
 
       <div className="sfx__block">
         <div className="sfx__head">

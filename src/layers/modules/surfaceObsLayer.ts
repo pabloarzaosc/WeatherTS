@@ -35,12 +35,15 @@ interface PaneState {
   raw: GeoJSON.Feature<GeoJSON.Point, SurfaceObsProps>[];
   controller: AbortController | null;
   fetchTimer: number | null;
+  styleTimer: number | null;
+  needsRebuild: boolean;
   onMove: () => void;
   unsub: () => void;
   popup: maplibregl.Popup;
   onClick: (e: MapLayerMouseEvent) => void;
 }
 const state = new WeakMap<import("maplibre-gl").Map, PaneState>();
+let activeFetches = 0;
 
 const COVER_KEYS = new Set(["SKC", "CLR", "FEW", "SCT", "BKN", "OVC"]);
 const pad3 = (n: number) => String(((n % 1000) + 1000) % 1000).padStart(3, "0");
@@ -161,6 +164,24 @@ function rebuild(map: MapLibreMap) {
   (map.getSource(SRC) as GeoJSONSource | undefined)?.setData(fc as unknown as GeoJSON.FeatureCollection);
 }
 
+function setLayerStatus(next: { busy?: boolean; error?: string | null; lastUpdatedAt?: number | null }) {
+  useSurfaceObsStore.getState().setLayerStatus(next);
+}
+
+function onFetchStart() {
+  activeFetches += 1;
+  setLayerStatus({ busy: true, error: null });
+}
+
+function onFetchDone(next: { error?: string | null; lastUpdatedAt?: number | null } = {}) {
+  activeFetches = Math.max(0, activeFetches - 1);
+  setLayerStatus({
+    busy: activeFetches > 0,
+    error: Object.prototype.hasOwnProperty.call(next, "error") ? (next.error ?? null) : undefined,
+    lastUpdatedAt: next.lastUpdatedAt,
+  });
+}
+
 /** obsTime arrives as epoch seconds from the AWC feed; tolerate milliseconds. */
 function toMillis(t: number): number {
   return t > 1e11 ? t : t * 1000;
@@ -181,6 +202,23 @@ function scheduleFetch(map: MapLibreMap) {
   st.fetchTimer = window.setTimeout(() => void doFetch(map), 350);
 }
 
+function scheduleRender(map: MapLibreMap, rebuildNeeded: boolean) {
+  const st = state.get(map);
+  if (!st) return;
+  st.needsRebuild = st.needsRebuild || rebuildNeeded;
+  if (st.styleTimer) return;
+  st.styleTimer = window.requestAnimationFrame(() => {
+    const live = state.get(map);
+    if (!live) return;
+    live.styleTimer = null;
+    if (live.needsRebuild) {
+      live.needsRebuild = false;
+      rebuild(map);
+    }
+    applyStyle(map);
+  });
+}
+
 async function doFetch(map: MapLibreMap) {
   const b = map.getBounds();
   const lat0 = Math.max(-90, b.getSouth());
@@ -191,12 +229,19 @@ async function doFetch(map: MapLibreMap) {
   if (!st) return;
   st.controller?.abort();
   st.controller = new AbortController();
+  onFetchStart();
   try {
     const fc: SurfaceObsFC = await fetchSurfaceObs([lat0, lon0, lat1, lon1], st.controller.signal);
     st.raw = fc.features;
-    rebuild(map);
-  } catch {
-    /* transient network / aborted -> keep the current plot */
+    scheduleRender(map, true);
+    onFetchDone({ error: null, lastUpdatedAt: Date.now() });
+  } catch (err) {
+    if ((err as { name?: string }).name === "AbortError") {
+      onFetchDone();
+      return;
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    onFetchDone({ error: msg });
   }
 }
 
@@ -476,19 +521,29 @@ export const surfaceObsLayer: LayerModule = {
     }
 
     const onMove = () => {
-      rebuild(map); // instant re-declutter for the new view
+      scheduleRender(map, true); // instant re-declutter for the new view
       scheduleFetch(map); // then refresh the obs for the new bbox
     };
     map.on("moveend", onMove);
     const unsub = useSurfaceObsStore.subscribe((s, prev) => {
       // Spacing and the age limit both decide which features exist, so they
       // need the source rebuilt; everything else is a paint/layout swap.
-      if (s.spacing !== prev.spacing || s.maxAgeMin !== prev.maxAgeMin) rebuild(map);
-      applyStyle(map);
+      const needsRebuild = s.spacing !== prev.spacing || s.maxAgeMin !== prev.maxAgeMin;
+      scheduleRender(map, needsRebuild);
     });
-    state.set(map, { raw: [], controller: null, fetchTimer: null, onMove, unsub, popup, onClick });
+    state.set(map, {
+      raw: [],
+      controller: null,
+      fetchTimer: null,
+      styleTimer: null,
+      needsRebuild: false,
+      onMove,
+      unsub,
+      popup,
+      onClick,
+    });
 
-    applyStyle(map);
+    scheduleRender(map, false);
     void doFetch(map);
   },
 
@@ -496,6 +551,7 @@ export const surfaceObsLayer: LayerModule = {
     const st = state.get(map);
     if (st) {
       if (st.fetchTimer) window.clearTimeout(st.fetchTimer);
+      if (st.styleTimer) window.cancelAnimationFrame(st.styleTimer);
       st.controller?.abort();
       map.off("moveend", st.onMove);
       st.unsub();
@@ -505,6 +561,7 @@ export const surfaceObsLayer: LayerModule = {
       st.popup.remove();
       state.delete(map);
     }
+    if (activeFetches === 0) setLayerStatus({ busy: false });
     for (const id of [L_CALM, L_VIS, L_GUST, L_SINGLE, L_ID, L_PRES, L_DEWP, L_TEMP, L_BARB, L_SKY]) {
       if (map.getLayer(id)) map.removeLayer(id);
     }

@@ -35,6 +35,7 @@ export function notesToText(html: string): string {
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, " ")
     // &amp; last, so text that was legitimately escaped is not decoded twice
@@ -48,10 +49,15 @@ function toText(body: string): string {
   const looksHtml = /<\/?(p|ul|ol|li|h[1-6]|strong|em|code)\b/i.test(body);
   if (looksHtml) return notesToText(body);
   return body
-    .replace(/^#{1,6}\s*/gm, "")
+    .replace(/\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g, "$1 ($2)")
+    .replace(/^#{1,6}\s*(.+)$/gm, "\n$1\n")
     .replace(/^\s*[-*]\s+/gm, "• ")
+    .replace(/^\s*\d+\.\s+/gm, "• ")
+    .replace(/```([\s\S]*?)```/g, "$1")
     .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/__(.+?)__/g, "$1")
     .replace(/\*(.+?)\*/g, "$1")
+    .replace(/_(.+?)_/g, "$1")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/\r/g, "")
     .replace(/\n{3,}/g, "\n\n")

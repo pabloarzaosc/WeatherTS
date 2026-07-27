@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Check, ChevronLeft, ChevronRight, X } from "lucide-react";
 
 import { useAppStore } from "../store/useAppStore";
-import { useSurfaceObsStore } from "../store/useSurfaceObsStore";
+import { AGE_UNLIMITED, ELEMENT_PRESETS, useSurfaceObsStore } from "../store/useSurfaceObsStore";
 import {
   markQuickStartDone,
   markVersionSeen,
@@ -18,6 +18,12 @@ const LAYER_CHOICES: { id: string; label: string; blurb: string }[] = [
   { id: "nws-alerts", label: "Severe alerts", blurb: "Live NWS warnings, watches and advisories" },
   { id: "surfobs", label: "Surface observations", blurb: "METAR station plots" },
   { id: "nexrad", label: "Radar", blurb: "Single-site NEXRAD, pick a site on the map" },
+];
+
+const FRESHNESS_CHOICES: { id: number; label: string; detail: string }[] = [
+  { id: AGE_UNLIMITED, label: "No limit", detail: "Keep all observations the feed returns" },
+  { id: 180, label: "3 hours", detail: "Drop older readings for a fresher map" },
+  { id: 60, label: "1 hour", detail: "Focus on the latest trends" },
 ];
 
 /**
@@ -38,7 +44,12 @@ export function QuickStart() {
   const setWindUnits = useSurfaceObsStore((s) => s.setWindUnits);
   const setPresUnits = useSurfaceObsStore((s) => s.setPresUnits);
   const setVisUnits = useSurfaceObsStore((s) => s.setVisUnits);
+  const setElementsPreset = useSurfaceObsStore((s) => s.setElementsPreset);
+  const setMaxAgeMin = useSurfaceObsStore((s) => s.setMaxAgeMin);
+  const setFadeStale = useSurfaceObsStore((s) => s.setFadeStale);
   const tempUnits = useSurfaceObsStore((s) => s.tempUnits);
+  const elements = useSurfaceObsStore((s) => s.elements);
+  const maxAgeMin = useSurfaceObsStore((s) => s.maxAgeMin);
 
   const [step, setStep] = useState(0);
   const system: UnitSystem = tempUnits === "F" ? "imperial" : "metric";
@@ -82,6 +93,14 @@ export function QuickStart() {
       .then((v) => v && markVersionSeen(v))
       .catch(() => {});
     close();
+  }
+
+  function goBack() {
+    setStep((n) => Math.max(0, n - 1));
+  }
+
+  function goNext() {
+    setStep((n) => Math.min(steps.length - 1, n + 1));
   }
 
   if (!open) return null;
@@ -142,19 +161,75 @@ export function QuickStart() {
       ),
     },
     {
-      key: "done",
-      title: "You are set up",
-      lede: "Everything here lives in the side panel — Catalog to add data, Layers to reorder it, Settings to tune it.",
+      key: "surface-defaults",
+      title: "Tune station plots before you start",
+      lede: "Set a practical Surface Obs default now so the map opens how you like it.",
+      body: (
+        <div className="qs__choices">
+          {ELEMENT_PRESETS.map((p) => {
+            const on = (Object.keys(p.elements) as (keyof typeof p.elements)[]).every((k) => p.elements[k] === elements[k]);
+            return (
+              <button key={p.id} type="button" className={`qs__choice${on ? " is-on" : ""}`} onClick={() => setElementsPreset(p.elements)}>
+                <span className="qs__choice-mark">{on && <Check size={13} />}</span>
+                <span className="qs__choice-text">
+                  <b>{p.label}</b>
+                  <i>{p.hint}</i>
+                </span>
+              </button>
+            );
+          })}
+          {FRESHNESS_CHOICES.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              className={`qs__choice${maxAgeMin === o.id ? " is-on" : ""}`}
+              onClick={() => {
+                setMaxAgeMin(o.id);
+                setFadeStale(o.id !== AGE_UNLIMITED);
+              }}
+            >
+              <span className="qs__choice-mark">{maxAgeMin === o.id && <Check size={13} />}</span>
+              <span className="qs__choice-text">
+                <b>{o.label}</b>
+                <i>{o.detail}</i>
+              </span>
+            </button>
+          ))}
+        </div>
+      ),
+    },
+    {
+      key: "workflow",
+      title: "Quick workflow tips",
+      lede: "You can do most tasks from two places: Catalog and Layers.",
       body: (
         <ul className="qs__tips">
           <li>
-            <b>Catalog</b> turns data sources on and off.
+            <b>Catalog</b> turns data sources on/off and opens each product view.
           </li>
           <li>
-            <b>Layers</b> reorders them and controls opacity.
+            <b>Layers</b> controls draw order and opacity for what is visible.
           </li>
           <li>
-            <b>Settings</b> holds palettes, coordinates and defaults — and reopens this guide.
+            <b>Settings</b> holds layout, motion, palette and this guide.
+          </li>
+        </ul>
+      ),
+    },
+    {
+      key: "done",
+      title: "You are set up",
+      lede: "Your defaults are saved. You can change everything later without restarting.",
+      body: (
+        <ul className="qs__tips">
+          <li>
+            Surface observations are ready with your chosen units and freshness.
+          </li>
+          <li>
+            Use What's New to see every shipped update in one place.
+          </li>
+          <li>
+            If you skip now, you can reopen Quick Start from Settings → Guides.
           </li>
         </ul>
       ),
@@ -179,12 +254,14 @@ export function QuickStart() {
         </div>
 
         <div className="qs__main">
-          <span className="qs__kicker">
-            Quick start · {step + 1} of {steps.length}
-          </span>
-          <h2>{s.title}</h2>
-          <p className="qs__lede">{s.lede}</p>
-          <div className="qs__body">{s.body}</div>
+          <div className="qs__step" key={s.key}>
+            <span className="qs__kicker">
+              Quick start · {step + 1} of {steps.length}
+            </span>
+            <h2>{s.title}</h2>
+            <p className="qs__lede">{s.lede}</p>
+            <div className="qs__body">{s.body}</div>
+          </div>
         </div>
 
         <footer className="qs__foot">
@@ -193,7 +270,7 @@ export function QuickStart() {
           </button>
           <div className="qs__nav">
             {step > 0 && (
-              <button type="button" className="qs__btn" onClick={() => setStep((n) => n - 1)}>
+              <button type="button" className="qs__btn" onClick={goBack}>
                 <ChevronLeft size={14} /> Back
               </button>
             )}
@@ -209,7 +286,7 @@ export function QuickStart() {
                 Finish
               </button>
             ) : (
-              <button type="button" className="qs__btn qs__btn--primary" onClick={() => setStep((n) => n + 1)}>
+              <button type="button" className="qs__btn qs__btn--primary" onClick={goNext}>
                 Continue <ChevronRight size={14} />
               </button>
             )}

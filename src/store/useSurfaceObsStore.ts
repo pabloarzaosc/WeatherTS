@@ -56,6 +56,10 @@ interface SurfaceObsState {
   fadeStale: boolean;
   /** Emphasise stations gusting at or above this many knots. GUST_HL_OFF disables. */
   gustHighlight: number;
+  /** Layer fetch state for UI feedback in the Surface Obs panel. */
+  layerBusy: boolean;
+  layerError: string | null;
+  layerLastUpdatedAt: number | null;
 
   setDisplayMode: (m: SurfaceDisplayMode) => void;
   toggleElement: (k: keyof StationElements) => void;
@@ -69,6 +73,7 @@ interface SurfaceObsState {
   setMaxAgeMin: (m: number) => void;
   setFadeStale: (v: boolean) => void;
   setGustHighlight: (kt: number) => void;
+  setLayerStatus: (next: { busy?: boolean; error?: string | null; lastUpdatedAt?: number | null }) => void;
 }
 
 /** Ready-made element combinations. A full station plot is dense; these are the
@@ -124,6 +129,9 @@ export const useSurfaceObsStore = create<SurfaceObsState>((set) => ({
   maxAgeMin: 180,
   fadeStale: true,
   gustHighlight: GUST_HL_OFF,
+  layerBusy: false,
+  layerError: null,
+  layerLastUpdatedAt: null,
 
   setDisplayMode: (displayMode) => set({ displayMode }),
   toggleElement: (k) => set((s) => ({ elements: { ...s.elements, [k]: !s.elements[k] } })),
@@ -137,4 +145,10 @@ export const useSurfaceObsStore = create<SurfaceObsState>((set) => ({
   setMaxAgeMin: (maxAgeMin) => set({ maxAgeMin }),
   setFadeStale: (fadeStale) => set({ fadeStale }),
   setGustHighlight: (gustHighlight) => set({ gustHighlight }),
+  setLayerStatus: (next) =>
+    set((s) => ({
+      layerBusy: "busy" in next ? Boolean(next.busy) : s.layerBusy,
+      layerError: "error" in next ? (next.error ?? null) : s.layerError,
+      layerLastUpdatedAt: "lastUpdatedAt" in next ? (next.lastUpdatedAt ?? null) : s.layerLastUpdatedAt,
+    })),
 }));
