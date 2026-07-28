@@ -34,8 +34,6 @@ export type VisUnit = "mi" | "km";
 
 /** 0 means "no age limit" -- every observation the feed returns is plotted. */
 export const AGE_UNLIMITED = 0;
-/** 0 means "no gust highlight". */
-export const GUST_HL_OFF = 0;
 
 interface SurfaceObsState {
   displayMode: SurfaceDisplayMode;
@@ -54,8 +52,10 @@ interface SurfaceObsState {
   maxAgeMin: number;
   /** Draw surviving-but-ageing observations dimmed rather than at full strength. */
   fadeStale: boolean;
-  /** Emphasise stations gusting at or above this many knots. GUST_HL_OFF disables. */
-  gustHighlight: number;
+  /** The instant the main timeline is parked on, in unix seconds, or null when
+   *  it is live. The station popup reads it so one clock drives the whole app
+   *  rather than each panel keeping its own scrubber. */
+  timelineUnix: number | null;
   /** Layer fetch state for UI feedback in the Surface Obs panel. */
   layerBusy: boolean;
   layerError: string | null;
@@ -72,7 +72,7 @@ interface SurfaceObsState {
   setVisUnits: (u: VisUnit) => void;
   setMaxAgeMin: (m: number) => void;
   setFadeStale: (v: boolean) => void;
-  setGustHighlight: (kt: number) => void;
+  setTimelineUnix: (t: number | null) => void;
   setLayerStatus: (next: { busy?: boolean; error?: string | null; lastUpdatedAt?: number | null }) => void;
 }
 
@@ -128,7 +128,7 @@ export const useSurfaceObsStore = create<SurfaceObsState>((set) => ({
 
   maxAgeMin: 180,
   fadeStale: true,
-  gustHighlight: GUST_HL_OFF,
+  timelineUnix: null,
   layerBusy: false,
   layerError: null,
   layerLastUpdatedAt: null,
@@ -144,7 +144,7 @@ export const useSurfaceObsStore = create<SurfaceObsState>((set) => ({
   setVisUnits: (visUnits) => set({ visUnits }),
   setMaxAgeMin: (maxAgeMin) => set({ maxAgeMin }),
   setFadeStale: (fadeStale) => set({ fadeStale }),
-  setGustHighlight: (gustHighlight) => set({ gustHighlight }),
+  setTimelineUnix: (timelineUnix) => set({ timelineUnix }),
   setLayerStatus: (next) =>
     set((s) => ({
       layerBusy: "busy" in next ? Boolean(next.busy) : s.layerBusy,

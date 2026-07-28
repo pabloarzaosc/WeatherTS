@@ -11,7 +11,6 @@ import { barbKey, registerStationIcons } from "../../lib/stationPlot";
 import {
   useSurfaceObsStore,
   AGE_UNLIMITED,
-  GUST_HL_OFF,
   type SurfaceDisplayMode,
 } from "../../store/useSurfaceObsStore";
 
@@ -297,19 +296,7 @@ function applyStyle(map: MapLibreMap) {
   if (map.getLayer(L_DEWP)) map.setLayoutProperty(L_DEWP, "text-field", ["get", dewpProp]);
   if (map.getLayer(L_PRES)) map.setLayoutProperty(L_PRES, "text-field", ["get", presProp]);
   if (map.getLayer(L_VIS)) map.setLayoutProperty(L_VIS, "text-field", ["get", visProp]);
-  if (map.getLayer(L_GUST)) {
-    map.setLayoutProperty(L_GUST, "text-field", ["get", wgstProp]);
-    // Past the threshold the gust is the point of the plot, so it stops being
-    // an afterthought in amber and goes loud. coalesce keeps stations that
-    // report no gust from matching a threshold of 0.
-    map.setPaintProperty(
-      L_GUST,
-      "text-color",
-      s.gustHighlight > GUST_HL_OFF
-        ? (["case", [">=", ["coalesce", ["get", "wgst"], -1], s.gustHighlight], "#ff4d4d", "#f6b93b"] as never)
-        : "#f6b93b",
-    );
-  }
+  if (map.getLayer(L_GUST)) map.setLayoutProperty(L_GUST, "text-field", ["get", wgstProp]);
 
   // Fade ageing observations so a reading taken minutes ago is visually
   // distinct from one that has been sitting for an hour. The ramp starts
@@ -434,6 +421,13 @@ export const surfaceObsLayer: LayerModule = {
       offset: 12,
       className: "surfaceobspop",
     });
+    // The station whose popup is open, kept so the main timeline can redraw it
+    // without the user clicking again. Deliberately not cleared on the popup's
+    // "close" event: setHTML(...).addTo() removes and re-adds, which fires close
+    // on every redraw and would wipe this the first time it ran. popup.isOpen()
+    // is asked at use instead.
+    let openStation: { history: Array<Record<string, any>>; lat: number; lon: number } | null = null;
+
     const escHtml = (value: unknown) =>
       String(value ?? "—").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
     const fmt = (value: unknown, suffix = "") => value == null || value === "" ? "—" : `${escHtml(value)}${suffix}`;
@@ -454,47 +448,93 @@ export const surfaceObsLayer: LayerModule = {
         ? date.toLocaleString([], { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
         : "Latest observation";
     };
+    /**
+     * A 24-hour trace for one variable, drawn as an inline SVG. Inline because
+     * the popup is raw HTML handed to MapLibre, so there is no React here and no
+     * reason to pull in a chart library for a 100x26 sparkline.
+     */
+    const spark = (values: Array<number | null>, selected: number, color: string): string => {
+      const pts = values.map((v, i) => ({ i, v })).filter((o) => o.v != null) as { i: number; v: number }[];
+      if (pts.length < 2) return '<div class="sfc-spark sfc-spark--empty"></div>';
+      const n = values.length - 1 || 1;
+      let lo = Math.min(...pts.map((o) => o.v));
+      let hi = Math.max(...pts.map((o) => o.v));
+      // A flat series would divide by zero and draw off-box; centre it instead.
+      if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
+      const X = (i: number) => (i / n) * 100;
+      const Y = (v: number) => 23 - ((v - lo) / (hi - lo)) * 20;
+      const d = pts.map((o, k) => `${k ? "L" : "M"}${X(o.i).toFixed(1)},${Y(o.v).toFixed(1)}`).join("");
+      const cur = pts.reduce((best, o) => (Math.abs(o.i - selected) < Math.abs(best.i - selected) ? o : best), pts[0]);
+      return `<svg class="sfc-spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true">
+        <path d="${d}" fill="none" stroke="${color}" stroke-width="1.4" vector-effect="non-scaling-stroke"/>
+        <circle cx="${X(cur.i).toFixed(1)}" cy="${Y(cur.v).toFixed(1)}" r="2.2" fill="${color}"/>
+      </svg>`;
+    };
+
+    const SERIES: Array<{ key: string; label: string; unit: string; color: string }> = [
+      { key: "temp", label: "TEMP", unit: " °C", color: "#ff6b5e" },
+      { key: "dewp", label: "DEWPOINT", unit: " °C", color: "#4ade80" },
+      { key: "rh", label: "HUMIDITY", unit: " %", color: "#38bdf8" },
+      { key: "altim", label: "PRESSURE", unit: " mb", color: "#9fb4d6" },
+      { key: "wspd", label: "WIND", unit: " kt", color: "#e8edf4" },
+      { key: "wgst", label: "GUST", unit: " kt", color: "#f6b93b" },
+      { key: "visib", label: "VISIBILITY", unit: " mi", color: "#c7d2e4" },
+    ];
+
+    const num = (v: unknown): number | null => {
+      const n = Number(v);
+      return v == null || v === "" || !Number.isFinite(n) ? null : n;
+    };
+
     const renderObservation = (
-      p: Record<string, any>,
-      lat: number,
-      lon: number,
       history: Array<Record<string, any>>,
       selected: number,
+      lat: number,
+      lon: number,
     ) => {
+      const p = history[selected] ?? {};
       const timeLabel = formatObsDate(p.obsTime);
-      const max = Math.max(history.length - 1, 0);
+      const single = history.length < 2;
+      const cells = SERIES.map((sr) => {
+        const series = history.map((h) => num(h[sr.key]));
+        return `<div class="sfc-metric">
+          <span>${sr.label}</span>
+          <b>${fmt(p[sr.key], sr.unit)}</b>
+          ${single ? "" : spark(series, selected, sr.color)}
+        </div>`;
+      }).join("");
+
       popup.setHTML(`
         <div class="surfaceobs-card">
           <div class="surfaceobs-card__head">
             <div><b>${escHtml(p.id || p.idTxt || p.name || p.nameTxt || "METAR station")}</b><span>${escHtml(p.name || p.nameTxt || "Surface observation")}</span></div>
             <small>${escHtml(timeLabel)}</small>
           </div>
-          <div class="surfaceobs-card__status">LIVE METAR OBSERVATION</div>
-          <div class="surfaceobs-card__grid">
-            <div><span>TEMP</span><b>${fmt(p.temp, " °C")}</b></div>
-            <div><span>DEWPOINT</span><b>${fmt(p.dewp, " °C")}</b></div>
-            <div><span>HUMIDITY</span><b>${fmt(p.rh, " %")}</b></div>
-            <div><span>PRESSURE</span><b>${fmt(p.altim, " mb")}</b></div>
-            <div><span>WIND</span><b>${p.wspd == null ? "—" : `${escHtml(p.wdir ?? "VRB")}° @ ${escHtml(p.wspd)} kt`}</b></div>
-            <div><span>GUST</span><b>${fmt(p.wgst, " kt")}</b></div>
-            <div><span>VISIBILITY</span><b>${fmt(p.visib, " mi")}</b></div>
-            <div><span>SKY</span><b>${fmt(p.cover)}</b></div>
-          </div>
-          <div class="surfaceobs-card__timeline">
-            <div><span>OBSERVATION TIMELINE</span><b>${history.length ? `${selected + 1} / ${history.length}` : "current"}</b></div>
-            <input id="surfaceobs-time" type="range" min="0" max="${max}" value="${selected}" ${max === 0 ? "disabled" : ""} />
-            <div class="surfaceobs-card__timeline-labels"><span>older</span><span>newer</span></div>
+          <div class="surfaceobs-card__status">${single ? "LIVE METAR OBSERVATION" : `LAST ${history.length} OBSERVATIONS · FOLLOWS THE TIMELINE`}</div>
+          <div class="surfaceobs-card__grid">${cells}</div>
+          <div class="surfaceobs-card__grid surfaceobs-card__grid--wide">
+            <div class="sfc-metric"><span>WIND DIR</span><b>${p.wspd == null ? "—" : `${escHtml(p.wdir ?? "VRB")}°`}</b></div>
+            <div class="sfc-metric"><span>SKY</span><b>${fmt(p.cover)}</b></div>
           </div>
           <div class="surfaceobs-card__foot">${lat.toFixed(3)}°, ${lon.toFixed(3)}°</div>
         </div>
       `).addTo(map);
-      const slider = popup.getElement()?.querySelector<HTMLInputElement>("#surfaceobs-time");
-      slider?.addEventListener("input", () => {
-        const index = Number(slider.value);
-        const next = history[index];
-        if (next) renderObservation(next, Number(next.lat), Number(next.lon), history, index);
-      });
     };
+
+    /** Which record the main timeline is pointing at; the newest when it is live. */
+    const pickIndex = (history: Array<Record<string, any>>): number => {
+      const t = useSurfaceObsStore.getState().timelineUnix;
+      if (t == null || history.length === 0) return history.length - 1;
+      let best = 0;
+      let bestDiff = Infinity;
+      history.forEach((h, i) => {
+        const ms = toMillis(Number(h.obsTime));
+        const diff = Math.abs(ms / 1000 - t);
+        if (Number.isFinite(diff) && diff < bestDiff) { bestDiff = diff; best = i; }
+      });
+      return best;
+    };
+
     const onClick = (e: MapLayerMouseEvent) => {
       const f = e.features?.[0];
       if (!f || f.geometry.type !== "Point") return;
@@ -503,14 +543,16 @@ export const surfaceObsLayer: LayerModule = {
       popup.setLngLat([lon, lat]);
       const station = String(p.idTxt || "");
       const current = { ...p, id: p.idTxt, name: p.nameTxt, lat, lon };
-      renderObservation(current, lat, lon, [current], 0);
+      openStation = { history: [current], lat, lon };
+      renderObservation([current], 0, lat, lon);
       if (station) {
         void fetchSurfaceHistory(station, 24).then((history: SurfaceObsHistory[]) => {
           const records = history.map((item) => ({ ...item }));
-          if (records.length) {
-            const selected = records.findIndex((item) => String(item.obsTime) === String(p.obsTime));
-            renderObservation(records[Math.max(selected, 0)], lat, lon, records, Math.max(selected, 0));
-          }
+          if (!records.length) return;
+          // Oldest first, so the sparkline reads left to right in time.
+          records.sort((a, b) => toMillis(Number(a.obsTime)) - toMillis(Number(b.obsTime)));
+          openStation = { history: records, lat, lon };
+          renderObservation(records, pickIndex(records), lat, lon);
         }).catch(() => {
           /* Current observation remains useful when history is unavailable. */
         });
@@ -530,6 +572,9 @@ export const surfaceObsLayer: LayerModule = {
       // need the source rebuilt; everything else is a paint/layout swap.
       const needsRebuild = s.spacing !== prev.spacing || s.maxAgeMin !== prev.maxAgeMin;
       scheduleRender(map, needsRebuild);
+      if (s.timelineUnix !== prev.timelineUnix && openStation && popup.isOpen()) {
+        renderObservation(openStation.history, pickIndex(openStation.history), openStation.lat, openStation.lon);
+      }
     });
     state.set(map, {
       raw: [],

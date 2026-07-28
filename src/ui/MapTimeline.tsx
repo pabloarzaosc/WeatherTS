@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Pause, Play, Repeat, SkipBack, SkipForward }
 
 import { useSoundingViewerStore } from "../store/useSoundingViewerStore";
 import { useAlertStore } from "../store/useAlertStore";
+import { useSurfaceObsStore } from "../store/useSurfaceObsStore";
 import { useAppStore } from "../store/useAppStore";
 import { useNexradStore } from "../store/useNexradStore";
 
@@ -109,6 +110,12 @@ export function MapTimeline() {
   // opening one releases the alerts back to live and closing it re-syncs them.
   useEffect(() => {
     useAlertStore.getState().setTimeFilter(isRadar ? selectedUnix : null);
+  }, [isRadar, selectedUnix]);
+
+  // Station popups follow the same clock. They used to carry their own scrubber,
+  // which meant two timelines on screen disagreeing about "when".
+  useEffect(() => {
+    useSurfaceObsStore.getState().setTimelineUnix(isRadar ? selectedUnix : null);
   }, [isRadar, selectedUnix]);
 
   const scrub = (h: number) => {

@@ -15,6 +15,7 @@ import App from "./App";
 import { LoginGate } from "./ui/LoginGate";
 import { useAppStore } from "./store/useAppStore";
 import { useSoundingViewerStore } from "./store/useSoundingViewerStore";
+import { useSurfaceObsStore } from "./store/useSurfaceObsStore";
 import { applyReduceMotion } from "./lib/theme";
 
 // DEV-only hook so the sounding viewer can be driven without a right-click
@@ -22,6 +23,12 @@ import { applyReduceMotion } from "./lib/theme";
 if (import.meta.env.DEV) {
   (window as unknown as { __openSounding?: (lat: number, lon: number) => void }).__openSounding = (lat, lon) =>
     useSoundingViewerStore.getState().openAt(lat, lon);
+  // Read-only handles on the stores, for checking state from the console the
+  // way __map already allows for the map.
+  (window as unknown as { __stores?: Record<string, unknown> }).__stores = {
+    app: useAppStore,
+    surfaceObs: useSurfaceObsStore,
+  };
 }
 
 // Seed per-layer UI state from the registry defaults, then apply the saved

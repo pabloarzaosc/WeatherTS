@@ -6,7 +6,6 @@ import {
   useSurfaceObsStore,
   ELEMENT_PRESETS,
   AGE_UNLIMITED,
-  GUST_HL_OFF,
   type SurfaceDisplayMode,
   type StationElements,
 } from "../../store/useSurfaceObsStore";
@@ -85,7 +84,6 @@ export function SurfaceObsView() {
   const visUnits = useSurfaceObsStore((s) => s.visUnits);
   const maxAgeMin = useSurfaceObsStore((s) => s.maxAgeMin);
   const fadeStale = useSurfaceObsStore((s) => s.fadeStale);
-  const gustHighlight = useSurfaceObsStore((s) => s.gustHighlight);
   const layerBusy = useSurfaceObsStore((s) => s.layerBusy);
   const layerError = useSurfaceObsStore((s) => s.layerError);
   const layerLastUpdatedAt = useSurfaceObsStore((s) => s.layerLastUpdatedAt);
@@ -101,7 +99,6 @@ export function SurfaceObsView() {
   const setVisUnits = useSurfaceObsStore((s) => s.setVisUnits);
   const setMaxAgeMin = useSurfaceObsStore((s) => s.setMaxAgeMin);
   const setFadeStale = useSurfaceObsStore((s) => s.setFadeStale);
-  const setGustHighlight = useSurfaceObsStore((s) => s.setGustHighlight);
 
   const stationMode = displayMode === "station";
   const activeElements = ELEMENTS.filter((e) => elements[e.key]).length;
@@ -237,25 +234,6 @@ export function SurfaceObsView() {
         </button>
       </div>
 
-      <div className="sfx__block">
-        <div className="sfx__head">
-          <span>Gust highlight</span>
-          <b>{gustHighlight === GUST_HL_OFF ? "off" : `≥ ${gustHighlight} kt`}</b>
-        </div>
-        <input
-          className="sfx__range"
-          type="range"
-          min={0}
-          max={80}
-          step={5}
-          value={gustHighlight}
-          onChange={(e) => setGustHighlight(Number(e.target.value))}
-        />
-        <div className="sfx__ends">
-          <span>Off</span>
-          <span>80 kt</span>
-        </div>
-      </div>
 
       <div className="sfx__block">
         <div className="sfx__head">

@@ -4700,28 +4700,6 @@ html[data-reduce-motion="true"] *::after {
   border-top: 1px solid var(--border);
   font: 10px var(--mono);
 }
-.surfaceobs-card__timeline {
-  margin: 0 12px 10px;
-  padding: 8px 9px 7px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.025);
-}
-.surfaceobs-card__timeline > div:first-child,
-.surfaceobs-card__timeline-labels {
-  display: flex;
-  justify-content: space-between;
-  color: var(--text-faint);
-  font: 9px var(--mono);
-  letter-spacing: .05em;
-}
-.surfaceobs-card__timeline > div:first-child b { color: var(--accent); }
-.surfaceobs-card__timeline input[type="range"] {
-  display: block;
-  width: 100%;
-  margin: 8px 0 3px;
-  accent-color: var(--accent);
-}
 
 /* ---------------- draggable HUD ---------------- */
 /* Anything the user can pick up and move. Dragging is always live, so the only
@@ -6062,94 +6040,11 @@ html[data-reduce-motion="true"] *::after {
 .layer-power.is-error .layer-power__dot { background: var(--danger); box-shadow: none; }
 .layer-power.is-error .layer-power__state { color: var(--danger); }
 
-/* ---- Watch area -----------------------------------------------------------
-   Sits at the top of the alert rail: where you are, how far you care, and
-   whether it should interrupt you. */
-.watch {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  margin: 0 0 10px;
-  padding: 11px 12px;
-  border: 1px solid var(--border);
-  border-radius: 11px;
-  background: var(--panel-2);
-}
-.watch.is-on { border-color: rgba(59, 130, 246, 0.45); background: rgba(59, 130, 246, 0.07); }
 
-.watch__head { display: flex; align-items: center; gap: 7px; color: var(--text-faint); }
-.watch__head > span {
-  flex: 1 1 auto;
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-.watch.is-on .watch__head { color: var(--accent); }
-.watch__toggle {
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-faint);
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.1em;
-}
-.watch.is-on .watch__toggle { border-color: var(--accent); color: var(--accent); }
-
-.watch__setup p { margin: 0 0 8px; font-size: 11.5px; line-height: 1.45; color: var(--text-dim); }
-.watch__row { display: flex; gap: 6px; }
-.watch__btn {
-  flex: 1 1 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 7px 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-dim);
-  font-size: 11.5px;
-}
-.watch__btn:hover { color: var(--text); border-color: rgba(190, 200, 210, 0.3); }
-
-.watch__where { display: flex; align-items: center; gap: 6px; }
-.watch__coord { flex: 1 1 auto; font-family: var(--mono); font-size: 11.5px; color: var(--text); }
-.watch__icon {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: transparent;
-  color: var(--text-faint);
-}
-.watch__icon:hover { color: var(--text); border-color: rgba(190, 200, 210, 0.3); }
-
-.watch__radii { display: flex; gap: 4px; }
-.watch__radius {
-  flex: 1 1 0;
-  padding: 5px 2px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: transparent;
-  color: var(--text-faint);
-  font-family: var(--mono);
-  font-size: 10.5px;
-}
-.watch__radius.is-on { border-color: transparent; background: var(--accent); color: #fff; }
-
-
-/* An alert reaching into the watch area. The row already colours its left edge
-   by event type, so the marker goes beside the name rather than fighting it. */
-.alert-list__row.is-watched { background: rgba(59, 130, 246, 0.08); }
-.alert-list__watched {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 6px;
-  color: var(--accent);
-  vertical-align: middle;
-}
+/* Station popup: one trace per variable, in place of the scrubber the card used
+   to carry. The main timeline decides which point is marked, so the card never
+   disagrees with the rest of the app about what time it is. */
+.sfc-metric { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sfc-spark { width: 100%; height: 22px; margin-top: 2px; overflow: visible; }
+.sfc-spark--empty { height: 22px; margin-top: 2px; }
+.surfaceobs-card__grid--wide { margin-top: 6px; }
