@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { AlertTriangle, Loader2, Radio } from "lucide-react";
 
 import { useAppStore } from "../../store/useAppStore";
+import { LayerPower } from "../LayerPower";
 import { frameChoicesFor, useNexradStore } from "../../store/useNexradStore";
 import { getMap } from "../../map/mapInstance";
 
@@ -85,13 +86,12 @@ export function RadarView() {
 
   return (
     <div className="sfcobs">
-      <div className={`sfcobs__enable${error ? " is-error" : ""}`}>
-        <span>{error ? "Radar not working" : "Enable Radar"}</span>
-        <Toggle
-          on={enabled}
-          onClick={() => setLayerVisible(LAYER, !enabled)}
-        />
-      </div>
+      <LayerPower
+        label="Radar"
+        on={enabled}
+        error={!!error}
+        onToggle={() => setLayerVisible(LAYER, !enabled)}
+      />
 
       {error && (
         <div className="sfcobs__error" role="alert">

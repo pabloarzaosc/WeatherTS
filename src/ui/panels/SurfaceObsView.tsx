@@ -1,6 +1,7 @@
 import { AlertTriangle, Loader2 } from "lucide-react";
 
 import { useAppStore } from "../../store/useAppStore";
+import { LayerPower } from "../LayerPower";
 import {
   useSurfaceObsStore,
   ELEMENT_PRESETS,
@@ -113,16 +114,12 @@ export function SurfaceObsView() {
 
   return (
     <div className="sfx">
-      <button
-        type="button"
-        className={`sfx__power${enabled ? " is-on" : ""}`}
-        aria-pressed={enabled}
-        onClick={() => setLayerVisible(LAYER, !enabled)}
-      >
-        <span className="sfx__power-dot" />
-        <span className="sfx__power-txt">Surface observations</span>
-        <span className="sfx__power-state">{enabled ? "LIVE" : "OFF"}</span>
-      </button>
+      <LayerPower
+        label="Surface observations"
+        on={enabled}
+        error={!!layerError}
+        onToggle={() => setLayerVisible(LAYER, !enabled)}
+      />
       <div className={`sfx__status${layerError ? " is-error" : ""}`}>
         {layerBusy ? (
           <>

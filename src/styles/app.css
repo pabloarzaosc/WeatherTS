@@ -3497,24 +3497,8 @@ html[data-reduce-motion="true"] *::after {
 
 /* ---------------- Surface Obs panel ---------------- */
 .sfcobs { display: flex; flex-direction: column; gap: 12px; }
-.sfcobs__enable {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel-2);
-  font-weight: 600;
-  font-size: 13px;
-  transition: border-color var(--t-fast), background var(--t-fast), color var(--t-fast);
-}
-/* Radar not working: the enable row and a banner below it go red. */
-.sfcobs__enable.is-error {
-  border-color: var(--danger-border);
-  background: var(--danger-soft);
-  color: var(--danger);
-}
+/* The old per-panel enable row lived here; both panels now share LayerPower
+   (.layer-power), so nothing referenced these any more. */
 .sfcobs__error {
   display: flex;
   align-items: center;
@@ -5468,7 +5452,7 @@ html[data-reduce-motion="true"] *::after {
    blocks, and controls that light up rather than slide. */
 .sfx { display: flex; flex-direction: column; gap: 14px; }
 
-.sfx__power {
+.layer-power {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -5480,30 +5464,30 @@ html[data-reduce-motion="true"] *::after {
   font-size: 12.5px;
   text-align: left;
 }
-.sfx__power.is-on {
+.layer-power.is-on {
   border-color: rgba(59, 130, 246, 0.45);
   background: rgba(59, 130, 246, 0.08);
   color: var(--text);
 }
-.sfx__power-dot {
+.layer-power__dot {
   flex: 0 0 auto;
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--text-faint);
 }
-.sfx__power.is-on .sfx__power-dot {
+.layer-power.is-on .layer-power__dot {
   background: var(--accent);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
 }
-.sfx__power-txt { flex: 1 1 auto; }
-.sfx__power-state {
+.layer-power__txt { flex: 1 1 auto; }
+.layer-power__state {
   font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.12em;
   color: var(--text-faint);
 }
-.sfx__power.is-on .sfx__power-state { color: var(--accent); }
+.layer-power.is-on .layer-power__state { color: var(--accent); }
 .sfx__status {
   display: inline-flex;
   align-items: center;
@@ -6067,3 +6051,13 @@ html[data-reduce-motion="true"] *::after {
   pointer-events: none;
 }
 .gate__field input::placeholder { color: var(--text-faint); opacity: 0.7; }
+
+/* A layer that cannot load reads ERROR regardless of the toggle, so the header
+   answers "why is nothing on the map" without hunting for a message below. */
+.layer-power.is-error {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+  color: var(--text);
+}
+.layer-power.is-error .layer-power__dot { background: var(--danger); box-shadow: none; }
+.layer-power.is-error .layer-power__state { color: var(--danger); }
