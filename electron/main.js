@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, Notification } from 'electron';
 import path from 'path';
 import { spawn, execFile, exec } from 'child_process';
 import fs from 'fs';
@@ -294,10 +294,33 @@ function setupAutoUpdater() {
   ipcMain.handle('backend:port', () => activeBackendPort);
 }
 
+function setupNotifications() {
+  // The renderer decides *what* is worth announcing -- it holds the watch area
+  // and the alert feed. Main only owns the OS-level part: showing the toast and
+  // getting the window back in front when it is clicked.
+  ipcMain.on('notify:alert', (_e, payload) => {
+    if (!Notification.isSupported()) return;
+    const { id, title, body } = payload ?? {};
+    if (!title) return;
+
+    const n = new Notification({ title: String(title), body: String(body ?? ''), urgency: 'critical' });
+    n.on('click', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+        mainWindow.webContents.send('notify:clicked', id ?? null);
+      }
+    });
+    n.show();
+  });
+}
+
 app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return;
   createWindow();
   setupAutoUpdater();
+  setupNotifications();
 
   // Check right away, in parallel with the backend coming up, rather than
   // waiting on the window. This almost always resolves while the splash is

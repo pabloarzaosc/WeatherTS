@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { X, Copy, AlertTriangle, ChevronLeft, Clock, MapPin, Radio, Radar } from "lucide-react";
+import { X, Copy, AlertTriangle, ChevronLeft, Clock, MapPin, Radio, Radar, Target } from "lucide-react";
 
 import { selectVisibleAlerts, useAlertStore } from "../store/useAlertStore";
 import type { AlertFeature } from "../lib/nwsAlerts";
@@ -17,6 +17,9 @@ import {
 import { useNexradStore } from "../store/useNexradStore";
 import { useAppStore } from "../store/useAppStore";
 import { getMap } from "../map/mapInstance";
+import { WatchAreaControls } from "./WatchAreaControls";
+import { alertsInArea } from "../lib/alertFocus";
+import { useWatchStore } from "../store/useWatchStore";
 import { haversine, formatDistance } from "../lib/measure";
 import type { NexradSite } from "../lib/nexrad";
 
@@ -352,6 +355,16 @@ function AlertList({
   timeFilter: number | null;
   onSelect: (id: string) => void;
 }) {
+  // Which of these are inside the watch area. Same helper the notifier uses, so
+  // a marked row and a fired toast always mean the same thing.
+  const watchEnabled = useWatchStore((s) => s.enabled);
+  const watchCenter = useWatchStore((s) => s.center);
+  const watchRadius = useWatchStore((s) => s.radiusKm);
+  const watched = useMemo(
+    () => (watchEnabled ? alertsInArea(features, watchCenter, watchRadius) : new Set<string>()),
+    [features, watchEnabled, watchCenter, watchRadius],
+  );
+
   const [filter, setFilter] = useState<AlertListFilter>("all");
   const sorted = sortAlerts(features);
   const visible = filter === "all" ? sorted : sorted.filter((feature) => alertKind(feature.alert.event) === filter);
@@ -414,11 +427,18 @@ function AlertList({
                 <button
                   key={a.id}
                   type="button"
-                  className="alert-list__row"
+                  className={`alert-list__row${watched.has(a.id) ? " is-watched" : ""}`}
                   style={{ borderLeftColor: color }}
                   onClick={() => onSelect(a.id)}
                 >
-                  <span className="alert-list__event">{a.event}</span>
+                  <span className="alert-list__event">
+                    {a.event}
+                    {watched.has(a.id) && (
+                      <span className="alert-list__watched" title="Inside your watch area">
+                        <Target size={10} />
+                      </span>
+                    )}
+                  </span>
                   {facts.map((fact) => (
                     <span key={fact.key} className="alert-list__fact">
                       <b>{fact.label}:</b> {fact.value}
@@ -543,17 +563,20 @@ export function AlertPanel() {
           ))}
         </div>
       ) : (
-        <AlertList
-          features={features}
+        <>
+          <WatchAreaControls />
+          <AlertList
+            features={features}
           status={status}
           message={message}
           now={now}
           timeFilter={timeFilter}
-          onSelect={(id) => {
-            selectMany([id]);
-            zoomToAlert(id);
-          }}
-        />
+            onSelect={(id) => {
+              selectMany([id]);
+              zoomToAlert(id);
+            }}
+          />
+        </>
       )}
     </aside>
   );

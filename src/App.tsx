@@ -6,6 +6,8 @@ import { StatusBar } from "./ui/StatusBar";
 import { ZoomControls } from "./ui/ZoomControls";
 import { MeasureTool } from "./ui/MeasureTool";
 import { AlertController } from "./ui/AlertController";
+import { WatchArea } from "./ui/WatchArea";
+import { WatchController } from "./ui/WatchController";
 import { AlertPanel } from "./ui/AlertPanel";
 import { OutlookLegend } from "./ui/OutlookLegend";
 import { MapContextMenu } from "./ui/sounding/MapContextMenu";
@@ -43,6 +45,10 @@ export default function App() {
       <MapView />
       {/* alerts orchestration (fetches NWS data; renders nothing) */}
       <AlertController />
+      {/* watch area: draws the circle on every pane, and announces alerts that
+          enter it. Both render nothing of their own. */}
+      <WatchArea />
+      <WatchController />
       {/* HUD overlay: click-through container; each child re-enables pointer events */}
       <div className="hud">
         <div className="watermark">

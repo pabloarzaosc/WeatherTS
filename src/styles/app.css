@@ -6061,3 +6061,108 @@ html[data-reduce-motion="true"] *::after {
 }
 .layer-power.is-error .layer-power__dot { background: var(--danger); box-shadow: none; }
 .layer-power.is-error .layer-power__state { color: var(--danger); }
+
+/* ---- Watch area -----------------------------------------------------------
+   Sits at the top of the alert rail: where you are, how far you care, and
+   whether it should interrupt you. */
+.watch {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 0 0 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--panel-2);
+}
+.watch.is-on { border-color: rgba(59, 130, 246, 0.45); background: rgba(59, 130, 246, 0.07); }
+
+.watch__head { display: flex; align-items: center; gap: 7px; color: var(--text-faint); }
+.watch__head > span {
+  flex: 1 1 auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.watch.is-on .watch__head { color: var(--accent); }
+.watch__toggle {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+}
+.watch.is-on .watch__toggle { border-color: var(--accent); color: var(--accent); }
+
+.watch__setup p { margin: 0 0 8px; font-size: 11.5px; line-height: 1.45; color: var(--text-dim); }
+.watch__row { display: flex; gap: 6px; }
+.watch__btn {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+.watch__btn:hover { color: var(--text); border-color: rgba(190, 200, 210, 0.3); }
+
+.watch__where { display: flex; align-items: center; gap: 6px; }
+.watch__coord { flex: 1 1 auto; font-family: var(--mono); font-size: 11.5px; color: var(--text); }
+.watch__icon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-faint);
+}
+.watch__icon:hover { color: var(--text); border-color: rgba(190, 200, 210, 0.3); }
+
+.watch__radii { display: flex; gap: 4px; }
+.watch__radius {
+  flex: 1 1 0;
+  padding: 5px 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+.watch__radius.is-on { border-color: transparent; background: var(--accent); color: #fff; }
+
+.watch__notify {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+.watch__notify.is-on { border-color: rgba(59, 130, 246, 0.5); color: var(--accent); }
+
+/* An alert reaching into the watch area. The row already colours its left edge
+   by event type, so the marker goes beside the name rather than fighting it. */
+.alert-list__row.is-watched { background: rgba(59, 130, 246, 0.08); }
+.alert-list__watched {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  color: var(--accent);
+  vertical-align: middle;
+}

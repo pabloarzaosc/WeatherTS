@@ -306,6 +306,58 @@ export function alertCentroid(geometry: GeoJSON.Geometry | null): [number, numbe
  * north]], for framing it with map.fitBounds. Null when the alert has no
  * drawable geometry (zone-only alerts before their zones are enriched).
  */
+const EARTH_KM = 6371;
+
+/** Great-circle distance in km between two [lon, lat] points. */
+export function distanceKm(a: [number, number], b: [number, number]): number {
+  const rad = Math.PI / 180;
+  const dLat = (b[1] - a[1]) * rad;
+  const dLon = (b[0] - a[0]) * rad;
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(a[1] * rad) * Math.cos(b[1] * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * EARTH_KM * Math.asin(Math.sqrt(s));
+}
+
+/** Ray casting in lon/lat. Fine at alert scale, where a polygon spans degrees. */
+function pointInRing(pt: [number, number], ring: GeoJSON.Position[]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    const crosses = yi > pt[1] !== yj > pt[1];
+    if (crosses && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Whether an alert's footprint comes within `km` of a point.
+ *
+ * Deliberately not a centroid test: a warning covering half a state can be
+ * hundreds of kilometres wide, so its centre may sit far outside a watch radius
+ * that the polygon itself overlaps. Checks containment first, then the closest
+ * vertex -- for shapes this size that is close enough, and it never reports a
+ * near miss as a hit.
+ */
+export function alertWithinKm(
+  geometry: GeoJSON.Geometry | null,
+  center: [number, number],
+  km: number,
+): boolean {
+  const polys = polygonCoordinates(geometry);
+  if (polys.length === 0) return false;
+  for (const rings of polys) {
+    const outer = rings[0];
+    if (!outer || outer.length === 0) continue;
+    if (pointInRing(center, outer)) return true;
+    for (const v of outer) {
+      if (distanceKm(center, [v[0], v[1]]) <= km) return true;
+    }
+  }
+  return false;
+}
+
 export function alertBounds(
   geometry: GeoJSON.Geometry | null,
 ): [[number, number], [number, number]] | null {
