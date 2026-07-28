@@ -8,6 +8,7 @@ import {
   alertCentroid,
   alertPriority,
   alertSummaryFacts,
+  alertsInArea,
   eventColor,
   humanAlertParameters,
   param,
@@ -18,7 +19,6 @@ import { useNexradStore } from "../store/useNexradStore";
 import { useAppStore } from "../store/useAppStore";
 import { getMap } from "../map/mapInstance";
 import { WatchAreaControls } from "./WatchAreaControls";
-import { alertsInArea } from "../lib/alertFocus";
 import { useWatchStore } from "../store/useWatchStore";
 import { haversine, formatDistance } from "../lib/measure";
 import type { NexradSite } from "../lib/nexrad";

@@ -27,11 +27,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Pull model, so an update found before the banner mounted is not lost.
   getPendingUpdate: () => ipcRenderer.invoke('update:pending'),
 
-  // Desktop notifications for watched alerts. The id round-trips so a click can
-  // take the user to the exact alert that fired.
-  notifyAlert: (payload) => ipcRenderer.send('notify:alert', payload),
-  onNotificationClick: (cb) => ipcRenderer.on('notify:clicked', (_e, id) => cb(id)),
-
   getVersion: () => ipcRenderer.invoke('app:version'),
   getBackendPort: () => ipcRenderer.invoke('backend:port'),
 });

@@ -17,18 +17,12 @@ export interface WatchSettings {
   /** [lon, lat], or null until the user picks a spot. */
   center: [number, number] | null;
   radiusKm: number;
-  /** Fire desktop notifications for alerts entering the area. */
-  notify: boolean;
-  /** Only notify at or above this priority; lower ones still highlight. */
-  minPriority: number;
 }
 
 const DEFAULTS: WatchSettings = {
   enabled: false,
   center: null,
   radiusKm: 150,
-  notify: true,
-  minPriority: 0,
 };
 
 function load(): WatchSettings {
@@ -58,8 +52,6 @@ function save(s: WatchSettings): void {
         enabled: s.enabled,
         center: s.center,
         radiusKm: s.radiusKm,
-        notify: s.notify,
-        minPriority: s.minPriority,
       }),
     );
   } catch {
@@ -73,8 +65,6 @@ interface WatchState extends WatchSettings {
   setEnabled: (v: boolean) => void;
   setCenter: (c: [number, number] | null) => void;
   setRadiusKm: (km: number) => void;
-  setNotify: (v: boolean) => void;
-  setMinPriority: (p: number) => void;
   setPicking: (v: boolean) => void;
 }
 
@@ -86,8 +76,6 @@ export const useWatchStore = create<WatchState>((set, get) => {
       enabled: s.enabled,
       center: s.center,
       radiusKm: s.radiusKm,
-      notify: s.notify,
-      minPriority: s.minPriority,
     });
   };
 
@@ -98,8 +86,6 @@ export const useWatchStore = create<WatchState>((set, get) => {
     // Picking a spot is only ever done to use it, so turn the area on with it.
     setCenter: (center) => persist(center ? { center, enabled: true } : { center }),
     setRadiusKm: (radiusKm) => persist({ radiusKm }),
-    setNotify: (notify) => persist({ notify }),
-    setMinPriority: (minPriority) => persist({ minPriority }),
     setPicking: (picking) => set({ picking }),
   };
 });

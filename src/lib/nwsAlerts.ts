@@ -358,6 +358,20 @@ export function alertWithinKm(
   return false;
 }
 
+/** Ids of the alerts whose footprint reaches into a watch circle. */
+export function alertsInArea(
+  features: { alert: { id: string }; geometry: GeoJSON.Geometry | null }[],
+  center: [number, number] | null,
+  radiusKm: number,
+): Set<string> {
+  const hits = new Set<string>();
+  if (!center) return hits;
+  for (const f of features) {
+    if (alertWithinKm(f.geometry, center, radiusKm)) hits.add(f.alert.id);
+  }
+  return hits;
+}
+
 export function alertBounds(
   geometry: GeoJSON.Geometry | null,
 ): [[number, number], [number, number]] | null {

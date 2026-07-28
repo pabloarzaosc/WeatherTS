@@ -24,6 +24,12 @@ function circle(center: [number, number], radiusKm: number, steps = 96): GeoJSON
   return { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [ring] } };
 }
 
+/**
+ * The source is the only thing that decides whether the circle shows: with no
+ * centre, or the area switched off, it is simply empty. Toggling layer
+ * visibility as well meant two answers to one question, and they drifted --
+ * clearing the centre left the layers flagged visible over empty data.
+ */
 function data(center: [number, number] | null, radiusKm: number): GeoJSON.FeatureCollection {
   if (!center) return { type: "FeatureCollection", features: [] };
   return {
@@ -48,11 +54,14 @@ export function WatchArea() {
   // Draw on every pane, not just the focused one: a split view showing the same
   // storm from two angles should show the area in both.
   useEffect(() => {
+    // Off or unset both mean "draw nothing", so collapse them here once.
+    const shown = enabled ? center : null;
+
     const paint = () => {
       for (const map of allMaps()) {
         if (!map.isStyleLoaded()) continue;
         if (!map.getSource(SRC)) {
-          map.addSource(SRC, { type: "geojson", data: data(center, radiusKm) });
+          map.addSource(SRC, { type: "geojson", data: data(shown, radiusKm) });
           map.addLayer({
             id: L_FILL,
             type: "fill",
@@ -80,11 +89,7 @@ export function WatchArea() {
             },
           });
         } else {
-          (map.getSource(SRC) as GeoJSONSource).setData(data(center, radiusKm));
-        }
-        const vis = enabled && center ? "visible" : "none";
-        for (const id of [L_FILL, L_LINE, L_DOT]) {
-          if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", vis);
+          (map.getSource(SRC) as GeoJSONSource).setData(data(shown, radiusKm));
         }
       }
     };

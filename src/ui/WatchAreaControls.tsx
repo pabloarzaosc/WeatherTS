@@ -1,4 +1,4 @@
-import { Bell, BellOff, Crosshair, Target, X } from "lucide-react";
+import { Crosshair, Target, X } from "lucide-react";
 
 import { getMap } from "../map/mapInstance";
 import { useWatchStore } from "../store/useWatchStore";
@@ -10,12 +10,10 @@ export function WatchAreaControls() {
   const enabled = useWatchStore((s) => s.enabled);
   const center = useWatchStore((s) => s.center);
   const radiusKm = useWatchStore((s) => s.radiusKm);
-  const notify = useWatchStore((s) => s.notify);
   const picking = useWatchStore((s) => s.picking);
   const setEnabled = useWatchStore((s) => s.setEnabled);
   const setCenter = useWatchStore((s) => s.setCenter);
   const setRadiusKm = useWatchStore((s) => s.setRadiusKm);
-  const setNotify = useWatchStore((s) => s.setNotify);
   const setPicking = useWatchStore((s) => s.setPicking);
 
   const useMapCentre = () => {
@@ -42,7 +40,7 @@ export function WatchAreaControls() {
 
       {!center ? (
         <div className="watch__setup">
-          <p>Pick a spot and you will be told when severe weather moves into it.</p>
+          <p>Pick a spot to highlight the alerts that reach it.</p>
           <div className="watch__row">
             <button type="button" className="watch__btn" onClick={() => setPicking(!picking)}>
               <Crosshair size={12} /> {picking ? "Click the map…" : "Pick on map"}
@@ -91,16 +89,6 @@ export function WatchAreaControls() {
               </button>
             ))}
           </div>
-
-          <button
-            type="button"
-            className={`watch__notify${notify ? " is-on" : ""}`}
-            aria-pressed={notify}
-            onClick={() => setNotify(!notify)}
-          >
-            {notify ? <Bell size={12} /> : <BellOff size={12} />}
-            {notify ? "Desktop alerts on" : "Desktop alerts off"}
-          </button>
         </>
       )}
     </section>
