@@ -161,6 +161,15 @@ def _feature_from_metar(m: dict) -> Optional[dict]:
             "altim": altim,
             "visib": _visib_num(visib),
             "cover": cover,
+            # The individual layers, not just the densest one: "SCT 4500 /
+            # SCT 6500" is what a forecaster reads, and the single worst cover
+            # throws the bases away.
+            "clouds": _clouds(m.get("clouds")),
+            # Present weather (rain, snow, fog...) as reported.
+            "wx": m.get("wxString") or None,
+            # The untouched report. Everything above is derived from it, so
+            # having it on hand is what lets someone check our decoding.
+            "raw": m.get("rawOb") or None,
             "rh": _rh(temp, dewp),
             "thetae": _theta_e(temp, dewp, altim),
             "obsTime": m.get("obsTime"),
@@ -179,6 +188,22 @@ def _timestamp_value(value: Any) -> Optional[float]:
             return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
         except ValueError:
             return None
+
+
+def _clouds(clouds) -> list[dict]:
+    """Reported cloud layers, lowest first, dropping anything without a cover."""
+    if not isinstance(clouds, list):
+        return []
+    out = []
+    for c in clouds:
+        if not isinstance(c, dict):
+            continue
+        cov = c.get("cover")
+        if not cov:
+            continue
+        out.append({"cover": cov, "base": _num(c.get("base"))})
+    out.sort(key=lambda c: (c["base"] is None, c["base"] or 0))
+    return out
 
 
 def _top_cover(clouds) -> Optional[str]:

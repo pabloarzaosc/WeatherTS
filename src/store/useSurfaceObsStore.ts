@@ -52,10 +52,6 @@ interface SurfaceObsState {
   maxAgeMin: number;
   /** Draw surviving-but-ageing observations dimmed rather than at full strength. */
   fadeStale: boolean;
-  /** The instant the main timeline is parked on, in unix seconds, or null when
-   *  it is live. The station popup reads it so one clock drives the whole app
-   *  rather than each panel keeping its own scrubber. */
-  timelineUnix: number | null;
   /** Layer fetch state for UI feedback in the Surface Obs panel. */
   layerBusy: boolean;
   layerError: string | null;
@@ -72,7 +68,6 @@ interface SurfaceObsState {
   setVisUnits: (u: VisUnit) => void;
   setMaxAgeMin: (m: number) => void;
   setFadeStale: (v: boolean) => void;
-  setTimelineUnix: (t: number | null) => void;
   setLayerStatus: (next: { busy?: boolean; error?: string | null; lastUpdatedAt?: number | null }) => void;
 }
 
@@ -128,7 +123,6 @@ export const useSurfaceObsStore = create<SurfaceObsState>((set) => ({
 
   maxAgeMin: 180,
   fadeStale: true,
-  timelineUnix: null,
   layerBusy: false,
   layerError: null,
   layerLastUpdatedAt: null,
@@ -144,7 +138,6 @@ export const useSurfaceObsStore = create<SurfaceObsState>((set) => ({
   setVisUnits: (visUnits) => set({ visUnits }),
   setMaxAgeMin: (maxAgeMin) => set({ maxAgeMin }),
   setFadeStale: (fadeStale) => set({ fadeStale }),
-  setTimelineUnix: (timelineUnix) => set({ timelineUnix }),
   setLayerStatus: (next) =>
     set((s) => ({
       layerBusy: "busy" in next ? Boolean(next.busy) : s.layerBusy,

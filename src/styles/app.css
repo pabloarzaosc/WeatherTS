@@ -6041,10 +6041,102 @@ html[data-reduce-motion="true"] *::after {
 .layer-power.is-error .layer-power__state { color: var(--danger); }
 
 
-/* Station popup: one trace per variable, in place of the scrubber the card used
-   to carry. The main timeline decides which point is marked, so the card never
-   disagrees with the rest of the app about what time it is. */
-.sfc-metric { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.sfc-spark { width: 100%; height: 22px; margin-top: 2px; overflow: visible; }
-.sfc-spark--empty { height: 22px; margin-top: 2px; }
-.surfaceobs-card__grid--wide { margin-top: 6px; }
+
+/* ---- Station popup --------------------------------------------------------
+   METAR for one station: the current reading as cards, the chosen one charted
+   over its own history window, then the decoded sky and the report it all came
+   from. Its own range picker, so reading a station never moves the map's clock. */
+.sfc-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 10px; }
+.sfc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-2);
+  text-align: left;
+}
+.sfc-card:hover { border-color: rgba(190, 200, 210, 0.3); }
+.sfc-card.is-on { border-color: rgba(59, 130, 246, 0.55); background: rgba(59, 130, 246, 0.1); }
+.sfc-card > span {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.sfc-card > b { font-size: 14px; font-weight: 650; color: var(--text); }
+.sfc-card > i { font-style: normal; font-size: 10px; color: var(--text-faint); }
+
+.sfc-sec {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+}
+.sfc-sec > span {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.sfc-ranges { display: flex; gap: 3px; }
+.sfc-range {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.sfc-range.is-on { border-color: transparent; background: var(--accent); color: #fff; }
+
+.sfc-chart__wrap { margin-top: 8px; }
+.sfc-chart__title { font-size: 11px; color: var(--text-dim); margin-bottom: 3px; }
+.sfc-chart { width: 100%; height: 112px; display: block; }
+.sfc-chart__grid { stroke: var(--border); stroke-width: 1; }
+.sfc-chart__ylab { fill: var(--text-faint); font-size: 8px; font-family: var(--mono); text-anchor: end; }
+.sfc-chart__xlab { fill: var(--text-faint); font-size: 8px; font-family: var(--mono); }
+.sfc-chart__empty { padding: 18px 0; text-align: center; font-size: 11px; color: var(--text-faint); }
+
+.sfc-sky { display: flex; flex-direction: column; gap: 3px; margin-top: 7px; }
+.sfc-sky__row { display: flex; align-items: baseline; justify-content: space-between; font-size: 12px; color: var(--text-dim); }
+.sfc-sky__row b { font-family: var(--mono); font-size: 11.5px; color: var(--text); font-weight: 600; }
+
+.sfc-wx {
+  margin-top: 8px;
+  padding: 5px 9px;
+  border-radius: 7px;
+  background: rgba(246, 185, 59, 0.14);
+  color: #f6b93b;
+  font-size: 11.5px;
+}
+
+.sfc-copy {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+.sfc-copy:hover { color: var(--text); border-color: rgba(190, 200, 210, 0.3); }
+.sfc-raw {
+  margin: 7px 0 0;
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

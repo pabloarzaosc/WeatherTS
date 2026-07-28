@@ -15,6 +15,12 @@ export interface SurfaceObsProps {
   altim: number | null; // mb
   visib: number | null; // sm
   cover: string | null;
+  /** Reported layers, lowest first. The single `cover` is only the densest. */
+  clouds: { cover: string; base: number | null }[] | null;
+  /** Present weather as reported (rain, fog, thunder...), null when clear. */
+  wx: string | null;
+  /** The untouched METAR text everything else here was decoded from. */
+  raw: string | null;
   rh: number | null;
   thetae: number | null;
   obsTime: number | null;
@@ -46,6 +52,12 @@ export interface SurfaceObsHistory {
   altim: number | null;
   visib: number | null;
   cover: string | null;
+  /** Reported layers, lowest first. The single `cover` is only the densest. */
+  clouds: { cover: string; base: number | null }[] | null;
+  /** Present weather as reported (rain, fog, thunder...), null when clear. */
+  wx: string | null;
+  /** The untouched METAR text everything else here was decoded from. */
+  raw: string | null;
   rh: number | null;
 }
 
