@@ -1,12 +1,15 @@
 import maplibregl, { type GeoJSONSource, type Map as MapLibreMap, type MapLayerMouseEvent } from "maplibre-gl";
 import type { LayerModule } from "../types";
 import {
-  fetchSurfaceHistory,
   fetchSurfaceObs,
   type SurfaceObsFC,
   type SurfaceObsProps,
 } from "../../lib/surfaceObs";
 import { barbKey, registerStationIcons } from "../../lib/stationPlot";
+import { compassPoint, relativeTime } from "../../lib/metar";
+import { useAppStore } from "../../store/useAppStore";
+import { useNexradStore } from "../../store/useNexradStore";
+import { useStationStore } from "../../store/useStationStore";
 import {
   useSurfaceObsStore,
   AGE_UNLIMITED,
@@ -97,6 +100,12 @@ function buildDisplay(f: GeoJSON.Feature<GeoJSON.Point, SurfaceObsProps>) {
       altim: p.altim,
       visib: p.visib,
       cover,
+      // Carried so the station panel has a full report the moment it opens,
+      // before its history request lands. MapLibre serialises the array to a
+      // string in feature properties; parseClouds takes either form.
+      clouds: JSON.stringify(p.clouds ?? []),
+      wx: p.wx ?? null,
+      raw: p.raw ?? null,
       rh: p.rh,
       obsTime: p.obsTime,
     },
@@ -425,198 +434,86 @@ export const surfaceObsLayer: LayerModule = {
     // "close" event: setHTML(...).addTo() removes and re-adds, which fires close
     // on every redraw and would wipe this the first time it ran. popup.isOpen()
     // is asked at use instead.
-    let openStation: {
-      station: string;
-      history: Array<Record<string, any>>;
-      lat: number;
-      lon: number;
-      hours: number;
-      metric: string;
-    } | null = null;
+    let openStation: { props: Record<string, any>; lat: number; lon: number } | null = null;
 
     const escHtml = (value: unknown) =>
       String(value ?? "—").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
-    const parseObsDate = (value: unknown): Date | null => {
-      if (value == null || value === "") return null;
-      const numeric = Number(value);
-      if (Number.isFinite(numeric)) {
-        const ms = numeric > 10_000_000_000 ? numeric : numeric * 1000;
-        const date = new Date(ms);
-        if (!Number.isNaN(date.getTime())) return date;
-      }
-      const date = new Date(String(value));
-      return Number.isNaN(date.getTime()) ? null : date;
-    };
-    const formatObsDate = (value: unknown) => {
-      const date = parseObsDate(value);
-      return date
-        ? date.toLocaleString([], { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
-        : "Latest observation";
-    };
-    type Metric = { key: string; label: string; unit: string; color: string };
-    const METRICS: Metric[] = [
-      { key: "temp", label: "Temperature", unit: "\u00b0C", color: "#ff6b5e" },
-      { key: "dewp", label: "Dew point", unit: "\u00b0C", color: "#4ade80" },
-      { key: "rh", label: "Humidity", unit: "%", color: "#38bdf8" },
-      { key: "wspd", label: "Wind", unit: "kt", color: "#e8edf4" },
-      { key: "altim", label: "Pressure", unit: "mb", color: "#9fb4d6" },
-      { key: "visib", label: "Visibility", unit: "mi", color: "#c7d2e4" },
-    ];
-
     const num = (v: unknown): number | null => {
       const n = Number(v);
       return v == null || v === "" || !Number.isFinite(n) ? null : n;
     };
 
-    const COMPASS = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
-    const compass = (deg: number | null) => (deg == null ? "" : COMPASS[Math.round(deg / 22.5) % 16]);
-
-    const SKY_WORDS: Record<string, string> = {
-      SKC: "Clear", CLR: "Clear", FEW: "Few", SCT: "Scattered", BKN: "Broken", OVC: "Overcast",
-    };
-
-    const hhmm = (unix: unknown) => {
-      const d = parseObsDate(unix);
-      return d ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
-    };
-
     /**
-     * The selected metric over the loaded window, with axes. Inline SVG because
-     * the popup is raw HTML handed to MapLibre -- there is no React in here, and
-     * a chart library would be a lot of weight for one line and four labels.
+     * The compact card the map shows on click: the four readings someone is
+     * usually after, the nearest radars, and a way into the full report. Kept
+     * small on purpose -- charts and the raw text live in the station panel,
+     * which has room for them.
      */
-    const chart = (history: Array<Record<string, any>>, metric: Metric): string => {
-      const pts = history
-        .map((h, i) => ({ i, v: num(h[metric.key]) }))
-        .filter((o) => o.v != null) as { i: number; v: number }[];
-      if (pts.length < 2) {
-        return `<div class="sfc-chart__empty">Not enough history for ${escHtml(metric.label.toLowerCase())}</div>`;
-      }
-      const W = 300, H = 112, L = 36, R = 6, T = 8, B = 18;
-      const n = history.length - 1 || 1;
-      let lo = Math.min(...pts.map((o) => o.v));
-      let hi = Math.max(...pts.map((o) => o.v));
-      if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
-      // Round the axis outwards so the labels read as numbers a person would
-      // pick, not 23.87.
-      const step = Math.pow(10, Math.floor(Math.log10(hi - lo))) / 2;
-      lo = Math.floor(lo / step) * step;
-      hi = Math.ceil(hi / step) * step;
-      const X = (i: number) => L + (i / n) * (W - L - R);
-      const Y = (v: number) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
-      const d = pts.map((o, k) => `${k ? "L" : "M"}${X(o.i).toFixed(1)},${Y(o.v).toFixed(1)}`).join("");
-      const last = pts[pts.length - 1];
-      const area = `${d}L${X(last.i).toFixed(1)},${(H - B).toFixed(1)}L${X(pts[0].i).toFixed(1)},${(H - B).toFixed(1)}Z`;
-      const dec = step < 1 ? 1 : 0;
-      const grid = [hi, (hi + lo) / 2, lo].map((v) => `
-        <line x1="${L}" y1="${Y(v).toFixed(1)}" x2="${W - R}" y2="${Y(v).toFixed(1)}" class="sfc-chart__grid"/>
-        <text x="${L - 5}" y="${(Y(v) + 3).toFixed(1)}" class="sfc-chart__ylab">${v.toFixed(dec)}</text>`).join("");
-      const marks = [0, Math.floor(n / 2), n];
-      const xlabs = marks.map((i, k) => `
-        <text x="${X(i).toFixed(1)}" y="${H - 5}" class="sfc-chart__xlab" text-anchor="${k === 0 ? "start" : k === 2 ? "end" : "middle"}">${escHtml(hhmm(history[i]?.obsTime))}</text>`).join("");
-      return `<svg class="sfc-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escHtml(metric.label)} history">
-        ${grid}${xlabs}
-        <path d="${area}" fill="${metric.color}" opacity="0.10"/>
-        <path d="${d}" fill="none" stroke="${metric.color}" stroke-width="1.6"/>
-      </svg>`;
-    };
-
-    const RANGES = [6, 12, 24];
-
     const render = () => {
       const st = openStation;
       if (!st) return;
-      const p = st.history[st.history.length - 1] ?? {};
-      const metric = METRICS.find((mm) => mm.key === st.metric) ?? METRICS[0];
+      const p = st.props;
+      const temp = num(p.temp);
+      const dewp = num(p.dewp);
+      const wspd = num(p.wspd);
       const wdir = num(p.wdir);
+      const altim = num(p.altim);
+      const sites = nearestRadars([st.lon, st.lat]);
 
-      const cards = METRICS.map((mm) => {
-        const v = num(p[mm.key]);
-        const extra =
-          mm.key === "wspd" && wdir != null ? `<i>${escHtml(compass(wdir))} ${wdir}\u00b0</i>` :
-          mm.key === "altim" && v != null ? `<i>${(v * 0.0295299830714).toFixed(2)} inHg</i>` : "";
-        return `<button type="button" class="sfc-card${mm.key === metric.key ? " is-on" : ""}" data-metric="${mm.key}">
-          <span>${escHtml(mm.label)}</span>
-          <b>${v == null ? "\u2014" : `${v}${mm.unit === "%" ? "" : " "}${mm.unit}`}</b>
-          ${extra}
-        </button>`;
-      }).join("");
-
-      const clouds: Array<{ cover: string; base: number | null }> = Array.isArray(p.clouds)
-        ? p.clouds
-        : (() => { try { return JSON.parse(String(p.clouds ?? "[]")); } catch { return []; } })();
-      const sky = clouds.length
-        ? clouds.map((c) => `<div class="sfc-sky__row"><span>${escHtml(SKY_WORDS[c.cover] ?? c.cover)}</span><b>${c.base == null ? "\u2014" : `${Math.round(c.base).toLocaleString()} ft`}</b></div>`).join("")
-        : `<div class="sfc-sky__row"><span>${escHtml(SKY_WORDS[String(p.cover)] ?? "No layers reported")}</span><b></b></div>`;
+      const row = (label: string, value: string) =>
+        `<div class="sfc-mini__row"><span>${escHtml(label)}</span><b>${value}</b></div>`;
 
       popup.setHTML(`
-        <div class="surfaceobs-card">
-          <div class="surfaceobs-card__head">
-            <div><b>${escHtml(p.id || p.idTxt || "METAR station")}</b><span>${escHtml(p.name || p.nameTxt || "Surface observation")}</span></div>
-          </div>
-          <div class="surfaceobs-card__status">Observed ${escHtml(formatObsDate(p.obsTime))}</div>
-          ${p.wx ? `<div class="sfc-wx">${escHtml(p.wx)}</div>` : ""}
-
-          <div class="sfc-cards">${cards}</div>
-
-          <div class="sfc-sec">
-            <span>History</span>
-            <div class="sfc-ranges">${RANGES.map((h) => `<button type="button" class="sfc-range${h === st.hours ? " is-on" : ""}" data-hours="${h}">${h}h</button>`).join("")}</div>
-          </div>
-          <div class="sfc-chart__wrap">
-            <div class="sfc-chart__title">${escHtml(metric.label)} (${escHtml(metric.unit)})</div>
-            ${chart(st.history, metric)}
-          </div>
-
-          <div class="sfc-sec"><span>Sky</span></div>
-          <div class="sfc-sky">${sky}</div>
-
-          ${p.raw ? `<div class="sfc-sec"><span>Raw METAR</span><button type="button" class="sfc-copy" data-copy="1">Copy</button></div>
-          <pre class="sfc-raw">${escHtml(p.raw)}</pre>` : ""}
-
-          <div class="surfaceobs-card__foot">${st.lat.toFixed(3)}\u00b0, ${st.lon.toFixed(3)}\u00b0</div>
+        <div class="sfc-mini">
+          <button type="button" class="sfc-mini__open" data-open="1" title="Full report">
+            <div class="sfc-mini__head">
+              <b>METAR ${escHtml(p.idTxt || p.id || "station")}</b>
+              <span>${escHtml(relativeTime(num(p.obsTime)))}</span>
+            </div>
+            <div class="sfc-mini__rows">
+              ${row("Temperature", temp == null ? "\u2014" : `${temp} \u00b0C`)}
+              ${row("Dewpoint", dewp == null ? "\u2014" : `${dewp} \u00b0C`)}
+              ${row("Wind", wspd == null ? "\u2014" : `${compassPoint(wdir)} ${wspd} kt`)}
+              ${row("Pressure", altim == null ? "\u2014" : `${Math.round(altim)} hPa`)}
+            </div>
+            <span class="sfc-mini__more">Full report</span>
+          </button>
+          ${sites.length ? `<div class="sfc-mini__radars">${sites
+            .map((r) => `<button type="button" class="sfc-mini__radar" data-site="${escHtml(r.id)}">${escHtml(r.icao)}</button>`)
+            .join("")}</div>` : ""}
         </div>
       `).addTo(map);
 
       const el = popup.getElement();
-      el?.querySelectorAll<HTMLElement>("[data-metric]").forEach((b) =>
-        b.addEventListener("click", () => {
-          if (openStation) { openStation.metric = b.dataset.metric!; render(); }
-        }),
-      );
-      el?.querySelectorAll<HTMLElement>("[data-hours]").forEach((b) =>
-        b.addEventListener("click", () => {
-          const h = Number(b.dataset.hours);
-          if (!openStation || openStation.hours === h) return;
-          openStation.hours = h;
-          render();
-          void loadHistory(openStation.station, h);
-        }),
-      );
-      el?.querySelector<HTMLElement>("[data-copy]")?.addEventListener("click", (ev) => {
-        const btn = ev.currentTarget as HTMLElement;
-        void navigator.clipboard
-          ?.writeText(String(p.raw ?? ""))
-          .then(() => {
-            btn.textContent = "Copied";
-            window.setTimeout(() => { btn.textContent = "Copy"; }, 1400);
-          })
-          .catch(() => { btn.textContent = "Copy failed"; });
+      el?.querySelector<HTMLElement>("[data-open]")?.addEventListener("click", () => {
+        if (!openStation) return;
+        useStationStore.getState().open({
+          id: String(openStation.props.idTxt || openStation.props.id || ""),
+          name: (openStation.props.nameTxt as string) || (openStation.props.name as string) || null,
+          lat: openStation.lat,
+          lon: openStation.lon,
+          current: openStation.props,
+        });
+        popup.remove();
       });
+      el?.querySelectorAll<HTMLElement>("[data-site]").forEach((b) =>
+        b.addEventListener("click", () => {
+          const id = b.dataset.site!;
+          useAppStore.getState().setLayerVisible("nexrad", true);
+          useNexradStore.getState().selectSite(id);
+        }),
+      );
     };
 
-    const loadHistory = async (station: string, hours: number) => {
-      if (!station) return;
-      try {
-        const rows = await fetchSurfaceHistory(station, hours);
-        if (!rows.length || !openStation || openStation.station !== station) return;
-        const records = rows.map((r) => ({ ...r })) as Array<Record<string, any>>;
-        records.sort((a, b) => toMillis(Number(a.obsTime)) - toMillis(Number(b.obsTime)));
-        openStation.history = records;
-        render();
-      } catch {
-        /* The clicked observation stays useful when history is unavailable. */
-      }
+    /** The two closest online sites, so the radar under a station is one click
+     *  away. The catalog loads lazily, so this is empty until it arrives. */
+    const nearestRadars = (at: [number, number]) => {
+      const { sites } = useNexradStore.getState();
+      return sites
+        .filter((r) => r.online !== false && Number.isFinite(r.lat) && Number.isFinite(r.lon))
+        .map((r) => ({ ...r, d: (r.lat - at[1]) ** 2 + ((r.lon - at[0]) * Math.cos((at[1] * Math.PI) / 180)) ** 2 }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, 2);
     };
 
     const onClick = (e: MapLayerMouseEvent) => {
@@ -625,20 +522,11 @@ export const surfaceObsLayer: LayerModule = {
       const p = f.properties ?? {};
       const [lon, lat] = f.geometry.coordinates as [number, number];
       popup.setLngLat([lon, lat]);
-      const station = String(p.idTxt || "");
-      const current = { ...p, id: p.idTxt, name: p.nameTxt, lat, lon };
-      // Keep whichever range and metric were last chosen: someone comparing
-      // stations should not have to set them again at every click.
-      openStation = {
-        station,
-        history: [current],
-        lat,
-        lon,
-        hours: openStation?.hours ?? 24,
-        metric: openStation?.metric ?? "temp",
-      };
+      openStation = { props: { ...p, id: p.idTxt, name: p.nameTxt }, lat, lon };
+      // The catalog is loaded lazily by the radar panel; pull it in so the
+      // nearest-radar chips work even if radar was never opened.
+      void useNexradStore.getState().loadCatalog().then(render);
       render();
-      void loadHistory(station, openStation.hours);
     };
     for (const id of [L_SKY, L_BARB, L_TEMP, L_DEWP, L_PRES, L_ID, L_SINGLE, L_GUST, L_VIS, L_CALM]) {
       map.on("click", id, onClick);

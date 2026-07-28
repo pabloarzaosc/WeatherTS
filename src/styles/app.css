@@ -6042,51 +6042,160 @@ html[data-reduce-motion="true"] *::after {
 
 
 
-/* ---- Station popup --------------------------------------------------------
-   METAR for one station: the current reading as cards, the chosen one charted
-   over its own history window, then the decoded sky and the report it all came
-   from. Its own range picker, so reading a station never moves the map's clock. */
-.sfc-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 10px; }
-.sfc-card {
+
+/* ---- Station: compact map card -------------------------------------------
+   What the map shows on click. Four readings and the radars overhead, with the
+   whole card acting as the way into the full report -- the detail needs more
+   room than a popup anchored to a point can give it. */
+.sfc-mini { display: flex; flex-direction: column; gap: 7px; min-width: 214px; }
+.sfc-mini__open {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+.sfc-mini__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.sfc-mini__head b { font-family: var(--mono); font-size: 12.5px; color: var(--text); letter-spacing: 0.04em; }
+.sfc-mini__head span { font-size: 10px; color: var(--text-faint); }
+.sfc-mini__rows { display: flex; flex-direction: column; gap: 3px; }
+.sfc-mini__row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.sfc-mini__row span { font-size: 11.5px; color: var(--text-dim); }
+.sfc-mini__row b { font-family: var(--mono); font-size: 12px; color: var(--text); font-weight: 600; }
+.sfc-mini__more {
+  align-self: flex-start;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.sfc-mini__open:hover .sfc-mini__more { text-decoration: underline; }
+.sfc-mini__radars { display: flex; gap: 5px; padding-top: 6px; border-top: 1px solid var(--border); }
+.sfc-mini__radar {
+  flex: 1 1 0;
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.sfc-mini__radar:hover { border-color: rgba(59, 130, 246, 0.5); color: var(--accent); }
+
+/* ---- Station: full METAR report ------------------------------------------ */
+.stp {
+  position: fixed;
+  inset: 0;
+  z-index: 125;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.stp__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 8, 11, 0.7);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+.stp__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(420px, 100%);
+  max-height: 86vh;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel-solid);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  animation: fade-up var(--t) var(--ease-out) both;
+}
+.stp__top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 15px 16px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.stp__top > div { flex: 1 1 auto; min-width: 0; }
+.stp__top h2 { margin: 0; font-family: var(--mono); font-size: 16px; font-weight: 700; color: var(--text); letter-spacing: 0.04em; }
+.stp__top span { display: flex; align-items: center; gap: 4px; margin-top: 3px; font-size: 11px; color: var(--text-faint); }
+.stp__close {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+}
+.stp__close:hover { color: var(--text); border-color: rgba(190, 200, 210, 0.3); }
+.stp__body { padding: 14px 16px 16px; overflow-y: auto; }
+
+.stp__cat {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--cat) 45%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--cat) 12%, transparent);
+}
+.stp__cat b { font-family: var(--mono); font-size: 15px; letter-spacing: 0.08em; color: var(--cat); }
+.stp__cat span { font-size: 11.5px; color: var(--text-dim); }
+
+.stp__cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; margin-top: 12px; }
+.stp__card {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: 8px 9px;
+  padding: 9px 10px;
   border: 1px solid var(--border);
   border-radius: 9px;
   background: var(--panel-2);
   text-align: left;
 }
-.sfc-card:hover { border-color: rgba(190, 200, 210, 0.3); }
-.sfc-card.is-on { border-color: rgba(59, 130, 246, 0.55); background: rgba(59, 130, 246, 0.1); }
-.sfc-card > span {
+.stp__card:hover { border-color: rgba(190, 200, 210, 0.3); }
+.stp__card.is-on { border-color: rgba(59, 130, 246, 0.55); background: rgba(59, 130, 246, 0.1); }
+.stp__card > span {
   font-family: var(--mono);
   font-size: 9px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-faint);
 }
-.sfc-card > b { font-size: 14px; font-weight: 650; color: var(--text); }
-.sfc-card > i { font-style: normal; font-size: 10px; color: var(--text-faint); }
+.stp__card > b { font-size: 15px; font-weight: 650; color: var(--text); }
+.stp__card > i { font-style: normal; font-size: 10px; color: var(--text-faint); }
 
-.sfc-sec {
+.stp__sec {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-top: 12px;
-  padding-top: 9px;
+  margin-top: 14px;
+  padding-top: 10px;
   border-top: 1px solid var(--border);
 }
-.sfc-sec > span {
+.stp__sec > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   font-family: var(--mono);
   font-size: 9px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-faint);
 }
-.sfc-ranges { display: flex; gap: 3px; }
-.sfc-range {
+.stp__ranges { display: flex; gap: 3px; }
+.stp__range {
   padding: 3px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -6095,48 +6204,43 @@ html[data-reduce-motion="true"] *::after {
   font-family: var(--mono);
   font-size: 10px;
 }
-.sfc-range.is-on { border-color: transparent; background: var(--accent); color: #fff; }
+.stp__range.is-on { border-color: transparent; background: var(--accent); color: #fff; }
 
-.sfc-chart__wrap { margin-top: 8px; }
-.sfc-chart__title { font-size: 11px; color: var(--text-dim); margin-bottom: 3px; }
-.sfc-chart { width: 100%; height: 112px; display: block; }
-.sfc-chart__grid { stroke: var(--border); stroke-width: 1; }
-.sfc-chart__ylab { fill: var(--text-faint); font-size: 8px; font-family: var(--mono); text-anchor: end; }
-.sfc-chart__xlab { fill: var(--text-faint); font-size: 8px; font-family: var(--mono); }
-.sfc-chart__empty { padding: 18px 0; text-align: center; font-size: 11px; color: var(--text-faint); }
+.stp__chart { width: 100%; height: 128px; display: block; margin-top: 8px; }
+.stp__grid { stroke: var(--border); stroke-width: 1; }
+.stp__ylab { fill: var(--text-faint); font-size: 8px; font-family: var(--mono); text-anchor: end; }
+.stp__xlab { fill: var(--text-faint); font-size: 8px; font-family: var(--mono); }
+.stp__chart-empty { padding: 22px 0; text-align: center; font-size: 11.5px; color: var(--text-faint); }
 
-.sfc-sky { display: flex; flex-direction: column; gap: 3px; margin-top: 7px; }
-.sfc-sky__row { display: flex; align-items: baseline; justify-content: space-between; font-size: 12px; color: var(--text-dim); }
-.sfc-sky__row b { font-family: var(--mono); font-size: 11.5px; color: var(--text); font-weight: 600; }
+.stp__sky { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.stp__sky-row { display: flex; align-items: baseline; justify-content: space-between; font-size: 12.5px; color: var(--text-dim); }
+.stp__sky-row b { font-family: var(--mono); font-size: 12px; color: var(--text); font-weight: 600; }
+.stp__sky-row--ceiling { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--border); }
+.stp__sky-row--ceiling span { color: var(--text); }
 
-.sfc-wx {
-  margin-top: 8px;
-  padding: 5px 9px;
-  border-radius: 7px;
-  background: rgba(246, 185, 59, 0.14);
-  color: #f6b93b;
-  font-size: 11.5px;
-}
-
-.sfc-copy {
-  padding: 2px 8px;
+.stp__copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: transparent;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: 10.5px;
 }
-.sfc-copy:hover { color: var(--text); border-color: rgba(190, 200, 210, 0.3); }
-.sfc-raw {
-  margin: 7px 0 0;
-  padding: 8px 9px;
+.stp__copy:hover { color: var(--text); border-color: rgba(190, 200, 210, 0.3); }
+.stp__raw {
+  margin: 8px 0 0;
+  padding: 9px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
   font-family: var(--mono);
-  font-size: 10.5px;
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.55;
   color: var(--text-dim);
   white-space: pre-wrap;
   word-break: break-word;
 }
+.stp__foot { margin-top: 12px; font-family: var(--mono); font-size: 10px; color: var(--text-faint); text-align: right; }

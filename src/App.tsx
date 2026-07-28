@@ -17,6 +17,7 @@ import { AnimationModal } from "./ui/AnimationModal";
 import { UpdateBanner } from "./ui/UpdateBanner";
 import { QuickStart } from "./ui/QuickStart";
 import { WhatsNew } from "./ui/WhatsNew";
+import { StationPanel } from "./ui/StationPanel";
 import { useAppStore } from "./store/useAppStore";
 import { selectRailOpen, useAlertStore } from "./store/useAlertStore";
 import { useLayoutStore } from "./store/useLayoutStore";
@@ -68,6 +69,8 @@ export default function App() {
       <AnimationModal />
       {/* first-run setup and the release log; both self-mount and stay hidden
           until they have a reason to appear, or Settings opens them */}
+      {/* full METAR report, opened from the map card */}
+      <StationPanel />
       <QuickStart />
       <WhatsNew />
     </div>
