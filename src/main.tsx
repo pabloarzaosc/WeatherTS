@@ -44,13 +44,17 @@ if (persistedView !== "catalog" && persistedView !== "layers" && persistedView !
 applyReduceMotion(useAppStore.getState().reduceMotion);
 useAppStore.subscribe((s) => s.reduceMotion, applyReduceMotion);
 
+import { ErrorBoundary } from "./ErrorBoundary";
+
 // The gate wraps App rather than living inside it: nothing of the workspace --
 // no map, no layer fetches, no onboarding -- should mount before a session is
 // accepted.
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <LoginGate>
-      <App />
-    </LoginGate>
+    <ErrorBoundary>
+      <LoginGate>
+        <App />
+      </LoginGate>
+    </ErrorBoundary>
   </React.StrictMode>,
 );

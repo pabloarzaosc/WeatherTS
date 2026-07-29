@@ -1,7 +1,8 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import maplibregl from "maplibre-gl";
 
-import { MAP_STYLE, INITIAL_VIEW } from "./mapStyle";
+import { INITIAL_VIEW } from "./mapStyle";
+import { buildBasemapStyle } from "./basemaps";
 import { registerMap, setActivePane, allMaps, subscribeMaps, getActivePaneId, PRIMARY_PANE } from "./mapInstance";
 import { LayerManager } from "../layers/manager";
 import { useAppStore } from "../store/useAppStore";
@@ -66,9 +67,10 @@ export function MapPane({ id }: { id: string }) {
 
     const map = new maplibregl.Map({
       container: host.current,
-      // structuredClone: MapLibre takes ownership of the style object, so panes
-      // sharing one literal would corrupt each other's layer bookkeeping.
-      style: structuredClone(MAP_STYLE),
+      // A freshly built object per pane: MapLibre takes ownership of the style
+      // it is handed, so panes sharing one literal would corrupt each other's
+      // layer bookkeeping.
+      style: buildBasemapStyle(store.getState().basemapId),
       center: start.center,
       zoom: start.zoom,
       bearing: start.bearing,
@@ -146,12 +148,28 @@ export function MapPane({ id }: { id: string }) {
       (s) => s.projection,
       (projection) => map.setProjection({ type: projection }),
     );
+    // setStyle() throws away every source and layer the app added, so the
+    // manager has to forget what it thinks is on the map and add it all back
+    // once the new style is live. Projection is style-independent state that
+    // setStyle also resets, hence re-applying it here too.
+    const unsubBasemap = store.subscribe(
+      (s) => s.basemapId,
+      (basemapId) => {
+        map.setStyle(buildBasemapStyle(basemapId), { diff: false });
+        map.once("style.load", () => {
+          map.setProjection({ type: store.getState().projection });
+          manager.reset();
+          syncLayers();
+        });
+      },
+    );
 
     return () => {
       ro.disconnect();
       unsubLayers();
       unsubOrder();
       unsubProjection();
+      unsubBasemap();
       map.off("move", onMove);
       map.off("mousedown", focus);
       map.off("touchstart", focus);

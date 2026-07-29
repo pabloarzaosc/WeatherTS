@@ -22,21 +22,34 @@ interface PaneState {
 const state = new WeakMap<import("maplibre-gl").Map, PaneState>();
 
 /**
- * Show only alerts in force at `t` (unix seconds); null = now, i.e. everything
- * we fetched. Scrubbing the radar timeline back before a warning was issued
- * should hide it, so the map matches the scan underneath it.
+ * What the map is allowed to draw: alerts in force at the timeline's time, in a
+ * category the user hasn't switched off. Both halves live in one filter because
+ * MapLibre keeps a single filter per layer -- pushing them separately meant
+ * whichever ran last silently dropped the other.
+ *
+ * `timeFilter` null = now, i.e. everything fetched; scrubbing the radar loop
+ * back before a warning was issued should hide it, so the map matches the scan
+ * underneath it. The category flags come stamped on each feature by
+ * alertsToFeatureCollection, so this needs no round trip through the store.
  */
-function timeFilterExpr(t: number | null): ExpressionSpecification | null {
-  if (t === null) return null;
-  return [
-    "all",
-    ["<=", ["coalesce", ["get", "startUnix"], 0], t],
-    [">=", ["coalesce", ["get", "endUnix"], 0], t],
-  ];
+function visibilityExpr(): ExpressionSpecification | null {
+  const { timeFilter: t, categoryFilters: cat } = useAlertStore.getState();
+  const clauses: ExpressionSpecification[] = [];
+  if (t !== null) {
+    clauses.push(["<=", ["coalesce", ["get", "startUnix"], 0], t]);
+    clauses.push([">=", ["coalesce", ["get", "endUnix"], 0], t]);
+  }
+  // An alert can sit in more than one bucket (a Tornado Warning is tornado AND
+  // severe), so any unchecked bucket it belongs to hides it -- same rule the
+  // side list uses in selectVisibleAlerts.
+  if (!cat.tornado) clauses.push(["!", ["coalesce", ["get", "catTornado"], false]]);
+  if (!cat.special) clauses.push(["!", ["coalesce", ["get", "catSpecial"], false]]);
+  if (!cat.severe) clauses.push(["!", ["coalesce", ["get", "catSevere"], false]]);
+  return clauses.length > 0 ? (["all", ...clauses] as ExpressionSpecification) : null;
 }
 
-function pushTimeFilter(map: import("maplibre-gl").Map) {
-  const expr = timeFilterExpr(useAlertStore.getState().timeFilter);
+function pushFilter(map: import("maplibre-gl").Map) {
+  const expr = visibilityExpr();
   for (const id of [FILL, OUTLINE]) {
     if (map.getLayer(id)) map.setFilter(id, expr);
   }
@@ -118,23 +131,44 @@ export const alertsLayer: LayerModule = {
       });
     }
     if (!map.getLayer(OUTLINE)) {
+      // multiplier increases outline weight for emergencies / PDS
+      const specialWidthMult: ExpressionSpecification = [
+        "case",
+        ["get", "isEmergency"],
+        1.8,
+        ["get", "isPDS"],
+        1.3,
+        1,
+      ];
       map.addLayer({
         id: OUTLINE,
         type: "line",
         source: SRC,
         layout: { "line-sort-key": sortKey },
-        paint: { "line-color": ["get", "color"], "line-width": lineWidth, "line-opacity": lineOpacity(DEFAULT_ALERT_OPACITY) },
+        paint: {
+          "line-color": ["case", ["get", "isEmergency"], "#ff1d48", ["get", "color"]],
+          "line-width": ["*", specialWidthMult, lineWidth],
+          "line-opacity": lineOpacity(DEFAULT_ALERT_OPACITY),
+        },
       });
     }
 
     const source = map.getSource(SRC) as GeoJSONSource | undefined;
     source?.setData(alertsToFeatureCollection(useAlertStore.getState().features));
 
-    const unsubTime = useAlertStore.subscribe(
+    const unsubTimeOnly = useAlertStore.subscribe(
       (s) => s.timeFilter,
-      () => pushTimeFilter(map),
+      () => pushFilter(map),
     );
-    pushTimeFilter(map);
+    const unsubCategory = useAlertStore.subscribe(
+      (s) => s.categoryFilters,
+      () => pushFilter(map),
+    );
+    const unsubTime = () => {
+      unsubTimeOnly();
+      unsubCategory();
+    };
+    pushFilter(map);
 
     const onClick = (e: MapLayerMouseEvent) => {
       const rendered = map.queryRenderedFeatures(e.point, { layers: [FILL] });
@@ -193,11 +227,10 @@ export const alertsLayer: LayerModule = {
   // top of the fill -- radar, in particular, should cover the shading but never
   // hide where the warning actually is.
   topLayerIds() {
-    // Both, not just the outline. The manager lifts exactly what is listed
-    // here, so naming only OUTLINE left FILL wherever it happened to sit --
-    // which, once the radar module added its mesh, was underneath it: turning
-    // on a radar site made the shaded alert areas vanish and left bare outlines.
-    // FILL first so OUTLINE is moved last and stays on top of it.
-    return [FILL, OUTLINE];
+    // The outline only, deliberately. Listing FILL here as well would lift the
+    // shading above the radar mesh too, and the scan is the thing you want to
+    // read -- so the fill stays where the normal order puts it (under radar,
+    // which is registered later) while the border still marks the warning.
+    return [OUTLINE];
   },
 };

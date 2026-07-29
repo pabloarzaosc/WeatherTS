@@ -28,6 +28,8 @@ const L_GUST = "surfobs-gust";
 const L_VIS = "surfobs-vis";
 const L_CALM = "surfobs-calm";
 const TEXT_LAYERS = [L_TEMP, L_DEWP, L_PRES, L_ID, L_SINGLE, L_GUST, L_VIS];
+// Every layer this module owns, bottom -> top. Doubles as the z-order list.
+const ALL_LAYERS = [L_CALM, L_SKY, L_BARB, L_TEMP, L_DEWP, L_PRES, L_ID, L_SINGLE, L_GUST, L_VIS];
 
 // Per-map: each pane fetches for its own viewport, so the in-flight request,
 // the debounce timer and the cached features all belong to one map. Sharing
@@ -465,7 +467,7 @@ export const surfaceObsLayer: LayerModule = {
 
       popup.setHTML(`
         <div class="sfc-mini">
-          <button type="button" class="sfc-mini__open" data-open="1" title="Full report">
+          <button type="button" class="sfc-mini__open" data-open="1">
             <div class="sfc-mini__head">
               <b>METAR ${escHtml(p.idTxt || p.id || "station")}</b>
               <span>${escHtml(relativeTime(num(p.obsTime)))}</span>
@@ -585,6 +587,13 @@ export const surfaceObsLayer: LayerModule = {
   },
 
   getLayerIds() {
-    return [L_CALM, L_SKY, L_BARB, L_TEMP, L_DEWP, L_PRES, L_ID, L_SINGLE, L_GUST, L_VIS];
+    return ALL_LAYERS;
+  },
+
+  // Station plots are dense little text blocks: an alert polygon or a radar
+  // scan drawn over them makes them unreadable, and unlike a fill there is no
+  // opacity to trade away. So the whole module rides on top of both.
+  topLayerIds() {
+    return ALL_LAYERS;
   },
 };

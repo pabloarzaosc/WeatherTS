@@ -7,6 +7,12 @@ block_cipher = None
 sharppy_imports = collect_submodules('sharppy')
 sutils_imports = collect_submodules('sutils')
 qtpy_imports = collect_submodules('qtpy')
+# xarray resolves its readers lazily by entry point, so PyInstaller's static
+# analysis never sees h5netcdf/h5py. Without these the GLM lightning endpoint
+# raises "unrecognized engine" only in the packaged build, never in dev.
+xarray_imports = collect_submodules('xarray')
+h5netcdf_imports = collect_submodules('h5netcdf')
+h5py_imports = collect_submodules('h5py')
 
 a = Analysis(
     ['main.py'],
@@ -17,6 +23,9 @@ a = Analysis(
         *sharppy_imports,
         *sutils_imports,
         *qtpy_imports,
+        *xarray_imports,
+        *h5netcdf_imports,
+        *h5py_imports,
         'uvicorn',
         'uvicorn.logging',
         'uvicorn.lifespan',
@@ -141,6 +150,10 @@ a = Analysis(
         'surface_obs',
         'pal_tables',
         'sharppy_renderer',
+        # These two are imported by main.py but were never listed, so the
+        # packaged backend had no pressure field and no lightning at all.
+        'model_fields',
+        'lightning_core',
     ],
     hookspath=[],
     hooksconfig={},

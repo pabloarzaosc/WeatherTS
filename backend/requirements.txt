@@ -12,3 +12,8 @@ PyQt5
 # NadoCast vector outlook: eccodes reads the GRIB2 grid, matplotlib contours it.
 matplotlib
 eccodes
+# GOES GLM lightning arrives as netCDF4 (i.e. HDF5), which xarray can only open
+# through h5netcdf -- the bundled scipy backend reads netCDF3 only.
+xarray
+h5netcdf
+h5py

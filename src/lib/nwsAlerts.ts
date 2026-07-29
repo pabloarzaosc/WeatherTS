@@ -644,10 +644,15 @@ const FAR_FUTURE = Math.round(Number.MAX_SAFE_INTEGER / 1000);
 
 /** When an alert is in force, in unix seconds. */
 export function alertWindow(a: NwsAlert): { start: number; end: number } {
-  // onset is when the hazard starts; effective/sent are the fallbacks for
-  // alerts that don't carry a distinct onset.
+  // Issuance, NOT onset. The NWS pre-issues a large share of the feed hours
+  // ahead of the hazard -- a Heat Advisory sent now with onset at noon, coastal
+  // flood and high surf products issued the evening before -- and /alerts/active
+  // returns all of them as live. Keying `start` on onset therefore hid every
+  // pre-issued alert the instant the radar timeline began driving this filter:
+  // measured 79 of 157 (see alertInForceAt's only callers). `effective` is when
+  // the product takes force; `sent` is the fallback for anything missing it.
   return {
-    start: unix(a.onset, unix(a.effective, unix(a.sent, 0))),
+    start: unix(a.effective, unix(a.sent, 0)),
     end: unix(a.ends, unix(a.expires, FAR_FUTURE)),
   };
 }
@@ -655,6 +660,26 @@ export function alertWindow(a: NwsAlert): { start: number; end: number } {
 export function alertInForceAt(a: NwsAlert, t: number): boolean {
   const w = alertWindow(a);
   return w.start <= t && t <= w.end;
+}
+
+/**
+ * Which broad buckets an alert falls into. Deliberately NOT exclusive: a
+ * Tornado Warning is both `tornado` and `severe`, and unchecking either one has
+ * to hide it -- so callers need all three flags, not a single label. Lives here
+ * rather than in the store because the map stamps these onto the GeoJSON and
+ * the panel filters its list with them; one definition keeps them agreeing.
+ */
+export function alertCategoryFlags(a: NwsAlert): {
+  tornado: boolean;
+  special: boolean;
+  severe: boolean;
+} {
+  const event = a.event || "";
+  return {
+    tornado: /tornado/i.test(event),
+    special: /special/i.test(event),
+    severe: /warning/i.test(event) || /severe|extreme/i.test(a.severity || ""),
+  };
 }
 
 export function alertsToFeatureCollection(features: AlertFeature[]): GeoJSON.FeatureCollection {
@@ -665,21 +690,34 @@ export function alertsToFeatureCollection(features: AlertFeature[]): GeoJSON.Fea
       .sort((a, b) => alertPriority(a.alert) - alertPriority(b.alert))
       .map((f) => {
         const a = f.alert;
-        // carried onto the feature so the map can filter by time without a
-        // round trip through the store
+        // carried onto the feature so the map can filter by time and category
+        // without a round trip through the store
         const { start: startUnix, end: endUnix } = alertWindow(a);
+        const cat = alertCategoryFlags(a);
         return {
           type: "Feature" as const,
           id: a.id,
           properties: {
-            id: a.id,
-            severity: a.severity,
-            event: a.event,
-            color: eventColor(a.event),
-            priority: alertPriority(a),
-            startUnix,
-            endUnix,
-          },
+              id: a.id,
+              severity: a.severity,
+              event: a.event,
+              color: eventColor(a.event),
+              priority: alertPriority(a),
+              startUnix,
+              endUnix,
+              catTornado: cat.tornado,
+              catSpecial: cat.special,
+              catSevere: cat.severe,
+              // flag emergency / PDS so the map layer can style them specially
+              isEmergency:
+                (a.event || "").toUpperCase().includes("TORNADO EMERGENCY") ||
+                (a.event || "").toUpperCase().includes("FLASH FLOOD EMERGENCY") ||
+                param(a.parameters, "tornadoDamageThreat") === "CATASTROPHIC" ||
+                param(a.parameters, "flashFloodDamageThreat") === "CATASTROPHIC",
+              isPDS:
+                (a.event || "").toUpperCase().includes("PARTICULARLY DANGEROUS SITUATION") ||
+                param(a.parameters, "tornadoDamageThreat") === "CONSIDERABLE",
+            },
           geometry: f.geometry as GeoJSON.Geometry,
         };
       }),

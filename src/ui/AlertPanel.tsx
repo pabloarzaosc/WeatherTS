@@ -6,6 +6,7 @@ import type { AlertFeature } from "../lib/nwsAlerts";
 import {
   alertBounds,
   alertCentroid,
+  alertInForceAt,
   alertPriority,
   alertSummaryFacts,
   eventColor,
@@ -30,6 +31,67 @@ const LIST_FILTERS: Array<{ id: AlertListFilter; label: string }> = [
   { id: "statement", label: "Statements" },
   { id: "other", label: "Other" },
 ];
+
+function alertCategoryMatch(feature: AlertFeature, category: "severe" | "tornado" | "special"): boolean {
+  const event = feature.alert.event.toLowerCase();
+  if (category === "tornado") return /tornado/i.test(event);
+  if (category === "special") return /special/i.test(event);
+  if (/warning/i.test(event)) return true;
+  return /severe|extreme/i.test(feature.alert.severity);
+}
+
+function CategoryToggles({ counts }: { counts: Record<"severe" | "tornado" | "special", number> }) {
+  const filters = useAlertStore((s) => s.categoryFilters);
+  const toggle = useAlertStore((s) => s.toggleCategory);
+  return (
+    <div className="alert-list__cats">
+      <button
+        type="button"
+        className={`alert-cat${filters.severe ? " is-active" : ""}`}
+        onClick={() => toggle("severe")}
+        title="Toggle Severe/Warnings"
+      >
+        Severe <span>{counts.severe}</span>
+      </button>
+      <button
+        type="button"
+        className={`alert-cat${filters.tornado ? " is-active" : ""}`}
+        onClick={() => toggle("tornado")}
+        title="Toggle Tornado"
+      >
+        Tornado <span>{counts.tornado}</span>
+      </button>
+      <button
+        type="button"
+        className={`alert-cat${filters.special ? " is-active" : ""}`}
+        onClick={() => toggle("special")}
+        title="Toggle Special"
+      >
+        Special <span>{counts.special}</span>
+      </button>
+    </div>
+  );
+}
+
+function CategoryFilterBar({
+  counts,
+  onReset,
+}: {
+  counts: Record<"severe" | "tornado" | "special", number>;
+  onReset: () => void;
+}) {
+  return (
+    <div className="alert-list__advanced">
+      <div className="alert-list__advanced-head">
+        <span className="alert-list__advanced-title">Category visibility</span>
+        <button type="button" className="alert-list__reset" onClick={onReset}>
+          Reset
+        </button>
+      </div>
+      <CategoryToggles counts={counts} />
+    </div>
+  );
+}
 
 function alertKind(event: string): Exclude<AlertListFilter, "all"> {
   if (/warning/i.test(event)) return "warning";
@@ -343,6 +405,8 @@ function AlertList({
   message,
   now,
   timeFilter,
+  categoryCounts,
+  onResetCategories,
   onSelect,
 }: {
   features: AlertFeature[];
@@ -350,6 +414,8 @@ function AlertList({
   message: string | null;
   now: number;
   timeFilter: number | null;
+  categoryCounts: Record<"severe" | "tornado" | "special", number>;
+  onResetCategories: () => void;
   onSelect: (id: string) => void;
 }) {
 
@@ -398,6 +464,8 @@ function AlertList({
         ))}
       </div>
 
+      <CategoryFilterBar counts={categoryCounts} onReset={onResetCategories} />
+
       <div className="alert-list__body">
         {status === "error" && <div className="alert-list__empty">{message ?? "Unable to load alerts."}</div>}
         {status !== "error" && visible.length === 0 && (
@@ -411,15 +479,32 @@ function AlertList({
               const color = eventColor(a.event);
               const facts = alertSummaryFacts(a, now).slice(0, 4);
               const expires = Date.parse(a.expires);
+              const upper = `${a.event} ${a.headline ?? ""} ${a.description}`.toUpperCase();
+              const tornadoThreat = param(a.parameters, "tornadoDamageThreat");
+              const flashThreat = param(a.parameters, "flashFloodDamageThreat");
+              const isEmergency =
+                upper.includes("TORNADO EMERGENCY") ||
+                upper.includes("FLASH FLOOD EMERGENCY") ||
+                tornadoThreat === "CATASTROPHIC" ||
+                flashThreat === "CATASTROPHIC";
+              const isPDS =
+                upper.includes("PARTICULARLY DANGEROUS SITUATION") || tornadoThreat === "CONSIDERABLE";
               return (
                 <button
                   key={a.id}
                   type="button"
                   className="alert-list__row"
+                  data-emergency={isEmergency ? "true" : "false"}
+                  data-pds={isPDS ? "true" : "false"}
                   style={{ borderLeftColor: color }}
                   onClick={() => onSelect(a.id)}
                 >
                   <span className="alert-list__event">{a.event}</span>
+                  {(isEmergency || isPDS) && (
+                    <span className={`alert-list__flag ${isEmergency ? "alert-list__flag--emergency" : "alert-list__flag--pds"}`}>
+                      {isEmergency ? "Emergency" : "PDS"}
+                    </span>
+                  )}
                   {facts.map((fact) => (
                     <span key={fact.key} className="alert-list__fact">
                       <b>{fact.label}:</b> {fact.value}
@@ -452,11 +537,26 @@ export function AlertPanel() {
   const selectedIds = useAlertStore((s) => s.selectedIds);
   const allFeatures = useAlertStore((s) => s.features);
   const timeFilter = useAlertStore((s) => s.timeFilter);
+  const categoryFilters = useAlertStore((s) => s.categoryFilters);
+  const setCategoryFilter = useAlertStore((s) => s.setCategoryFilter);
   // the list follows the timeline for the same reason the map does
-  const features = useMemo(
-    () => selectVisibleAlerts({ features: allFeatures, timeFilter }),
+  const timelineFeatures = useMemo(
+    () => (timeFilter === null ? allFeatures : allFeatures.filter((feature) => alertInForceAt(feature.alert, timeFilter))),
     [allFeatures, timeFilter],
   );
+  const features = useMemo(
+    () => selectVisibleAlerts({ features: allFeatures, timeFilter, categoryFilters }),
+    [allFeatures, timeFilter, categoryFilters],
+  );
+  const categoryCounts = useMemo(() => {
+    const counts = { severe: 0, tornado: 0, special: 0 };
+    for (const feature of timelineFeatures) {
+      if (alertCategoryMatch(feature, "severe")) counts.severe += 1;
+      if (alertCategoryMatch(feature, "tornado")) counts.tornado += 1;
+      if (alertCategoryMatch(feature, "special")) counts.special += 1;
+    }
+    return counts;
+  }, [timelineFeatures]);
   const active = useAlertStore((s) => s.active);
   const status = useAlertStore((s) => s.status);
   const message = useAlertStore((s) => s.message);
@@ -464,6 +564,11 @@ export function AlertPanel() {
   const selectMany = useAlertStore((s) => s.selectMany);
   const listOpen = useAlertStore((s) => s.listOpen);
   const setListOpen = useAlertStore((s) => s.setListOpen);
+  const resetCategories = () => {
+    setCategoryFilter("severe", true);
+    setCategoryFilter("tornado", true);
+    setCategoryFilter("special", true);
+  };
 
   const ids = selectedIds.length > 0 ? selectedIds : selectedId ? [selectedId] : [];
   const selectedFeatures = sortAlerts(
@@ -545,11 +650,13 @@ export function AlertPanel() {
         </div>
       ) : (
         <AlertList
-            features={features}
+          features={features}
           status={status}
           message={message}
           now={now}
           timeFilter={timeFilter}
+          categoryCounts={categoryCounts}
+          onResetCategories={resetCategories}
           onSelect={(id) => {
             selectMany([id]);
             zoomToAlert(id);

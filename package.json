@@ -1,7 +1,7 @@
 {
   "name": "weatherts",
   "private": true,
-  "version": "0.5.0",
+  "version": "1.0.0",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
@@ -11,7 +11,7 @@
     "electron:publish": "npm run backend:build && npm run build && electron-builder --win --publish always",
     "electron:pack": "electron-builder --dir",
     "dev": "vite",
-    "backend": "cd backend && .venv/Scripts/python -m uvicorn main:app --port 8787",
+    "backend": "cd backend && .venv\\Scripts\\python -m uvicorn main:app --port 8787",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },

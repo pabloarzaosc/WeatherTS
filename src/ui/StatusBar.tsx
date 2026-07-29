@@ -1,5 +1,6 @@
 import { useAppStore } from "../store/useAppStore";
 import type { CoordFormat } from "../store/useAppStore";
+import { basemapInfo } from "../map/basemaps";
 
 function decimal(value: number, axis: "lat" | "lng"): string {
   const hemisphere = axis === "lat" ? (value >= 0 ? "N" : "S") : value >= 0 ? "E" : "W";
@@ -41,6 +42,10 @@ export function StatusBar() {
   const zoom = useAppStore((s) => s.zoom);
   const coordFormat = useAppStore((s) => s.coordFormat);
   const projection = useAppStore((s) => s.projection);
+  // Credit follows the basemap: the imagery ones are not OpenStreetMap's. The
+  // control itself lives on the map (BasemapPicker); this stays a readout.
+  const basemapId = useAppStore((s) => s.basemapId);
+  const basemap = basemapInfo(basemapId);
 
   return (
     <footer className="status">
@@ -50,9 +55,9 @@ export function StatusBar() {
         <Metric label="Z" value={zoom.toFixed(2)} />
       </div>
       <div className="status__meta">
-        <span className="status__chip">GRAY</span>
+        <span className="status__chip">{basemap.label.toUpperCase()}</span>
         <span className="status__chip">{projection === "globe" ? "GLOBE" : "MERCATOR"}</span>
-        <span className="status__attrib">© OpenFreeMap · OpenStreetMap</span>
+        <span className="status__attrib">{basemap.attribution}</span>
       </div>
     </footer>
   );

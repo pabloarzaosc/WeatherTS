@@ -22,6 +22,8 @@ import { alertsLayer } from "./modules/alertsLayer";
 import { outlookLayers } from "./modules/outlooksLayer";
 import { raobLayer } from "./modules/raobLayer";
 import { surfaceObsLayer } from "./modules/surfaceObsLayer";
+import { mslpLayer } from "./modules/mslpLayer";
+import { lightningLayer } from "./modules/lightningLayer";
 import { nexradLayer } from "./modules/nexradLayer";
 
 registerLayer(boundariesLayer);
@@ -30,5 +32,7 @@ registerLayer(terminatorLayer);
 for (const layer of outlookLayers) registerLayer(layer);
 registerLayer(alertsLayer);
 registerLayer(raobLayer);
+registerLayer(mslpLayer);
+registerLayer(lightningLayer);
 registerLayer(surfaceObsLayer);
 registerLayer(nexradLayer);

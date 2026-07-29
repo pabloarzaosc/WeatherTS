@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, subscribeWithSelector } from "zustand/middleware";
 
 import { getLayerModule, getLayerModules } from "../layers/registry";
+import { DEFAULT_BASEMAP } from "../map/basemaps";
 import type { MeasureMode } from "../lib/measure";
 
 export type Projection = "mercator" | "globe";
@@ -23,6 +24,8 @@ export interface LayerUIState {
 interface AppState {
   // ---- view --------------------------------------------------------------
   projection: Projection;
+  /** Which basemap the panes wear; see map/basemaps.ts for the roster. */
+  basemapId: string;
 
   // ---- app shell ---------------------------------------------------------
   leftPanelOpen: boolean;
@@ -53,6 +56,7 @@ interface AppState {
   // ---- actions -----------------------------------------------------------
   setProjection: (projection: Projection) => void;
   toggleProjection: () => void;
+  setBasemap: (basemapId: string) => void;
   setLeftPanelOpen: (open: boolean) => void;
   toggleLeftPanel: () => void;
   setDataView: (view: DataView) => void;
@@ -95,6 +99,7 @@ export const useAppStore = create<AppState>()(
     persist(
       (set, get) => ({
         projection: "mercator",
+        basemapId: DEFAULT_BASEMAP,
         leftPanelOpen: panelOpenByDefault(),
         dataView: "catalog",
         catalogTab: "default",
@@ -111,6 +116,7 @@ export const useAppStore = create<AppState>()(
         layerOrder: [],
 
         setProjection: (projection) => set({ projection }),
+        setBasemap: (basemapId) => set({ basemapId }),
         toggleProjection: () =>
           set({ projection: get().projection === "globe" ? "mercator" : "globe" }),
 
@@ -195,6 +201,7 @@ export const useAppStore = create<AppState>()(
         },
         partialize: (s) => ({
           projection: s.projection,
+          basemapId: s.basemapId,
           reduceMotion: s.reduceMotion,
           coordFormat: s.coordFormat,
           pixelReadout: s.pixelReadout,

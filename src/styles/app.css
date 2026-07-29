@@ -2302,6 +2302,78 @@ select {
   overflow-x: auto;
   border-bottom: 1px solid var(--border);
 }
+.alert-list__advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+}
+.alert-list__advanced-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.alert-list__advanced-title {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.alert-list__reset {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.alert-list__reset:hover {
+  border-color: var(--accent-ring);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.alert-list__cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.alert-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.alert-cat span {
+  min-width: 1.5em;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.alert-cat.is-active {
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.alert-cat:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
 .alert-list__filter {
   flex: none;
   padding: 5px 8px;
@@ -2357,6 +2429,14 @@ select {
   border-color: var(--border-strong);
   background: var(--panel);
 }
+.alert-list__row[data-emergency="true"] {
+  border-left-color: #ff3155;
+  box-shadow: inset 0 0 0 1px rgba(255, 49, 85, 0.14);
+}
+.alert-list__row[data-pds="true"] {
+  border-left-color: #f59e0b;
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.12);
+}
 .alert-list__event {
   font-size: 12.5px;
   font-weight: 800;
@@ -2381,6 +2461,26 @@ select {
 .alert-list__nomap {
   color: var(--text-faint);
 }
+.alert-list__flag {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.alert-list__flag--emergency {
+  background: rgba(255, 49, 85, 0.16);
+  color: #ff8da1;
+}
+.alert-list__flag--pds {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fcd34d;
+}
 .alert-list__empty {
   padding: 18px 10px;
   color: var(--text-faint);
@@ -2388,12 +2488,14 @@ select {
   text-align: center;
 }
 .alert-list__body::-webkit-scrollbar,
-.alert-list__filters::-webkit-scrollbar {
+.alert-list__filters::-webkit-scrollbar,
+.alert-list__advanced::-webkit-scrollbar {
   width: 8px;
   height: 6px;
 }
 .alert-list__body::-webkit-scrollbar-thumb,
-.alert-list__filters::-webkit-scrollbar-thumb {
+.alert-list__filters::-webkit-scrollbar-thumb,
+.alert-list__advanced::-webkit-scrollbar-thumb {
   background: var(--track);
   border-radius: 8px;
 }
@@ -6047,7 +6149,8 @@ html[data-reduce-motion="true"] *::after {
    What the map shows on click. Four readings and the radars overhead, with the
    whole card acting as the way into the full report -- the detail needs more
    room than a popup anchored to a point can give it. */
-.sfc-mini { display: flex; flex-direction: column; gap: 7px; min-width: 214px; }
+/* The popup shell sets padding: 0 so the card owns its own insets. */
+.sfc-mini { display: flex; flex-direction: column; gap: 7px; padding: 11px 12px 12px; min-width: 214px; }
 .sfc-mini__open {
   display: flex;
   flex-direction: column;
@@ -6057,7 +6160,8 @@ html[data-reduce-motion="true"] *::after {
   background: transparent;
   text-align: left;
 }
-.sfc-mini__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+/* Keep the age clear of the popup's close button, which floats over this row. */
+.sfc-mini__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding-right: 22px; }
 .sfc-mini__head b { font-family: var(--mono); font-size: 12.5px; color: var(--text); letter-spacing: 0.04em; }
 .sfc-mini__head span { font-size: 10px; color: var(--text-faint); }
 .sfc-mini__rows { display: flex; flex-direction: column; gap: 3px; }
@@ -6244,3 +6348,344 @@ html[data-reduce-motion="true"] *::after {
   word-break: break-word;
 }
 .stp__foot { margin-top: 12px; font-family: var(--mono); font-size: 10px; color: var(--text-faint); text-align: right; }
+
+/* ---- Model picker -------------------------------------------------------- */
+/* Sits under the category grid: choose the product, then what feeds it. */
+.modelbar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 12px;
+  padding: 10px 11px 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+  transition: opacity 0.16s var(--ease-out);
+}
+/* Dimmed, not hidden: the setting still exists, it just has nothing to act on. */
+.modelbar.is-disabled { opacity: 0.4; }
+
+.modelbar__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.modelbar__head > span {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.modelbar__head > b {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+.modelbar__trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-solid);
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+}
+.modelbar__trigger > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modelbar__trigger > i {
+  flex: none;
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.modelbar__trigger:hover:not(:disabled) { border-color: rgba(190, 200, 210, 0.3); }
+.modelbar__trigger[aria-expanded="true"] { border-color: var(--accent); }
+.modelbar__trigger:disabled { cursor: default; }
+
+.modelbar__foot {
+  display: flex;
+  align-items: center;
+  gap: 5px 10px;
+  flex-wrap: wrap;
+  min-height: 12px;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.modelbar__foot.is-error { color: #fca5a5; }
+.modelbar__spin { animation: spin 0.8s linear infinite; }
+
+/* The two-level menu: categories at the left, that category's models at right. */
+.mdlmenu {
+  position: absolute;
+  top: 62px;
+  left: 8px;
+  right: 8px;
+  z-index: 30;
+  display: flex;
+  min-height: 132px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--panel-solid);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  animation: fade-up var(--t) var(--ease-out);
+}
+.mdlmenu__cats {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 96px;
+  padding: 5px;
+  gap: 1px;
+  border-right: 1px solid var(--border);
+  background: var(--panel-2);
+}
+.mdlmenu__cat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 6px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  text-align: left;
+}
+.mdlmenu__cat.is-on { background: rgba(59, 130, 246, 0.14); color: var(--accent); }
+
+.mdlmenu__list { flex: 1 1 auto; min-width: 0; padding: 7px 8px 8px; overflow-y: auto; max-height: 264px; }
+.mdlmenu__group + .mdlmenu__group { margin-top: 8px; }
+.mdlmenu__region {
+  display: block;
+  margin-bottom: 4px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.mdlmenu__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  text-align: left;
+}
+.mdlmenu__item:hover { background: rgba(190, 200, 210, 0.07); color: var(--text); }
+.mdlmenu__item.is-on { background: rgba(59, 130, 246, 0.16); color: var(--text); }
+.mdlmenu__name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Run cycle and reach, the two things you check before picking a model. */
+.mdlmenu__cycle,
+.mdlmenu__hours {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+}
+.mdlmenu__cycle { background: rgba(59, 130, 246, 0.18); color: #93c5fd; }
+.mdlmenu__hours { background: rgba(74, 222, 128, 0.16); color: #86efac; }
+
+/* ---- Pressure (MSLP) panel ----------------------------------------------- */
+.sfx__block--tight { padding-top: 10px; gap: 6px; }
+.mslp__meta { display: flex; flex-direction: column; gap: 4px; }
+.mslp__meta > div { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.mslp__meta span {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.mslp__meta b { font-family: var(--mono); font-size: 11px; color: var(--text); font-weight: 500; }
+.mslp__note { font-size: 10.5px; line-height: 1.45; color: var(--text-faint); }
+
+/* ---- MSLP corner stamp --------------------------------------------------- */
+/* Right-anchored like the rest of the HUD, so it follows the alert rail. */
+.mslp-legend {
+  position: absolute;
+  right: calc(var(--map-right, 0px) + 14px);
+  bottom: 74px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  pointer-events: none;
+  text-align: right;
+}
+.mslp-legend__times { display: flex; flex-direction: column; gap: 1px; }
+.mslp-legend__times span {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+.mslp-legend__tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--text);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+.mslp-legend__tag b { font-weight: 500; color: var(--text-dim); }
+.mslp-legend__tag i { font-style: normal; color: var(--text-faint); }
+
+/* ---- Basemap picker ------------------------------------------------------ */
+/* Floats at the map's top-left; follows the panel via --map-left. */
+.bmpick {
+  position: absolute;
+  top: calc(var(--topbar-h) + var(--tabsbar-h) + 12px);
+  left: var(--map-left);
+  z-index: 6;
+}
+.bmpick__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+  backdrop-filter: blur(9px);
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+.bmpick__btn > span { font-family: var(--mono); letter-spacing: 0.04em; }
+.bmpick__btn svg { color: var(--text-faint); }
+.bmpick__btn:hover { border-color: rgba(190, 200, 210, 0.3); color: var(--text); }
+.bmpick__btn.is-open { border-color: var(--accent); color: var(--accent); }
+.bmpick__btn.is-open svg { color: var(--accent); }
+
+/* Opens downward from the button. */
+.bmpick__pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  width: 264px;
+  max-height: 62vh;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--panel-solid);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.55);
+  animation: fade-up var(--t) var(--ease-out);
+}
+.bmpick__group + .bmpick__group { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border); }
+.bmpick__glabel {
+  display: block;
+  margin: 1px 0 4px 6px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.bmpick__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  text-align: left;
+}
+.bmpick__item:hover { background: rgba(190, 200, 210, 0.07); }
+.bmpick__item.is-on { background: rgba(59, 130, 246, 0.15); }
+.bmpick__tick { flex: none; width: 12px; padding-top: 2px; color: var(--accent); }
+.bmpick__text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.bmpick__text b { font-size: 12px; font-weight: 500; color: var(--text); }
+.bmpick__text i { font-style: normal; font-size: 10px; line-height: 1.35; color: var(--text-faint); }
+
+/* ---- Lightning: age ramp legend ----------------------------------------- */
+.lit__legend { display: flex; align-items: center; gap: 7px; margin-top: 4px; }
+.lit__legend > span {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+/* Same stops as ageColor() in lightningLayer — keep the two in step. */
+.lit__ramp {
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(to right, #ffffff, #fff6b0, #ffc247, #ff6b6b, #c14ae0, #6d4bb8);
+}
+.lit__legend > i,
+.lit__legend > b {
+  flex: none;
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text-faint);
+}
+
+/* ---- Lightning counter (over the map) ----------------------------------- */
+.litc {
+  position: absolute;
+  top: calc(var(--topbar-h) + var(--tabsbar-h) + 58px);
+  left: var(--map-left);
+  z-index: 6;
+  width: 132px;
+  padding: 9px 10px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  backdrop-filter: blur(9px);
+}
+.litc__head { display: flex; align-items: center; gap: 5px; }
+.litc__head > span {
+  flex: 1 1 auto;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.litc__head svg { color: #ffc247; }
+.litc__head > i { font-style: normal; font-family: var(--mono); font-size: 8.5px; color: var(--text-faint); }
+.litc__total {
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text);
+}
+.litc__rate { font-size: 10px; color: var(--text-faint); }
+.litc__rate b { font-family: var(--mono); font-weight: 600; color: var(--text-dim); }
+.litc__spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 20px;
+  margin: 6px 0 4px;
+}
+.litc__spark span { flex: 1 1 0; min-width: 1px; border-radius: 1px; background: #ffc247; }
+.litc__lag { font-family: var(--mono); font-size: 8.5px; color: var(--text-faint); }

@@ -15,6 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 import sounding_core
+import lightning_core
+import model_fields
 import nadocast_core
 import raob_core
 import surface_obs
@@ -216,6 +218,53 @@ def nadocast(
 ):
     try:
         return nadocast_core.build_nadocast(hazard, model)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/model-fields/models")
+def model_field_models():
+    """The sidebar's model picker: every model that can back a model field."""
+    return {"models": model_fields.list_models(), "default": model_fields.DEFAULT_MODEL}
+
+
+@app.get("/api/model-fields/mslp")
+def model_field_mslp(
+    model: str = Query(model_fields.DEFAULT_MODEL),
+    hour: int = Query(0, ge=0, le=384),
+    interval: float = Query(4.0, gt=0, le=50),
+    centres: bool = Query(True),
+    smooth: float = Query(1.0, ge=0, le=4),
+):
+    """Isobars + H/L centres for one model run hour, as GeoJSON."""
+    try:
+        return model_fields.build_mslp(
+            model=model, hour=hour, interval=interval, centres=centres, smooth=smooth
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/lightning")
+def lightning(
+    minutes: int = Query(15, ge=1, le=lightning_core.MAX_MINUTES),
+    sat: str = Query(lightning_core.DEFAULT_SAT),
+    bbox: str = Query(""),
+):
+    """GOES GLM flashes over a trailing window, as GeoJSON points."""
+    try:
+        box = None
+        if bbox:
+            parts = [float(x) for x in bbox.split(",")]
+            if len(parts) != 4:
+                raise ValueError("bbox must be lat0,lon0,lat1,lon1")
+            box = (min(parts[0], parts[2]), min(parts[1], parts[3]),
+                   max(parts[0], parts[2]), max(parts[1], parts[3]))
+        return lightning_core.build_lightning(minutes=minutes, sat=sat, bbox=box)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
 

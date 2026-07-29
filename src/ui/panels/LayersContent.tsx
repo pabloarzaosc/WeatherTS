@@ -12,6 +12,7 @@ export function LayersContent() {
   const toggleLayer = useAppStore((s) => s.toggleLayer);
   const setOpacity = useAppStore((s) => s.setLayerOpacity);
   const moveLayer = useAppStore((s) => s.moveLayer);
+  const setLayerVisibilityBatch = useAppStore((s) => s.setLayerVisibilityBatch);
 
   const modules = getLayerModules();
   const groups = LAYER_CATEGORIES.map((cat) => ({
@@ -28,10 +29,34 @@ export function LayersContent() {
       <div className="content__hint">
         {visibleCount}/{modules.length} layers visible
       </div>
-      {groups.map(({ cat, items }) => (
-        <section key={cat.id} className="group">
-          <h3 className="group__label">{cat.label}</h3>
-          {items.map((module) => (
+      {groups.map(({ cat, items }) => {
+        const allVisible = items.every((module) => layers[module.id]?.visible);
+        const someVisible = items.some((module) => layers[module.id]?.visible);
+        const toggleCategory = () => {
+          const updates: Record<string, boolean> = {};
+          const targetState = !allVisible;
+          for (const item of items) {
+            updates[item.id] = targetState;
+          }
+          setLayerVisibilityBatch(updates);
+        };
+
+        return (
+          <section key={cat.id} className="group">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingRight: 8 }}>
+              <h3 className="group__label">{cat.label}</h3>
+              <button
+                type="button"
+                className="row__eye"
+                aria-label={allVisible ? `Hide ${cat.label} layers` : `Show ${cat.label} layers`}
+                aria-pressed={allVisible}
+                onClick={toggleCategory}
+                style={{ opacity: someVisible && !allVisible ? 0.5 : 1 }}
+              >
+                {allVisible || someVisible ? <Eye size={16} /> : <EyeOff size={16} />}
+              </button>
+            </div>
+            {items.map((module) => (
             <LayerRow
               key={module.id}
               module={module}
@@ -45,7 +70,8 @@ export function LayersContent() {
             />
           ))}
         </section>
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 
-import { alertInForceAt, type AlertFeature } from "../lib/nwsAlerts";
+import { alertCategoryFlags, alertInForceAt, type AlertFeature } from "../lib/nwsAlerts";
 
 export type AlertStatus = "idle" | "loading" | "ready" | "error";
 
@@ -9,12 +9,33 @@ export type AlertStatus = "idle" | "loading" | "ready" | "error";
  * The alerts to show right now: everything, or only those in force at the
  * timeline's time. Map and panel both go through this so they can't disagree.
  */
+export type AlertCategoryKey = "severe" | "tornado" | "special";
+
+export type AlertCategoryFilters = Record<AlertCategoryKey, boolean>;
+
+export const DEFAULT_ALERT_CATEGORY_FILTERS: AlertCategoryFilters = {
+  severe: true,
+  tornado: true,
+  special: true,
+};
+
+/** Shares one definition with the GeoJSON the map filters on. */
+export function alertMatchesCategory(feature: AlertFeature, category: AlertCategoryKey): boolean {
+  return alertCategoryFlags(feature.alert)[category];
+}
+
 export function selectVisibleAlerts(s: {
   features: AlertFeature[];
   timeFilter: number | null;
+  categoryFilters: AlertCategoryFilters;
 }): AlertFeature[] {
-  if (s.timeFilter === null) return s.features;
-  return s.features.filter((f) => alertInForceAt(f.alert, s.timeFilter!));
+  const timed = s.timeFilter === null ? s.features : s.features.filter((f) => alertInForceAt(f.alert, s.timeFilter!));
+  return timed.filter((feature) => {
+    if (!s.categoryFilters.tornado && alertMatchesCategory(feature, "tornado")) return false;
+    if (!s.categoryFilters.special && alertMatchesCategory(feature, "special")) return false;
+    if (!s.categoryFilters.severe && alertMatchesCategory(feature, "severe")) return false;
+    return true;
+  });
 }
 
 /**
@@ -53,6 +74,10 @@ interface AlertState {
    * map with the whole view free.
    */
   listOpen: boolean;
+  /** visibility toggles for broad alert categories */
+  categoryFilters: AlertCategoryFilters;
+  setCategoryFilter: (k: AlertCategoryKey, v: boolean) => void;
+  toggleCategory: (k: AlertCategoryKey) => void;
 
   setActive: (active: boolean) => void;
   setListOpen: (listOpen: boolean) => void;
@@ -73,6 +98,7 @@ export const useAlertStore = create<AlertState>()(
     message: null,
     timeFilter: null,
     listOpen: true,
+    categoryFilters: DEFAULT_ALERT_CATEGORY_FILTERS,
 
     setActive: (active) => set({ active }),
     setListOpen: (listOpen) => set({ listOpen }),
@@ -82,5 +108,7 @@ export const useAlertStore = create<AlertState>()(
     selectMany: (selectedIds) =>
       set({ selectedIds, selectedId: selectedIds.length > 0 ? selectedIds[0] : null }),
     setTimeFilter: (timeFilter) => set({ timeFilter }),
+    setCategoryFilter: (k: AlertCategoryKey, v: boolean) => set((s) => ({ categoryFilters: { ...s.categoryFilters, [k]: v } })),
+    toggleCategory: (k: AlertCategoryKey) => set((s) => ({ categoryFilters: { ...s.categoryFilters, [k]: !s.categoryFilters[k] } })),
   })),
 );

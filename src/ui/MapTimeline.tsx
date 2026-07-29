@@ -5,6 +5,11 @@ import { useSoundingViewerStore } from "../store/useSoundingViewerStore";
 import { useAlertStore } from "../store/useAlertStore";
 import { useAppStore } from "../store/useAppStore";
 import { useNexradStore } from "../store/useNexradStore";
+import { selectCurrentModel, useModelStore } from "../store/useModelStore";
+import { useMslpStore } from "../store/useMslpStore";
+
+/** Stable empty array so the selector doesn't rerender on every store tick. */
+const NO_HOURS: number[] = [];
 
 const PLAY_BASE_MS = 2800;
 const PLAY_SPEEDS = [1, 2, 4, 8, 12, 16, 20] as const;
@@ -69,18 +74,26 @@ export function MapTimeline() {
   const radarScans = useNexradStore((s) => s.scans);
   const radarIndex = useNexradStore((s) => s.index);
   const radarLoading = useNexradStore((s) => s.loading);
+  // Model fields (pressure today, more later) scrub forecast hours on this same
+  // timeline rather than carrying a second slider of their own.
+  const mslpVisible = useAppStore((s) => s.layers["mslp"]?.visible ?? false);
+  const modelHours = useModelStore((s) => selectCurrentModel(s)?.hours ?? NO_HOURS);
+  const modelHour = useModelStore((s) => s.hour);
+  const modelBusy = useMslpStore((s) => s.busy);
+  const modelRunIso = useMslpStore((s) => s.runIso);
 
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<(typeof PLAY_SPEEDS)[number]>(1);
   const [loop, setLoop] = useState(false);
   const [obsTimes] = useState<number[]>(() => recentSynoptic());
 
-  // What drives the timeline: an open sounding wins; else radar scans; else the
-  // closed sounding axis.
+  // What drives the timeline: an open sounding wins; then radar scans (the
+  // live product); then a model field; else the closed sounding axis.
   const isRadar = !open && radarVisible && radarScans.length > 0;
-  const active = open || isRadar;
+  const isModel = !open && !isRadar && mslpVisible && modelHours.length > 0;
+  const active = open || isRadar || isModel;
   const effectiveMode: "model" | "raob" = open ? mode : raobVisible ? "raob" : "model";
-  const isRaob = !isRadar && effectiveMode === "raob";
+  const isRaob = !isRadar && !isModel && effectiveMode === "raob";
 
   // Time axis for the current context.
   let times: number[] | null = null;
@@ -88,6 +101,12 @@ export function MapTimeline() {
   if (isRadar) {
     times = radarScans.map((s) => s.time);
     maxHour = Math.max(radarScans.length - 1, 0);
+  } else if (isModel) {
+    // Forecast hours become real clock times off the run, so the readout and
+    // NOW behave the same as they do for every other context.
+    const base = modelRunIso ? Date.parse(modelRunIso) / 1000 : null;
+    times = base ? modelHours.map((h) => base + h * 3600) : null;
+    maxHour = Math.max(modelHours.length - 1, 0);
   } else if (open && data) {
     times = data.meta.times ?? null;
     maxHour = Math.max(data.meta.forecastMaxHour ?? (times ? times.length - 1 : 0), 0);
@@ -99,9 +118,10 @@ export function MapTimeline() {
     maxHour = MODEL_PLACEHOLDER_MAX;
   }
 
-  const value = Math.max(0, Math.min(isRadar ? radarIndex : hour, maxHour));
+  const modelIndex = isModel ? Math.max(0, modelHours.indexOf(modelHour)) : 0;
+  const value = Math.max(0, Math.min(isRadar ? radarIndex : isModel ? modelIndex : hour, maxHour));
   const selectedUnix = times ? times[value] ?? null : null;
-  const canPlay = isRadar ? maxHour > 0 : active && !!data && maxHour > 0;
+  const canPlay = isRadar || isModel ? maxHour > 0 : active && !!data && maxHour > 0;
 
   // Keep alerts on the same clock as the scan underneath them: a warning issued
   // after the frame you're looking at shouldn't be drawn over it. Only while
@@ -115,11 +135,12 @@ export function MapTimeline() {
   const scrub = (h: number) => {
     const clamped = Math.max(0, Math.min(h, maxHour));
     if (isRadar) void useNexradStore.getState().showIndex(clamped);
+    else if (isModel) useModelStore.getState().setHour(modelHours[clamped] ?? 0);
     else if (open) setHour(clamped);
     else setPreselectHour(clamped);
   };
   const step = (delta: number) => {
-    if (isRadar) scrub(value + delta);
+    if (isRadar || isModel) scrub(value + delta);
     else if (open) stepHour(delta);
     else scrub(value + delta);
   };
@@ -197,11 +218,36 @@ export function MapTimeline() {
         }
       }
     }
-    void (isRadar ? runRadar() : run());
+    // Model fields: each hour is a fresh contour job on the backend, so wait for
+    // the draw to commit before stepping instead of queueing requests.
+    async function runModel() {
+      while (!cancelled) {
+        await wait(600 / speed);
+        if (cancelled) return;
+        const ms = useModelStore.getState();
+        const hours = selectCurrentModel(ms)?.hours ?? [];
+        if (hours.length === 0) return;
+        const i = hours.indexOf(ms.hour);
+        const atEnd = i >= hours.length - 1;
+        if (atEnd && !loop) {
+          setPlaying(false);
+          return;
+        }
+        ms.setHour(hours[atEnd ? 0 : Math.max(i, 0) + 1]);
+        // Give the layer a tick to flip `busy`, then hold until it clears.
+        await wait(80);
+        for (let k = 0; k < 250 && useMslpStore.getState().busy; k++) {
+          if (cancelled) return;
+          await wait(100);
+        }
+      }
+    }
+
+    void (isRadar ? runRadar() : isModel ? runModel() : run());
     return () => {
       cancelled = true;
     };
-  }, [playing, speed, loop, canPlay, isRadar, gotoPlaybackHour, setPendingHour]);
+  }, [playing, speed, loop, canPlay, isRadar, isModel, gotoPlaybackHour, setPendingHour]);
 
   // Stop playing if the context can no longer play (e.g. viewer closed).
   useEffect(() => {
@@ -222,10 +268,12 @@ export function MapTimeline() {
 
   const chip = isRadar
     ? fmtScan(selectedUnix)
-    : isRaob
-      ? fmtObsShort(selectedUnix)
-      : `F${String(value).padStart(3, "0")}`;
-  const rendering = isRadar ? radarLoading : busy && pendingHour != null;
+    : isModel
+      ? `F${String(modelHour).padStart(3, "0")}`
+      : isRaob
+        ? fmtObsShort(selectedUnix)
+        : `F${String(value).padStart(3, "0")}`;
+  const rendering = isRadar ? radarLoading : isModel ? modelBusy : busy && pendingHour != null;
   const progress = maxHour > 0 ? (value / maxHour) * 100 : 0;
 
   return (

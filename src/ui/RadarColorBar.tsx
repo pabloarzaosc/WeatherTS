@@ -15,6 +15,10 @@ export function RadarColorBar({ paneId }: { paneId?: string } = {}) {
   // selected in the store when the radar layer is switched off, so without this
   // the bar sat over an empty map.
   const radarOn = useAppStore((s) => s.layers.nexrad?.visible ?? false);
+  // ...and a scale for a site nobody has picked describes nothing either. The
+  // product family carries a default, so without this the bar appeared the
+  // instant the layer was switched on, over a map with no scan on it at all.
+  const site = useNexradStore((s) => s.site);
   // One offset shared by every pane's bar: the panes are equal cells, so a
   // per-pane position would drift them out of alignment for no benefit.
   // Bounded by the pane, which clips its children -- dragged past the edge the
@@ -64,7 +68,7 @@ export function RadarColorBar({ paneId }: { paneId?: string } = {}) {
   }, [fam, palTables, kindDefaults, overrides, custom]);
 
   // After the hooks, never before them.
-  if (!radarOn || !bar) return null;
+  if (!radarOn || !site || !bar) return null;
   const span = bar.vmax - bar.vmin || 1;
   const pct = (v: number) => ((v - bar.vmin) / span) * 100;
 

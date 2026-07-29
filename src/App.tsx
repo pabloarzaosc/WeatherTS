@@ -8,6 +8,9 @@ import { MeasureTool } from "./ui/MeasureTool";
 import { AlertController } from "./ui/AlertController";
 import { AlertPanel } from "./ui/AlertPanel";
 import { OutlookLegend } from "./ui/OutlookLegend";
+import { MslpLegend } from "./ui/MslpLegend";
+import { LightningCounter } from "./ui/LightningCounter";
+import { BasemapPicker } from "./ui/BasemapPicker";
 import { MapContextMenu } from "./ui/sounding/MapContextMenu";
 import { SoundingViewer } from "./ui/sounding/SoundingViewer";
 import { MapTimeline } from "./ui/MapTimeline";
@@ -51,9 +54,13 @@ export default function App() {
         </div>
         <TopBar />
         <TabsBar />
+        {/* top-left corner of the map: swapping the base is a view control */}
+        <BasemapPicker />
         <DataPanel />
         <MeasureTool />
         <OutlookLegend />
+        <MslpLegend />
+        <LightningCounter />
         <AlertPanel />
         <ZoomControls />
         <StatusBar />
