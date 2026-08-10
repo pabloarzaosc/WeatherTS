@@ -4,8 +4,10 @@ import {
   fetchNexradMeta,
   fetchNexradScans,
   fetchNexradSites,
+  fetchNexradStorms,
   fetchPaletteTables,
   fetchScanData,
+  type StormReport,
   type NexradPalette,
   type NexradProduct,
   type NexradScan,
@@ -26,6 +28,10 @@ import { usePaletteStore } from "./usePaletteStore";
 
 let controller: AbortController | null = null;
 let pollTimer: number | null = null;
+let stormController: AbortController | null = null;
+// Frame time the loaded storm scan belongs to, so replaying frames inside one
+// volume doesn't refetch it every step.
+let lastStormFrame: number | null = null;
 
 // How many scans the loop covers. A day holds ~200-440 per product, so the list
 // is thinned evenly to this many (newest always kept). Each frame is ~220 KB
@@ -319,6 +325,9 @@ interface NexradState {
   /** Non-null while a day is being pulled down; drives the blocking overlay. */
   dayLoad: { done: number; total: number } | null;
   showRing: boolean; // draw the radar range ring
+  storms: StormReport | null; // SCIT cells + mesocyclones for the current site
+  showTracks: boolean; // draw storm cells and their past/forecast tracks
+  selectedCellId: string | null; // cell whose popup is open
   smooth: boolean; // interpolate gate colours (off = raw gates)
   threshold: number | null; // hide gates below this value
   autoUpdate: boolean; // poll for new scans while live
@@ -353,6 +362,9 @@ interface NexradState {
   setArchiveDate: (date: string | null) => Promise<void>;
   cancelDayLoad: () => void;
   setShowRing: (v: boolean) => void;
+  setShowTracks: (v: boolean) => void;
+  selectCell: (id: string | null) => void;
+  loadStorms: () => Promise<void>;
   /** Register/drop a pane's radar slot. */
   addPane: (id: string) => void;
   dropPane: (id: string) => void;
@@ -396,6 +408,9 @@ export const useNexradStore = create<NexradState>((set, get) => ({
   archiveDate: null,
   dayLoad: null,
   showRing: true,
+  storms: null,
+  showTracks: true,
+  selectedCellId: null,
   smooth: false,
   threshold: null,
   autoUpdate: true,
@@ -479,8 +494,15 @@ export const useNexradStore = create<NexradState>((set, get) => ({
     // A different site shares nothing with the cached meshes; free them so the
     // budget isn't spent holding geometry for a radar no longer on screen.
     clearMeshCache();
-    set({ site, scan: null, mesh: null, meshRev: get().meshRev + 1, scans: [], index: 0, error: null });
-    if (site) void get().refresh();
+    lastStormFrame = null;
+    set({
+      site, scan: null, mesh: null, meshRev: get().meshRev + 1, scans: [], index: 0,
+      error: null, storms: null, selectedCellId: null,
+    });
+    if (site) {
+      void get().refresh();
+      void get().loadStorms();
+    }
     else {
       controller?.abort();
       controller = null;
@@ -710,6 +732,35 @@ export const useNexradStore = create<NexradState>((set, get) => ({
 
 
   setShowRing: (showRing) => set({ showRing }),
+  setShowTracks: (showTracks) => {
+    set({ showTracks, selectedCellId: showTracks ? get().selectedCellId : null });
+    if (showTracks && !get().storms) void get().loadStorms();
+  },
+  selectCell: (selectedCellId) => set({ selectedCellId }),
+
+  // Storm attributes follow the frame on screen. The backend picks the storm
+  // scan nearest the requested instant, so playback shows each volume's own
+  // cells and tracks instead of pinning "now" over a scrubbed-back loop.
+  loadStorms: async () => {
+    const { site, showTracks, scans, index } = get();
+    if (!site || !showTracks) return;
+    const frameUnix = scans[index]?.time ?? null;
+    // Don't refetch the same storm scan while the loop replays frames that all
+    // fall inside one volume.
+    if (frameUnix != null && lastStormFrame === frameUnix && get().storms) return;
+    stormController?.abort();
+    stormController = new AbortController();
+    const mine = stormController;
+    try {
+      const storms = await fetchNexradStorms(site, frameUnix, mine.signal);
+      if (mine.signal.aborted) return;
+      lastStormFrame = frameUnix;
+      const stillThere = storms.cells.some((c) => c.id === get().selectedCellId);
+      set({ storms, selectedCellId: stillThere ? get().selectedCellId : null });
+    } catch {
+      if (!mine.signal.aborted) set({ storms: null, selectedCellId: null });
+    }
+  },
 
   setSmooth: (smooth) => {
     if (smooth === get().smooth) return;
@@ -861,6 +912,10 @@ export const useNexradStore = create<NexradState>((set, get) => ({
         error: null,
         meshRev: get().meshRev + 1,
       });
+      // Storm attributes belong to the frame on screen, not to "now": scrubbing
+      // back has to bring back the tracks that existed then, or the forecast
+      // track points at a storm that has already moved on.
+      void get().loadStorms();
       get().prefetch(idx);
       return true;
     } catch (err) {
@@ -904,6 +959,8 @@ export const useNexradStore = create<NexradState>((set, get) => ({
         resetPaneLists("", frames, 0);
         set({ scans: res.scans });
         if (wasAtLatest) void get().showIndex(res.scans.length - 1);
+        // A new volume also means new storm attributes.
+        void get().loadStorms();
       } catch {
         /* transient -> try again next tick */
       }
@@ -920,9 +977,13 @@ export const useNexradStore = create<NexradState>((set, get) => ({
   clear: () => {
     controller?.abort();
     controller = null;
+    stormController?.abort();
+    stormController = null;
     get().stopAutoRefresh();
     clearMeshCache();
     set({
+      storms: null,
+      selectedCellId: null,
       site: null,
       scan: null,
       mesh: null,

@@ -72,12 +72,17 @@
    SHARPpy sounding viewer
    ============================================================ */
 
+/* Fills the MAP, not the screen: --map-left/--map-right are the insets the
+   docked side panel and alert rail push in, so the viewer stops where the map
+   does instead of covering the panel the user is working in.
+   The compact tabbed form is unchanged — each tab is laid out to FIT the pane,
+   so nothing is ever reachable only by scrolling. */
 .sv {
-  position: fixed;
-  top: calc(var(--topbar-h) + var(--tabsbar-h) + 12px);
-  left: 20px;
-  right: 20px;
-  bottom: calc(var(--dock-h) + 12px);
+  position: absolute;
+  top: calc(var(--topbar-h) + var(--tabsbar-h) + 10px);
+  left: var(--map-left);
+  right: var(--map-right);
+  bottom: calc(var(--dock-h) + 10px);
   z-index: 40;
   display: flex;
   flex-direction: column;
@@ -92,11 +97,13 @@
   animation: fade-up var(--t) var(--ease-out) both;
 }
 
+/* Expanded takes the whole window, side panel included, for close reading. */
 .sv.is-expanded {
-  top: calc(var(--topbar-h) + var(--tabsbar-h) + 6px);
-  left: 10px;
-  right: 10px;
-  bottom: calc(var(--dock-h) + 8px);
+  position: fixed;
+  top: calc(var(--topbar-h) + var(--tabsbar-h) + 2px);
+  left: 2px;
+  right: 2px;
+  bottom: calc(var(--dock-h) + 2px);
 }
 
 .sv__head {
@@ -575,3 +582,90 @@
     padding: 6px;
   }
 }
+
+.mapmenu__hint {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+/* Expanding gives the plot more room; it does NOT change the form or the
+   density, which is the whole point of the compact layout. */
+
+.sv .sv__head {
+  min-height: 38px;
+  padding: 5px 8px 5px 10px;
+  gap: 8px;
+}
+.sv .sv__head strong { font-size: 12px; }
+.sv .sv__head span { font-size: 10px; }
+.sv .sv__controls {
+  min-height: 44px;
+  gap: 8px;
+  padding: 5px 8px 6px;
+}
+.sv .sv__ctl { gap: 3px; }
+.sv .sv__ctl > span { font-size: 8.5px; }
+.sv .sv__body { padding: 7px; }
+
+/* --- drag-to-draw area selection --- */
+.areabox__rect {
+  position: fixed;
+  z-index: 45;
+  pointer-events: none;
+  border: 1.5px dashed var(--accent);
+  border-radius: 3px;
+  background: rgba(59, 130, 246, 0.12);
+}
+.areabox__hint {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--dock-h) + 18px);
+  transform: translateX(-50%);
+  z-index: 46;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 12px;
+  border: 1px solid var(--accent-ring);
+  border-radius: 999px;
+  background: rgba(12, 16, 22, 0.92);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: var(--shadow);
+}
+.areabox__hint svg { color: var(--accent); }
+.areabox__hint button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--panel-2);
+  color: var(--text-faint);
+}
+.areabox__hint button:hover { color: var(--text); }
+
+.sv__redraw {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.sv__redraw:hover { border-color: var(--accent-ring); color: var(--accent); }
+
+.areabox__hint.is-warn {
+  border-color: rgba(240, 166, 60, 0.6);
+  color: #f0a63c;
+}
+.areabox__hint.is-warn svg { color: #f0a63c; }

@@ -15,6 +15,19 @@ export interface SoundingLevel {
 
 export type ParamValue = number | Array<number | null> | null;
 
+/** [south, west, north, east] — the rectangle dragged on the map. */
+export type AreaBox = [number, number, number, number];
+
+export interface AreaMeta {
+  bbox: AreaBox;
+  widthKm: number;
+  heightKm: number;
+  side: number;
+  requested: number;
+  used: number;
+  points: [number, number][]; // lon/lat of every sampled grid point
+}
+
 export interface SoundingMeta {
   lat: number;
   lon: number;
@@ -34,6 +47,12 @@ export interface SoundingMeta {
   times: number[]; // unix seconds for each forecast step
   nTimes: number;
   source: string;
+  /** Present only on an area-averaged sounding. */
+  area?: AreaMeta;
+  /** Present only on an aircraft (ACARS) sounding. */
+  station?: string;
+  stationName?: string;
+  ascending?: boolean;
 }
 
 export interface SoundingData {
@@ -116,6 +135,80 @@ export async function fetchRaobSounding(
     throw new Error(detail);
   }
   return res.json();
+}
+
+/** Shared error unwrapping: the backend puts its reason in `detail`. */
+async function readOr(res: Response): Promise<SoundingData> {
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.detail) detail = String(body.detail);
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+/**
+ * A sounding averaged over the rectangle drawn on the map rather than taken at
+ * one grid cell. Same response shape as the point sounding, so the viewer and
+ * the timeline are unchanged.
+ */
+export async function fetchAreaSounding(
+  box: AreaBox,
+  model: string,
+  hour: number,
+  side: number,
+  signal?: AbortSignal,
+): Promise<SoundingData> {
+  const bbox = box.map((v) => v.toFixed(4)).join(",");
+  const url =
+    `${BASE}/api/sounding/area?bbox=${bbox}` +
+    `&model=${encodeURIComponent(model)}&hour=${hour}&side=${side}`;
+  return readOr(await fetch(url, { signal }));
+}
+
+export interface AcarsAirport {
+  airport: string;
+  lat: number;
+  lon: number;
+  elevation: number;
+  latestUnix: number;
+  count: number;
+  ascending: boolean;
+  nLevels: number;
+  topPressure: number;
+}
+
+export interface AcarsProfileList {
+  airports: AcarsAirport[];
+  profiles: Array<Omit<AcarsAirport, "latestUnix" | "count"> & { unix: number }>;
+  meta: { hours: number; count: number; airportCount: number; errors: string[]; source: string };
+}
+
+export async function fetchAcarsProfiles(
+  hours = 8,
+  signal?: AbortSignal,
+): Promise<AcarsProfileList> {
+  const res = await fetch(`${BASE}/api/acars/profiles?hours=${hours}`, { signal });
+  if (!res.ok) throw new Error(`acars ${res.status}`);
+  return res.json();
+}
+
+/** One aircraft ascent/descent profile, rendered like any other sounding. */
+export async function fetchAcarsSounding(
+  airport: string,
+  unix: number | null,
+  hours: number,
+  signal?: AbortSignal,
+): Promise<SoundingData> {
+  const url =
+    `${BASE}/api/acars/sounding?airport=${encodeURIComponent(airport)}&hours=${hours}` +
+    (unix != null ? `&unix=${Math.round(unix)}` : "");
+  return readOr(await fetch(url, { signal }));
 }
 
 export function num(v: ParamValue | undefined): number | null {

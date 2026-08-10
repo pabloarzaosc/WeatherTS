@@ -4,6 +4,7 @@ import { AlertTriangle, Loader2, Radio } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { LayerPower } from "../LayerPower";
 import { frameChoicesFor, useNexradStore } from "../../store/useNexradStore";
+import { useVwpStore } from "../../store/useVwpStore";
 import { getMap } from "../../map/mapInstance";
 
 const LAYER = "nexrad";
@@ -61,6 +62,11 @@ export function RadarView() {
   const isL2 = product.startsWith("L2");
   const showRing = useNexradStore((s) => s.showRing);
   const setShowRing = useNexradStore((s) => s.setShowRing);
+  const showTracks = useNexradStore((s) => s.showTracks);
+  const setShowTracks = useNexradStore((s) => s.setShowTracks);
+  const storms = useNexradStore((s) => s.storms);
+  const vwpOpen = useVwpStore((s) => s.open);
+  const setVwpOpen = useVwpStore((s) => s.setOpen);
   const smooth = useNexradStore((s) => s.smooth);
   const setSmooth = useNexradStore((s) => s.setSmooth);
   const threshold = useNexradStore((s) => s.threshold);
@@ -169,11 +175,32 @@ export function RadarView() {
       {/* Products + tilt now live on the map, top-right (RadarProductPanel):
           the grids here were cramped and duplicated that control. */}
 
-      <div className="sfcobs__section">Display</div>
+      <div className="sfcobs__section">Overlays</div>
       <div className="sfcobs__toggle-row">
         <span>Range ring</span>
         <Toggle on={showRing} onClick={() => setShowRing(!showRing)} />
       </div>
+      <div className="sfcobs__toggle-row">
+        <span>
+          Storm tracks
+          {storms ? (
+            <small style={{ color: "var(--text-faint)", marginLeft: 6 }}>
+              {storms.meta.cellCount} cell{storms.meta.cellCount === 1 ? "" : "s"}
+              {storms.meta.mesoCount ? `, ${storms.meta.mesoCount} meso` : ""}
+            </small>
+          ) : null}
+        </span>
+        <Toggle on={showTracks} onClick={() => setShowTracks(!showTracks)} />
+      </div>
+      <div className="sfcobs__toggle-row">
+        <span>VAD wind profile</span>
+        <Toggle
+          on={vwpOpen}
+          onClick={() => (vwpOpen ? setVwpOpen(false) : setVwpOpen(true, site))}
+        />
+      </div>
+
+      <div className="sfcobs__section">Display</div>
       <div className="sfcobs__toggle-row">
         <span>Smooth radar data</span>
         <Toggle on={smooth} onClick={() => setSmooth(!smooth)} />

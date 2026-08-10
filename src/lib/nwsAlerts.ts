@@ -180,7 +180,7 @@ export async function fetchActiveAlerts(
   if (!res.ok) throw new Error(`NWS API ${res.status}: ${await readNwsProblem(res)}`);
   const data = (await res.json()) as { features?: RawFeature[] };
 
-  return (data.features ?? []).map((f) => {
+  const parsed = (data.features ?? []).map((f) => {
     const p = (f.properties ?? {}) as Record<string, unknown>;
     const alert: NwsAlert = {
       id: str(p.id) || str(f.id) || `${str(p.event)}-${str(p.sent)}`,
@@ -207,6 +207,30 @@ export async function fetchActiveAlerts(
     };
     return { alert, geometry: f.geometry ?? null };
   });
+
+  return dedupeById(parsed);
+}
+
+/**
+ * One entry per alert id.
+ *
+ * /alerts/active really does repeat itself. Non-weather products the NWS only
+ * relays -- AMBER alerts above all -- come through carrying the originator's own
+ * id rather than a `urn:oid:` one, and the same message arrives several times
+ * under it: measured five copies of a single Child Abduction Emergency. Left
+ * alone that inflates the active count, repeats the card five times in the rail,
+ * collides React keys, and hands MapLibre five features sharing one feature id.
+ *
+ * The copy that carries geometry wins, since the duplicates are not always
+ * equally complete.
+ */
+function dedupeById(features: AlertFeature[]): AlertFeature[] {
+  const byId = new Map<string, AlertFeature>();
+  for (const feature of features) {
+    const seen = byId.get(feature.alert.id);
+    if (!seen || (!seen.geometry && feature.geometry)) byId.set(feature.alert.id, feature);
+  }
+  return [...byId.values()];
 }
 
 function polygonCoordinates(geometry: GeoJSON.Geometry | null): GeoJSON.Position[][][] {

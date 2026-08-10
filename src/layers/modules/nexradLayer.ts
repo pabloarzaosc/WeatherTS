@@ -2,6 +2,7 @@ import type { GeoJSONSource, MapLayerMouseEvent } from "maplibre-gl";
 import type { LayerModule } from "../types";
 import { NexradGlLayer } from "../nexradGlLayer";
 import { addRing, removeRing, RING_LINE } from "../nexradRing";
+import { addStorms, removeStorms, STORM_LAYERS } from "../nexradStorms";
 import { paneIdOf } from "../../map/mapInstance";
 import { useNexradStore } from "../../store/useNexradStore";
 
@@ -141,6 +142,7 @@ export const nexradLayer: LayerModule = {
     }
 
     addRing(map);
+    addStorms(map);
 
     if (!map.getSource(SITE_SRC)) {
       map.addSource(SITE_SRC, { type: "geojson", data: sitesFC() as unknown as GeoJSON.FeatureCollection });
@@ -228,6 +230,7 @@ export const nexradLayer: LayerModule = {
       state.delete(map);
     }
     removeRing(map);
+    removeStorms(map);
     for (const id of [SITE_LABEL, GL_LAYER]) {
       if (map.getLayer(id)) map.removeLayer(id);
     }
@@ -244,12 +247,14 @@ export const nexradLayer: LayerModule = {
   },
 
   getLayerIds() {
-    // bottom -> top: the scan mesh, the range ring, then the site markers
-    return [GL_LAYER, RING_LINE, SITE_LABEL];
+    // bottom -> top: the scan mesh, the range ring, the storm tracks, then the
+    // site markers
+    return [GL_LAYER, RING_LINE, ...STORM_LAYERS, SITE_LABEL];
   },
 
   topLayerIds() {
-    // Radar site names must stay above alert outlines and other modules.
-    return [SITE_LABEL];
+    // Radar site names and storm cells must stay above alert outlines and other
+    // modules -- a tracked cell buried under a warning polygon is unclickable.
+    return [...STORM_LAYERS, SITE_LABEL];
   },
 };

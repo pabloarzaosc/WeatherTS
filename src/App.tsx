@@ -13,6 +13,12 @@ import { LightningCounter } from "./ui/LightningCounter";
 import { BasemapPicker } from "./ui/BasemapPicker";
 import { MapContextMenu } from "./ui/sounding/MapContextMenu";
 import { SoundingViewer } from "./ui/sounding/SoundingViewer";
+import { AreaSoundingOverlay } from "./ui/sounding/AreaSoundingOverlay";
+import { AreaBoxTool } from "./ui/sounding/AreaBoxTool";
+import { StormPopup } from "./ui/StormPopup";
+import { VwpPanel } from "./ui/VwpPanel";
+import { LsrCard } from "./ui/LsrCard";
+import { FrontPopup } from "./ui/FrontPopup";
 import { MapTimeline } from "./ui/MapTimeline";
 import { RadarHud } from "./ui/RadarHud";
 import { DayLoadOverlay } from "./ui/DayLoadOverlay";
@@ -66,12 +72,24 @@ export default function App() {
         <StatusBar />
         <SoundingViewer />
         <RadarHud />
+        {/* radar storm-cell card, anchored to the cell it describes */}
+        <StormPopup />
+        {/* the radar's own wind profile */}
+        <VwpPanel />
+        {/* the clicked storm report, in full */}
+        <LsrCard />
+        {/* the clicked front or pressure centre */}
+        <FrontPopup />
         <MapTimeline />
         <DayLoadOverlay />
         <UpdateBanner />
       </div>
       {/* map right-click menu (renders its own fixed overlay) */}
       <MapContextMenu />
+      {/* footprint of an open area-averaged sounding (draws on the map, renders nothing) */}
+      <AreaSoundingOverlay />
+      {/* drag-to-draw the area a sounding averages over */}
+      <AreaBoxTool />
       {/* the Customize Animation dialog (top-bar video icon) */}
       <AnimationModal />
       {/* first-run setup and the release log; both self-mount and stay hidden

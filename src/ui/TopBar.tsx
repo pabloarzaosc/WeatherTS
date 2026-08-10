@@ -39,6 +39,9 @@ const QUICK: { id: string; label: string }[] = [
   { id: "graticule", label: "GRID" },
   { id: "terminator", label: "DAY/NIGHT" },
   { id: "raob", label: "RAOB" },
+  { id: "acars", label: "ACARS" },
+  { id: "lsr", label: "LSR" },
+  { id: "fronts", label: "FRONTS" },
 ];
 
 function Tool({

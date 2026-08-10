@@ -44,8 +44,11 @@ interface LightningState {
   satellites: string[];
   /** When the last successful poll landed, for the "updated" readout. */
   updatedAt: number | null;
+  /** End of the displayed window. Null means the live edge. */
+  endUnix: number | null;
 
   setMinutes: (m: number) => void;
+  setEndUnix: (unix: number | null) => void;
   setSat: (s: LightningSat) => void;
   setSizeByEnergy: (v: boolean) => void;
   setCounter: (v: boolean) => void;
@@ -91,8 +94,10 @@ export const useLightningStore = create<LightningState>()(
         granules: 0,
         satellites: [],
         updatedAt: null,
+        endUnix: null,
 
         setMinutes: (minutes) => set({ minutes }),
+        setEndUnix: (endUnix) => set({ endUnix }),
         setSat: (sat) => set({ sat }),
         setSizeByEnergy: (sizeByEnergy) => set({ sizeByEnergy }),
         setCounter: (counter) => set({ counter }),

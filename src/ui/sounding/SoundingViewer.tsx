@@ -8,6 +8,7 @@ import {
   Maximize2,
   Minimize2,
   Scan,
+  Square,
   X,
   ZoomIn,
   ZoomOut,
@@ -82,6 +83,8 @@ export function SoundingViewer() {
   const model = useSoundingViewerStore((s) => s.model);
   const mode = useSoundingViewerStore((s) => s.mode);
   const station = useSoundingViewerStore((s) => s.station);
+  const airport = useSoundingViewerStore((s) => s.airport);
+  const setAreaSelecting = useSoundingViewerStore((s) => s.setAreaSelecting);
   const hour = useSoundingViewerStore((s) => s.hour);
   const models = useSoundingViewerStore((s) => s.models);
   const data = useSoundingViewerStore((s) => s.data);
@@ -180,12 +183,17 @@ export function SoundingViewer() {
   const selectedUnix = data?.meta.times?.[hour] ?? validUnix;
   const coord = lat !== null && lon !== null ? `${lat.toFixed(3)}, ${lon.toFixed(3)}` : "";
   const isRaob = mode === "raob";
+  const isArea = mode === "area";
+  const isAcars = mode === "acars";
   const usedModel =
     data?.meta.modelLabel ??
     (isRaob
       ? `${station?.name ?? "RAOB"} (RAOB)`
-      : modelList.find((item) => item.id === model)?.label ?? model.toUpperCase());
+      : isAcars
+        ? `${airport ?? "ACARS"} aircraft sounding`
+        : modelList.find((item) => item.id === model)?.label ?? model.toUpperCase());
   const imageSrc = data?.image ? `data:image/png;base64,${data.image}` : null;
+  const area = data?.meta.area;
 
   return (
     <div className={`sv${expanded ? " is-expanded" : ""}`} role="dialog" aria-label="Sounding viewer">
@@ -193,9 +201,13 @@ export function SoundingViewer() {
         <div className="sv__title">
           <Activity size={16} />
           <div>
-            <strong>{usedModel}{isRaob ? "" : " Sounding"}</strong>
+            <strong>{usedModel}{isRaob || isAcars ? "" : " Sounding"}</strong>
             <span>
               {coord}
+              {area ? ` / ${area.widthKm}x${area.heightKm} km mean of ${area.used} pts` : ""}
+              {isAcars && data?.meta.ascending != null
+                ? ` / ${data.meta.ascending ? "ascent" : "descent"}`
+                : ""}
               {data ? ` / ${data.meta.elevation.toFixed(0)} m / ${data.meta.source}` : ""}
             </span>
           </div>
@@ -217,6 +229,11 @@ export function SoundingViewer() {
             <span>STATION</span>
             <div className="sv__valid" title={station?.name}>{station?.name ?? "RAOB"}</div>
           </div>
+        ) : isAcars ? (
+          <div className="sv__ctl">
+            <span>AIRPORT</span>
+            <div className="sv__valid">{airport ?? "--"}</div>
+          </div>
         ) : (
           <label className="sv__ctl">
             <span>MODEL</span>
@@ -235,17 +252,32 @@ export function SoundingViewer() {
             </select>
           </label>
         )}
+        {isArea && (
+          <div className="sv__ctl">
+            <span>AREA</span>
+            <button
+              type="button"
+              className="sv__redraw"
+              onClick={() => setAreaSelecting(true)}
+              title="Draw a new box on the map"
+            >
+              <Square size={13} /> Redraw box
+            </button>
+          </div>
+        )}
         <div className="sv__ctl">
           <span>VALID</span>
           <div className="sv__valid">{fmtValid(selectedUnix)}</div>
         </div>
         <div className="sv__ctl sv__ctl--fcst">
-          <span>{isRaob ? "OBS TIME" : "FORECAST"}</span>
+          <span>{isRaob ? "OBS TIME" : isAcars ? "ASCENT" : "FORECAST"}</span>
           <div className="sv__stepper">
             <button type="button" onClick={() => stepHour(-1)} disabled={hour <= 0} title="Previous (Left arrow)">
               <ChevronLeft size={16} />
             </button>
-            <b>{isRaob ? fmtObsShort(selectedUnix) : `F${String(hour).padStart(3, "0")}`}</b>
+            <b>
+              {isRaob || isAcars ? fmtObsShort(selectedUnix) : `F${String(hour).padStart(3, "0")}`}
+            </b>
             <button type="button" onClick={() => stepHour(1)} disabled={hour >= maxHour} title="Next (Right arrow)">
               <ChevronRight size={16} />
             </button>

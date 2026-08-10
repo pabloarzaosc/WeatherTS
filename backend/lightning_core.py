@@ -150,9 +150,10 @@ def build_lightning(
     minutes: int = 15,
     sat: str = DEFAULT_SAT,
     bbox: tuple[float, float, float, float] | None = None,
+    end_unix: float | None = None,
 ) -> dict[str, Any]:
     """
-    Flashes over the last `minutes`, as GeoJSON points.
+    Flashes over the last `minutes`, ending now or at `end_unix`.
 
     `sat` is "east", "west" or "both". `bbox` is (lat0, lon0, lat1, lon1) and only
     trims the response -- the granules cover the whole disc either way.
@@ -164,7 +165,8 @@ def build_lightning(
         if s not in SATELLITES:
             raise ValueError(f"Unknown satellite: {sat}")
 
-    end = datetime.now(timezone.utc)
+    end = datetime.now(timezone.utc) if end_unix is None else datetime.fromtimestamp(end_unix, timezone.utc)
+    end = min(end, datetime.now(timezone.utc))
     start = end - timedelta(minutes=minutes)
 
     jobs: list[tuple[str, str, str]] = []

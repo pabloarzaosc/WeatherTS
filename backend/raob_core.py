@@ -329,7 +329,7 @@ def build_raob(station: str, name: str, lat: float, lon: float, hour: int, wmo: 
         "stationName": label,
     }
 
-    result = sounding_core.compute(levels)
+    result = sounding_core.compute(levels, lat=lat)
 
     # Preserve missing winds. SHARPpy skips those levels; replacing them with
     # calm wind creates false segments back to the origin in the hodograph.

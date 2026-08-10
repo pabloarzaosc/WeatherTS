@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { MapMouseEvent } from "maplibre-gl";
-import { Activity, Copy, Crosshair } from "lucide-react";
+import { Activity, Copy, Crosshair, Square } from "lucide-react";
 
 import { getMap } from "../../map/mapInstance";
 import { useSoundingViewerStore } from "../../store/useSoundingViewerStore";
@@ -15,6 +15,7 @@ interface MenuState {
 export function MapContextMenu() {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const openAt = useSoundingViewerStore((s) => s.openAt);
+  const setAreaSelecting = useSoundingViewerStore((s) => s.setAreaSelecting);
 
   useEffect(() => {
     let map = getMap();
@@ -69,9 +70,9 @@ export function MapContextMenu() {
 
   if (!menu) return null;
 
-  const width = 210;
+  const width = 236;
   const left = Math.min(menu.x, window.innerWidth - width - 8);
-  const top = Math.min(menu.y, window.innerHeight - 190);
+  const top = Math.min(menu.y, window.innerHeight - 230);
 
   const coordText = `${menu.lat.toFixed(4)}, ${menu.lng.toFixed(4)}`;
 
@@ -95,6 +96,19 @@ export function MapContextMenu() {
       >
         <Activity size={15} />
         Sounding
+      </button>
+      <button
+        type="button"
+        className="mapmenu__item"
+        onClick={() => {
+          setAreaSelecting(true);
+          setMenu(null);
+        }}
+        title="Average the model profile over a box you draw, instead of one grid cell"
+      >
+        <Square size={15} />
+        Area sounding
+        <span className="mapmenu__hint">drag a box</span>
       </button>
       <button
         type="button"

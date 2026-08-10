@@ -22,6 +22,12 @@ import raob_core
 import surface_obs
 import nexrad_core
 import nexrad_level2
+import nexrad_storms
+import nexrad_vwp
+import lsr_core
+import fronts_core
+import acars_core
+import area_sounding
 
 app = FastAPI(title="WeatherTS Sounding API", version="0.1.0")
 
@@ -73,6 +79,130 @@ def raob(
         return raob_core.build_raob(station, name, lat, lon, hour, wmo)
     except raob_core.NoObservationError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/sounding/area")
+def sounding_area(
+    bbox: str = Query(..., description="lat0,lon0,lat1,lon1 — any two opposite corners"),
+    model: str = Query(sounding_core.DEFAULT_MODEL),
+    hour: int = Query(0, ge=0, le=384),
+    side: int = Query(area_sounding.DEFAULT_SIDE, ge=area_sounding.MIN_SIDE,
+                      le=area_sounding.MAX_SIDE),
+):
+    """One sounding averaged over the rectangle the user drew on the map."""
+    try:
+        parts = [float(x) for x in bbox.split(",")]
+        if len(parts) != 4:
+            raise ValueError("bbox must be lat0,lon0,lat1,lon1")
+        return area_sounding.build_area_sounding(*parts, model=model, hour=hour, side=side)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/acars/profiles")
+def acars_profiles(
+    hours: int = Query(acars_core.DEFAULT_HOURS, ge=1, le=acars_core.MAX_HOURS),
+    end: float | None = Query(None, ge=0),
+):
+    """Airports with a recent aircraft (ACARS/AMDAR) ascent or descent."""
+    try:
+        return acars_core.list_profiles(hours, end)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/acars/sounding")
+def acars_sounding(
+    airport: str = Query(..., min_length=2, max_length=6),
+    unix: int | None = Query(None, ge=0),
+    hours: int = Query(acars_core.DEFAULT_HOURS, ge=1, le=acars_core.MAX_HOURS),
+):
+    """One aircraft profile, in the same shape as every other sounding."""
+    try:
+        return acars_core.build_acars(airport, unix, hours)
+    except acars_core.NoProfileError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/lsr")
+def lsr(
+    hours: int = Query(12, ge=1, le=lsr_core.MAX_HOURS),
+    end: float | None = Query(None, ge=0),
+    bbox: str = Query(""),
+):
+    """NWS Local Storm Reports over a trailing window."""
+    try:
+        box = None
+        if bbox:
+            parts = [float(x) for x in bbox.split(",")]
+            if len(parts) != 4:
+                raise ValueError("bbox must be lat0,lon0,lat1,lon1")
+            box = (min(parts[0], parts[2]), min(parts[1], parts[3]),
+                   max(parts[0], parts[2]), max(parts[1], parts[3]))
+        return lsr_core.fetch_lsr(hours=hours, end_unix=end, bbox=box)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/lsr/types")
+def lsr_types():
+    return lsr_core.list_types()
+
+
+@app.get("/api/fronts")
+def fronts(
+    history: int = Query(4, ge=0, le=24),
+    forecast: bool = Query(True),
+):
+    """WPC surface analysis and progs, as timeline frames of GeoJSON.
+
+    `history` past analyses plus the 12 h and 24 h forecast positions, so the
+    fronts can be scrubbed on the same timeline as everything else.
+    """
+    try:
+        return fronts_core.build_fronts(history=history, forecast=forecast)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/nexrad/storms")
+def nexrad_storm_tracks(
+    site: str = Query(..., min_length=3, max_length=4),
+    unix: int | None = Query(None, ge=0),
+):
+    """SCIT storm cells (past + forecast tracks) and mesocyclone detections.
+
+    `unix` picks the storm scan nearest that instant so the tracks follow a
+    scrubbed radar loop instead of always showing the latest volume.
+    """
+    try:
+        return nexrad_storms.build_storms(site, unix)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/nexrad/vwp")
+def nexrad_vwp_profile(
+    site: str = Query(..., min_length=3, max_length=4),
+    columns: int = Query(12, ge=1, le=nexrad_vwp.MAX_COLUMNS),
+):
+    """VAD Wind Profile: the radar's own wind profile, one column per volume."""
+    try:
+        return nexrad_vwp.build_vwp(site, columns)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
 
@@ -252,8 +382,9 @@ def lightning(
     minutes: int = Query(15, ge=1, le=lightning_core.MAX_MINUTES),
     sat: str = Query(lightning_core.DEFAULT_SAT),
     bbox: str = Query(""),
+    end: float | None = Query(None, ge=0),
 ):
-    """GOES GLM flashes over a trailing window, as GeoJSON points."""
+    """GOES GLM flashes over a trailing window, optionally ending in the past."""
     try:
         box = None
         if bbox:
@@ -262,7 +393,7 @@ def lightning(
                 raise ValueError("bbox must be lat0,lon0,lat1,lon1")
             box = (min(parts[0], parts[2]), min(parts[1], parts[3]),
                    max(parts[0], parts[2]), max(parts[1], parts[3]))
-        return lightning_core.build_lightning(minutes=minutes, sat=sat, bbox=box)
+        return lightning_core.build_lightning(minutes=minutes, sat=sat, bbox=box, end_unix=end)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001

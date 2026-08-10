@@ -8,18 +8,20 @@ import {
   Grid3x3,
   Zap,
   Activity,
-  Gauge,
   Sparkles,
+  Megaphone,
+  Waves,
+  Plane,
 } from "lucide-react";
 
 import { useAppStore } from "../../store/useAppStore";
 import type { CatalogTab } from "../../store/useAppStore";
-import { ModelBar } from "../ModelBar";
 import { ModelsView } from "./ModelsView";
 import { SurfaceObsView } from "./SurfaceObsView";
-import { PressureView } from "./PressureView";
 import { LightningView } from "./LightningView";
 import { RadarView } from "./RadarView";
+import { LsrView } from "./LsrView";
+import { FrontsView } from "./FrontsView";
 
 const CAT_TABS: { id: CatalogTab; label: string }[] = [
   { id: "default", label: "Default" },
@@ -32,26 +34,24 @@ const ALERT_LAYER_ID = "nws-alerts";
 
 // Quick-launch grid à la pro workstation. Alerts toggles its layer directly;
 // the rest are future-phase placeholders. (Outlooks live in the top toolbar.)
-// `usesModel` decides whether the picker below stays live while this category's
-// panel is open: observations and radar are measurements, not model output, so
-// leaving the control active there would imply it does something.
 const CATEGORIES: {
   id: string;
   label: string;
   icon: ReactNode;
   ready: boolean;
-  usesModel: boolean;
   layerId?: string;
-  panel?: "models" | "surface" | "radar" | "pressure" | "lightning";
+  panel?: "models" | "surface" | "radar" | "lightning" | "lsr" | "fronts";
 }[] = [
-  { id: "surface", label: "Surface", icon: <Activity size={15} />, ready: true, usesModel: false, panel: "surface" },
-  { id: "pressure", label: "Pressure", icon: <Gauge size={15} />, ready: true, usesModel: true, panel: "pressure" },
-  { id: "models", label: "Models", icon: <Grid3x3 size={15} />, ready: false, usesModel: true, panel: "models" },
-  { id: "radar", label: "Radar", icon: <Radar size={15} />, ready: true, usesModel: false, panel: "radar" },
-  { id: "sat", label: "Satellite", icon: <Satellite size={15} />, ready: false, usesModel: true },
-  { id: "alerts", label: "Alerts", icon: <AlertTriangle size={15} />, ready: true, usesModel: false, layerId: ALERT_LAYER_ID },
-  { id: "lightning", label: "Lightning", icon: <Zap size={15} />, ready: true, usesModel: false, panel: "lightning" },
-  { id: "more", label: "Others in development...", icon: <Sparkles size={15} />, ready: false, usesModel: false },
+  { id: "surface", label: "Surface", icon: <Activity size={15} />, ready: true, panel: "surface" },
+  { id: "models", label: "Models", icon: <Grid3x3 size={15} />, ready: false, panel: "models" },
+  { id: "radar", label: "Radar", icon: <Radar size={15} />, ready: true, panel: "radar" },
+  { id: "sat", label: "Satellite", icon: <Satellite size={15} />, ready: false },
+  { id: "alerts", label: "Alerts", icon: <AlertTriangle size={15} />, ready: true, layerId: ALERT_LAYER_ID },
+  { id: "lightning", label: "Lightning", icon: <Zap size={15} />, ready: true, panel: "lightning" },
+  { id: "lsr", label: "Storm Reports", icon: <Megaphone size={15} />, ready: true, panel: "lsr" },
+  { id: "fronts", label: "Fronts", icon: <Waves size={15} />, ready: true, panel: "fronts" },
+  { id: "acars", label: "Aircraft", icon: <Plane size={15} />, ready: true, layerId: "acars" },
+  { id: "more", label: "Others in development...", icon: <Sparkles size={15} />, ready: false },
 ];
 
 /** The Catalog tab — a quick category launcher. Clicking a category with an
@@ -63,12 +63,9 @@ export function CatalogView() {
   const toggleLayer = useAppStore((s) => s.toggleLayer);
 
   // Which category's inline panel is open.
-  const [openPanel, setOpenPanel] = useState<"models" | "surface" | "radar" | "pressure" | "lightning" | null>(null);
-
-  // Dim the picker while a panel that ignores models is open; closing it (or
-  // opening one that does use a model) brings the control straight back.
-  const openCategory = openPanel ? CATEGORIES.find((c) => c.panel === openPanel) : null;
-  const modelIdle = !!openCategory && !openCategory.usesModel;
+  const [openPanel, setOpenPanel] = useState<
+    "models" | "surface" | "radar" | "lightning" | "lsr" | "fronts" | null
+  >(null);
 
   return (
     <div className="catalog">
@@ -122,12 +119,6 @@ export function CatalogView() {
             })}
           </div>
 
-          {/* Below the grid: pick the product first, then what feeds it. */}
-          <ModelBar
-            disabled={modelIdle}
-            reason={openCategory ? `${openCategory.label} is observed data — no model involved.` : undefined}
-          />
-
           {openPanel === "models" && (
             <div className="catalog__panel">
               <ModelsView />
@@ -138,11 +129,6 @@ export function CatalogView() {
               <SurfaceObsView />
             </div>
           )}
-          {openPanel === "pressure" && (
-            <div className="catalog__panel">
-              <PressureView />
-            </div>
-          )}
           {openPanel === "radar" && (
             <div className="catalog__panel">
               <RadarView />
@@ -151,6 +137,16 @@ export function CatalogView() {
           {openPanel === "lightning" && (
             <div className="catalog__panel">
               <LightningView />
+            </div>
+          )}
+          {openPanel === "lsr" && (
+            <div className="catalog__panel">
+              <LsrView />
+            </div>
+          )}
+          {openPanel === "fronts" && (
+            <div className="catalog__panel">
+              <FrontsView />
             </div>
           )}
         </>

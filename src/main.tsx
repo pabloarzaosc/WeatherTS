@@ -5,6 +5,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "./styles/theme.css";
 import "./styles/app.css";
 import "./styles/sounding.css";
+import "./styles/storms.css";
 
 // Side-effect import: every LayerModule registers itself here. The store and the
 // catalog/layers panels are built from that registry, so a new phase only edits

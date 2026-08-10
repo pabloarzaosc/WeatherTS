@@ -26,11 +26,11 @@ const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: 
  */
 let shared: { key: string; at: number; promise: Promise<LightningField> } | null = null;
 
-function sharedFetch(minutes: number, sat: LightningSat, signal?: AbortSignal): Promise<LightningField> {
-  const key = `${minutes}|${sat}`;
+function sharedFetch(minutes: number, sat: LightningSat, endUnix: number | null, signal?: AbortSignal): Promise<LightningField> {
+  const key = `${minutes}|${sat}|${endUnix ?? "live"}`;
   const now = Date.now();
   if (shared && shared.key === key && now - shared.at < POLL_MS - 2_000) return shared.promise;
-  const promise = fetchLightning({ minutes, sat }, signal);
+  const promise = fetchLightning({ minutes, sat, endUnix }, signal);
   shared = { key, at: now, promise };
   // A rejected promise must not be handed to the next caller as a cached answer.
   promise.catch(() => {
@@ -128,8 +128,8 @@ function visibleHere(map: import("maplibre-gl").Map): boolean {
 }
 
 function applyStyle(map: import("maplibre-gl").Map): void {
-  const { minutes, sizeByEnergy } = useLightningStore.getState();
-  const now = Date.now() / 1000;
+  const { minutes, sizeByEnergy, endUnix } = useLightningStore.getState();
+  const now = endUnix ?? Date.now() / 1000;
   const windowSec = minutes * 60;
   const show = visibleHere(map) ? "visible" : "none";
 
@@ -156,11 +156,11 @@ async function draw(map: import("maplibre-gl").Map): Promise<void> {
   st.abort = ctrl;
   const seq = ++st.seq;
 
-  const { minutes, sat, followNewest } = useLightningStore.getState();
+  const { minutes, sat, endUnix, followNewest } = useLightningStore.getState();
   useLightningStore.getState().setStatus({ busy: true, error: null });
 
   try {
-    const field = await sharedFetch(minutes, sat, ctrl.signal);
+    const field = await sharedFetch(minutes, sat, endUnix, ctrl.signal);
     if (seq !== st.seq || !map.getSource(SRC)) return;
     src.setData(field.geojson);
     applyStyle(map);
@@ -206,8 +206,8 @@ export const lightningLayer: LayerModule = {
 
   async addTo(map) {
     if (!map.getSource(SRC)) map.addSource(SRC, { type: "geojson", data: EMPTY });
-    const { minutes, sizeByEnergy } = useLightningStore.getState();
-    const now = Date.now() / 1000;
+    const { minutes, sizeByEnergy, endUnix } = useLightningStore.getState();
+    const now = endUnix ?? Date.now() / 1000;
 
     if (!map.getLayer(GLOW)) {
       map.addLayer({
@@ -242,7 +242,7 @@ export const lightningLayer: LayerModule = {
     // Anything that changes what to request re-fetches; anything that only
     // changes how it looks just re-styles.
     const unsubQuery = useLightningStore.subscribe(
-      (s) => `${s.minutes}|${s.sat}`,
+      (s) => `${s.minutes}|${s.sat}|${s.endUnix ?? "live"}`,
       () => void draw(map),
     );
     const unsubStyle = useLightningStore.subscribe(
@@ -286,12 +286,12 @@ export const lightningLayer: LayerModule = {
   setOpacity(map, opacity) {
     // Age already drives opacity, so the layer slider scales that curve rather
     // than replacing it.
-    const { minutes } = useLightningStore.getState();
+    const { minutes, endUnix } = useLightningStore.getState();
     if (map.getLayer(DOT)) {
       map.setPaintProperty(DOT, "circle-opacity", [
         "*",
         opacity,
-        ageOpacity(Date.now() / 1000, minutes * 60),
+        ageOpacity(endUnix ?? Date.now() / 1000, minutes * 60),
       ] as ExpressionSpecification);
     }
     if (map.getLayer(GLOW)) map.setPaintProperty(GLOW, "circle-opacity", 0.16 * opacity);

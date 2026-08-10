@@ -37,10 +37,11 @@ async function detail(res: Response): Promise<string> {
 }
 
 export async function fetchLightning(
-  opts: { minutes: number; sat: LightningSat },
+  opts: { minutes: number; sat: LightningSat; endUnix?: number | null },
   signal?: AbortSignal,
 ): Promise<LightningField> {
   const q = new URLSearchParams({ minutes: String(opts.minutes), sat: opts.sat });
+  if (opts.endUnix != null) q.set("end", String(opts.endUnix));
   const res = await fetch(`${BASE}/api/lightning?${q}`, { signal });
   if (!res.ok) throw new Error(await detail(res));
   return res.json();

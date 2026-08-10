@@ -527,8 +527,13 @@ def _parcel_trace(pres_levels, p0, t0, lclpres) -> list[Optional[float]]:
     return out
 
 
-def compute(levels: list[dict]) -> dict:
-    """Run SHARPpy on assembled levels; return params + parcel traces."""
+def compute(levels: list[dict], lat: float = 35.0) -> dict:
+    """Run SHARPpy on assembled levels; return params + parcel traces.
+
+    `lat` is only used for inferred temperature advection, which needs the
+    Coriolis parameter — everything else is latitude-independent.
+    """
+    lat_deg = float(lat) if lat is not None and math.isfinite(float(lat)) else 35.0
     pres = np.array([l["p"] for l in levels], dtype=float)
     hght = np.array([l["h"] for l in levels], dtype=float)
     tmpc = np.array([l["t"] for l in levels], dtype=float)
@@ -679,6 +684,199 @@ def compute(levels: list[dict]) -> dict:
             P["scp"] = None
     wrap("ship", lambda: _num(params.ship(prof)))
     wrap("ttotals", lambda: _num(params.t_totals(prof)))
+    wrap("dcp", lambda: _num(params.dcp(prof)))          # derecho composite
+    wrap("lhp", lambda: _num(params.lhp(prof)))          # large hail parameter
+    wrap("wndg", lambda: _num(params.wndg(prof)))        # wind damage parameter
+    wrap("tei", lambda: _num(params.tei(prof)))          # theta-e index
+    wrap("mburst", lambda: _num(params.mburst(prof)))
+    wrap("esp", lambda: _num(params.esp(prof)))
+    wrap("mmp", lambda: _num(params.mmp(prof)))
+    wrap("sherb", lambda: _num(params.sherb(prof)))
+
+    # ---------------------------------------------------------------------
+    # The full workstation read-out: one parcel table, one thermo block, one
+    # lapse-rate block and one kinematics table -- the four groups a severe
+    # forecaster actually reads, rather than a flat bag of numbers.
+    # ---------------------------------------------------------------------
+
+    def _parcel_row(pcl) -> Optional[dict]:
+        if pcl is None:
+            return None
+        g = lambda a: _num(getattr(pcl, a, None))  # noqa: E731
+        # SHARPpy's Parcel has no NCAPE attribute, so derive it: CAPE spread over
+        # the depth of the buoyant layer is what separates a tall thin profile
+        # from a fat one with the same integral.
+        cape, lfc, el = g("bplus"), g("lfchght"), g("elhght")
+        ncape = None
+        if cape is not None and lfc is not None and el is not None and el > lfc:
+            ncape = round(cape / (el - lfc), 4)
+        return {
+            "cape": cape, "cin": g("bminus"),
+            "cape3": g("b3km"), "cape6": g("b6km"),
+            "capeFzl": g("bfzl"), "brn": g("brn"),
+            "ncape": ncape,
+            "lcl": g("lclhght"), "lfc": lfc, "el": el,
+            "mpl": g("mplhght"), "li": g("li5"),
+            "pres": g("pres"), "lclPres": g("lclpres"),
+            # Cap strength is why a big CAPE can still do nothing.
+            "cap": g("cap"), "capPres": g("cappres"),
+        }
+
+    P["parcels"] = {
+        "sb": _parcel_row(sfcpcl),
+        "ml": _parcel_row(mlpcl),
+        "mu": _parcel_row(mupcl),
+    }
+
+    sfc_p = float(prof.pres[prof.sfc])
+
+    def _p_at(z_agl: float) -> float:
+        return float(interp.pres(prof, interp.to_msl(prof, z_agl)))
+
+    def _hgt_of_p(p: float) -> Optional[float]:
+        # _num, not float(): when the profile never reaches the requested
+        # temperature -- a shallow aircraft ascent topping at 635 hPa has no
+        # freezing level -- temp_lvl yields NaN, and float(nan) does NOT raise.
+        # The NaN then reaches json.dumps and 500s the whole sounding.
+        try:
+            return _num(interp.to_agl(prof, interp.hght(prof, p)))
+        except Exception:
+            return None
+
+    # Moisture / thermo block ----------------------------------------------
+    wrap("pwatIn", lambda: _num(params.precip_water(prof)))
+    wrap("meanMixRatio", lambda: _num(params.mean_mixratio(prof)))
+    wrap("rhSfc", lambda: _num(params.mean_relh(prof, pbot=sfc_p, ptop=sfc_p - 50)))
+    wrap("rhLow", lambda: _num(params.mean_relh(prof, pbot=sfc_p, ptop=850)))
+    wrap("rhMid", lambda: _num(params.mean_relh(prof, pbot=850, ptop=500)))
+    wrap("convT", lambda: _num(params.convective_temp(prof)))
+    wrap("maxT", lambda: _num(params.max_temp(prof)))
+    wrap("thetaeDiff", lambda: _num(params.thetae_diff(prof)))
+    wrap("pblTop", lambda: _hgt_of_p(params.pbl_top(prof)))
+    # Freezing and wet-bulb-zero levels, as heights AGL -- the two the skew-T
+    # annotates (FZL / WBZ).
+    wrap("fzlHght", lambda: _hgt_of_p(params.temp_lvl(prof, 0)))
+    wrap("wbzHght", lambda: _hgt_of_p(params.temp_lvl(prof, 0, wetbulb=True)))
+    wrap("minus10Hght", lambda: _hgt_of_p(params.temp_lvl(prof, -10)))
+    wrap("minus20Hght", lambda: _hgt_of_p(params.temp_lvl(prof, -20)))
+    wrap("minus30Hght", lambda: _hgt_of_p(params.temp_lvl(prof, -30)))
+
+    # Dendritic growth zone: its depth and mean RH drive snow-growth calls.
+    try:
+        dgz_bot, dgz_top = params.dgz(prof)
+        P["dgzBotP"] = _num(dgz_bot)
+        P["dgzTopP"] = _num(dgz_top)
+        P["dgzRh"] = _num(params.mean_relh(prof, pbot=dgz_bot, ptop=dgz_top))
+    except Exception:
+        P["dgzBotP"] = P["dgzTopP"] = P["dgzRh"] = None
+
+    if sfcpcl is not None:
+        P["lclTempC"] = _num(thermo.wetlift(sfc_p, float(prof.tmpc[prof.sfc]),
+                                            float(sfcpcl.lclpres)))
+
+    # Downdraft: DCAPE's own parcel trace ends at the surface temperature the
+    # downdraft would arrive with, which is the number worth showing.
+    try:
+        dres = params.dcape(prof)
+        if isinstance(dres, (tuple, list)) and len(dres) >= 2:
+            ttrace = dres[1]
+            P["downT"] = _num(float(ttrace[-1])) if len(ttrace) else None
+    except Exception:
+        P["downT"] = None
+
+    # Lapse rates -----------------------------------------------------------
+    wrap("lr850_500", lambda: _num(params.lapse_rate(prof, 850, 500, pres=True)))
+    wrap("lr950_850", lambda: _num(params.lapse_rate(prof, 950, 850, pres=True)))
+    if sfcpcl is not None:
+        wrap("lrSfcLcl",
+             lambda: _num(params.lapse_rate(prof, 0, float(sfcpcl.lclhght), pres=False)))
+    try:
+        mlr = params.max_lapse_rate(prof)
+        P["lrMax26"] = _num(mlr[0] if isinstance(mlr, (tuple, list)) else mlr)
+    except Exception:
+        P["lrMax26"] = None
+
+    # Kinematics table ------------------------------------------------------
+    def _kin(label: str, htop: Optional[float], hbot: float = 0.0) -> Optional[dict]:
+        if htop is None or htop <= hbot:
+            return None
+        try:
+            pbot = _p_at(hbot)
+            ptop = _p_at(htop)
+            su, sv = winds.wind_shear(prof, pbot=pbot, ptop=ptop)
+            sdir, sspd = _dir_spd(su, sv)
+            h = winds.helicity(prof, hbot, htop, stu=stu, stv=stv)[0]
+            ru, rv = winds.sr_wind(prof, pbot=pbot, ptop=ptop, stu=stu, stv=stv)
+            rdir, rspd = _dir_spd(ru, rv)
+            e = None
+            if mlpcl is not None:
+                try:
+                    e = _num(params.ehi(prof, mlpcl, hbot, htop, stu=stu, stv=stv))
+                except Exception:
+                    e = None
+            return {"label": label, "shearDir": sdir, "shearKt": sspd,
+                    "srh": _num(h), "srDir": rdir, "srKt": rspd, "ehi": e}
+        except Exception:
+            return None
+
+    rows = [
+        _kin("Sfc-500m", 500.0),
+        _kin("Sfc-1km", 1000.0),
+        _kin("Sfc-2km", 2000.0),
+        _kin("Sfc-3km", 3000.0),
+        _kin("Sfc-6km", 6000.0),
+        _kin("Sfc-8km", 8000.0),
+    ]
+    # Layers defined by the sounding itself rather than by a fixed height.
+    if mlpcl is not None and _num(mlpcl.lfchght) is not None:
+        rows.append(_kin("Sfc-MLLFC", float(mlpcl.lfchght)))
+    if sfcpcl is not None and _num(sfcpcl.lclhght) is not None:
+        rows.append(_kin("Sfc-SBLCL", float(sfcpcl.lclhght)))
+    if eff_bot is not None and eff_top is not None:
+        eb, et = _hgt_of_p(eff_bot), _hgt_of_p(eff_top)
+        if eb is not None and et is not None:
+            rows.append(_kin("Eff Inflow", et, eb))
+    P["kinematics"] = [r for r in rows if r is not None]
+
+    # Storm slinky: the MU parcel's trajectory in the storm-relative frame, the
+    # 3-D shape SHARPpy draws to show how upright or tilted the updraft is.
+    # Cheap -- it reuses the parcel we already lifted.
+    try:
+        traj_pcl = mupcl or sfcpcl or mlpcl
+        if traj_pcl is not None:
+            tr = params.parcelTraj(prof, traj_pcl, smu=stu, smv=stv)
+            pts = np.asarray(tr[0], dtype=float) if isinstance(tr, (tuple, list)) else None
+            if pts is not None and pts.ndim == 2 and pts.shape[1] >= 3:
+                P["slinky"] = [
+                    [round(float(x), 1), round(float(y), 1), round(float(z), 1)]
+                    for x, y, z in pts[:, :3]
+                    if math.isfinite(x) and math.isfinite(y) and math.isfinite(z)
+                ]
+                P["slinkyAngle"] = _num(float(tr[1])) if len(tr) > 1 else None
+    except Exception:
+        P["slinky"] = None
+        P["slinkyAngle"] = None
+
+    # Inferred temperature advection, kept in the payload for callers that
+    # want the layer-by-layer values.
+    # NOTE: this returns one value per LAYER, and each "pressure" entry is the
+    # pair [pbot, ptop] of that layer -- not a single level. Treating it as a
+    # scalar throws and silently empties the whole strip.
+    try:
+        adv, adv_layers = params.inferred_temp_adv(prof, lat=lat_deg)
+        out_adv: list[list[float]] = []
+        for lay, aa in zip(adv_layers, adv):
+            try:
+                pbot_l, ptop_l = float(lay[0]), float(lay[1])
+                val = float(aa)
+            except (TypeError, ValueError, IndexError):
+                continue
+            if not math.isfinite(val):
+                continue
+            out_adv.append([round(pbot_l, 1), round(ptop_l, 1), round(val, 3)])
+        P["tempAdvProfile"] = out_adv or None
+    except Exception:
+        P["tempAdvProfile"] = None
 
     # Parcel traces for the skew-T (draw the MU parcel; SB as fallback). ----
     trace_pcl = mupcl or sfcpcl or mlpcl
@@ -691,7 +889,21 @@ def compute(levels: list[dict]) -> dict:
         except Exception:
             parcel_trace = None
 
-    return {"params": P, "parcelTrace": parcel_trace,
+    # Last line of defence. A single NaN anywhere in this dict makes json.dumps
+    # raise and turns the WHOLE sounding into an HTTP 500 -- one missing
+    # freezing level should never cost the user the other 80 numbers. SHARPpy
+    # returns NaN for anything a profile cannot support, so sweep before
+    # returning rather than trusting every call site to have guarded.
+    def _json_safe(o):
+        if isinstance(o, float):
+            return o if math.isfinite(o) else None
+        if isinstance(o, dict):
+            return {k: _json_safe(v) for k, v in o.items()}
+        if isinstance(o, (list, tuple)):
+            return [_json_safe(v) for v in o]
+        return o
+
+    return {"params": _json_safe(P), "parcelTrace": _json_safe(parcel_trace),
             "effBotP": _num(eff_bot), "effTopP": _num(eff_top)}
 
 
@@ -729,7 +941,7 @@ def build_sounding(lat: float, lon: float, model: str, hour: int) -> dict:
     if len(levels) < 4:
         raise RuntimeError("Not enough valid levels returned for this point/hour")
 
-    result = compute(levels)
+    result = compute(levels, lat=lat)
 
     # Preserve missing winds. SHARPpy skips those levels instead of drawing
     # artificial calm-wind segments in the hodograph.

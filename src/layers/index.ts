@@ -25,6 +25,9 @@ import { surfaceObsLayer } from "./modules/surfaceObsLayer";
 import { mslpLayer } from "./modules/mslpLayer";
 import { lightningLayer } from "./modules/lightningLayer";
 import { nexradLayer } from "./modules/nexradLayer";
+import { lsrLayer } from "./modules/lsrLayer";
+import { frontsLayer } from "./modules/frontsLayer";
+import { acarsLayer } from "./modules/acarsLayer";
 
 registerLayer(boundariesLayer);
 registerLayer(graticuleLayer);
@@ -35,4 +38,8 @@ registerLayer(raobLayer);
 registerLayer(mslpLayer);
 registerLayer(lightningLayer);
 registerLayer(surfaceObsLayer);
+registerLayer(acarsLayer);
+registerLayer(frontsLayer);
 registerLayer(nexradLayer);
+// Ground truth sits on top of every product it might be checked against.
+registerLayer(lsrLayer);

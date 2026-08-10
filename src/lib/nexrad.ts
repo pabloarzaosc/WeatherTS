@@ -130,6 +130,125 @@ export async function fetchNexradMeta(): Promise<{
   return r.json();
 }
 
+// --- Storm attributes (SCIT cells + mesocyclones) --------------------------
+
+export interface StormCell {
+  id: string;
+  lon: number;
+  lat: number;
+  xKm: number;
+  yKm: number;
+  rangeKm: number;
+  azimuthDeg: number;
+  headingDeg: number | null;
+  headingCompass: string | null;
+  speedMph: number | null;
+  speedKt: number | null;
+  /** Past positions, newest first, as [lon, lat]. */
+  past: [number, number][];
+  /** Forecast positions at 15-minute steps, as [lon, lat]. */
+  forecast: [number, number][];
+}
+
+export interface StormMeso {
+  id: string;
+  lon: number;
+  lat: number;
+  stormId: string | null;
+  tvs: boolean;
+  rangeKm: number;
+}
+
+export interface StormReport {
+  meta: {
+    site: string;
+    siteLat: number;
+    siteLon: number;
+    maxRangeKm: number;
+    validUnix: number | null;
+    key: string | null;
+    cellCount: number;
+    mesoCount: number;
+  };
+  cells: StormCell[];
+  mesos: StormMeso[];
+}
+
+/** `unix` picks the storm scan nearest that instant, so the tracks follow the
+ *  radar loop instead of always showing the latest volume. */
+export async function fetchNexradStorms(
+  site: string,
+  unix?: number | null,
+  signal?: AbortSignal,
+): Promise<StormReport> {
+  const url =
+    `${BASE}/api/nexrad/storms?site=${encodeURIComponent(site)}` +
+    (unix != null ? `&unix=${Math.round(unix)}` : "");
+  const r = await fetch(url, { signal });
+  if (!r.ok) throw new Error(`storms ${r.status}`);
+  return r.json();
+}
+
+// --- VAD wind profile ------------------------------------------------------
+
+export interface VwpLevel {
+  altFt: number;
+  altM: number;
+  u: number | null;
+  v: number | null;
+  wCmS: number | null;
+  dirDeg: number;
+  spdKt: number;
+  rmsKt: number | null;
+  divE3: number | null;
+  srngNm: number | null;
+  elevDeg: number | null;
+}
+
+export interface VwpColumn {
+  unix: number | null;
+  key: string;
+  levels: VwpLevel[];
+}
+
+export interface VwpReport {
+  meta: {
+    site: string;
+    siteLat: number;
+    siteLon: number;
+    columns: number;
+    heightsFt: number[];
+    validUnix: number | null;
+    maxKt: number | null;
+    maxAltFt: number | null;
+    maxDirDeg: number | null;
+    source: string;
+  };
+  columns: VwpColumn[];
+}
+
+export async function fetchNexradVwp(
+  site: string,
+  columns = 12,
+  signal?: AbortSignal,
+): Promise<VwpReport> {
+  const r = await fetch(
+    `${BASE}/api/nexrad/vwp?site=${encodeURIComponent(site)}&columns=${columns}`,
+    { signal },
+  );
+  if (!r.ok) {
+    let detail = `vwp ${r.status}`;
+    try {
+      const body = await r.json();
+      if (body?.detail) detail = String(body.detail);
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+  return r.json();
+}
+
 /** Scans available for a UTC date ("" = today/live). `limit` thins them evenly. */
 export async function fetchNexradScans(
   site: string,

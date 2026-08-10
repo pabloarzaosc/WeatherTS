@@ -4,10 +4,20 @@ import {
   fetchViewerModels,
   fetchViewerSounding,
   fetchRaobSounding,
+  fetchAreaSounding,
+  fetchAcarsSounding,
+  type AreaBox,
   type ModelInfo,
   type RaobStation,
   type SoundingData,
 } from "../lib/soundingViewer";
+
+/** How the profile the viewer is showing was produced. */
+export type SoundingMode = "model" | "raob" | "area" | "acars";
+
+/** Sampling grid side for an area mean: 5 -> 25 points inside the rectangle. */
+export const AREA_SIDE = 5;
+export const ACARS_WINDOW_H = 12;
 
 let controller: AbortController | null = null;
 let loadTimer: number | null = null;
@@ -66,12 +76,29 @@ export const useSoundingViewerStore = create<SoundingViewerState>((set, get) => 
   // prefetch, load) is source-agnostic and just uses this key + fetchFrame().
   function sourceKey(): string {
     const s = get();
-    return s.mode === "raob" && s.station ? `raob:${s.station.id}` : s.model;
+    if (s.mode === "raob" && s.station) return `raob:${s.station.id}`;
+    if (s.mode === "acars" && s.airport) return `acars:${s.airport}`;
+    // The box is part of the identity: a different rectangle is a different
+    // sounding, so its frames must not be served from the old one's cache.
+    if (s.mode === "area") return `area:${(s.areaBox ?? []).join(",")}:${s.model}`;
+    return s.model;
   }
 
   function fetchFrame(hour: number, signal: AbortSignal): Promise<SoundingData> {
     const s = get();
     if (s.mode === "raob" && s.station) return fetchRaobSounding(s.station, hour, signal);
+    if (s.mode === "acars" && s.airport) {
+      // The aircraft time axis is a list of actual ascent times, so an hour
+      // index only means something once the first frame has told us the times.
+      const unix = s.data?.meta.times?.[hour] ?? null;
+      return fetchAcarsSounding(s.airport, unix, ACARS_WINDOW_H, signal);
+    }
+    if (s.mode === "area") {
+      // Never fall through to the point fetch here: that would quietly return a
+      // single-cell sounding while the viewer still says "area mean of N pts".
+      if (!s.areaBox) return Promise.reject(new Error("No area selected — draw a box on the map."));
+      return fetchAreaSounding(s.areaBox, s.model, hour, AREA_SIDE, signal);
+    }
     return fetchViewerSounding(s.lat as number, s.lon as number, s.model, hour, signal);
   }
 
@@ -140,6 +167,9 @@ export const useSoundingViewerStore = create<SoundingViewerState>((set, get) => 
     model: "auto",
     mode: "model",
     station: null,
+    airport: null,
+    areaBox: null,
+    areaSelecting: false,
     hour: 0,
     autoHour: true,
     pendingHour: null,
@@ -157,11 +187,48 @@ export const useSoundingViewerStore = create<SoundingViewerState>((set, get) => 
       // otherwise snap to "now".
       const pre = get().preselectHour;
       set({
-        open: true, mode: "model", station: null, lat, lon, data: null, error: null,
+        open: true, mode: "model", station: null, airport: null, lat, lon,
+        areaSelecting: false,
+        data: null, error: null,
         autoHour: pre == null, hour: pre ?? 0, preselectHour: null,
       });
       void get().load();
     },
+
+    /** A sounding averaged over the rectangle dragged on the map. */
+    openArea: (box) => {
+      clearQueuedLoad();
+      resetFrames();
+      const pre = get().preselectHour;
+      const [south, west, north, east] = box;
+      set({
+        open: true, mode: "area", station: null, airport: null,
+        // The centre is what the model preflight and the header coordinate use.
+        lat: (south + north) / 2, lon: (west + east) / 2,
+        areaBox: box,
+        data: null, error: null,
+        autoHour: pre == null, hour: pre ?? 0, preselectHour: null,
+      });
+      void get().load();
+    },
+
+    /** An aircraft (ACARS/AMDAR) ascent or descent at an airport. */
+    openAcars: (airport) => {
+      clearQueuedLoad();
+      resetFrames();
+      set({
+        open: true, mode: "acars", station: null, airport: airport.airport,
+        lat: airport.lat, lon: airport.lon,
+        data: null, error: null,
+        // The aircraft axis is short and irregular; always land on the newest
+        // ascent rather than whatever index the timeline happened to hold.
+        autoHour: false, hour: 0, preselectHour: null,
+      });
+      void get().load();
+    },
+
+    /** Arm the map for a drag-to-draw area selection. */
+    setAreaSelecting: (areaSelecting) => set({ areaSelecting }),
 
     // Open the viewer on an observed radiosonde (RAOB) station. Same viewer,
     // same timeline machinery -- the "time axis" is recent 00Z/12Z obs times.
@@ -173,6 +240,7 @@ export const useSoundingViewerStore = create<SoundingViewerState>((set, get) => 
         open: true,
         mode: "raob",
         station,
+        airport: null,
         lat: station.lat,
         lon: station.lon,
         data: null,
@@ -349,8 +417,14 @@ interface SoundingViewerState {
   lat: number | null;
   lon: number | null;
   model: string;
-  mode: "model" | "raob";
+  mode: SoundingMode;
   station: RaobStation | null;
+  /** ACARS mode: the airport whose ascent is showing. */
+  airport: string | null;
+  /** Area mode: the rectangle being averaged, [south, west, north, east]. */
+  areaBox: AreaBox | null;
+  /** True while the map is armed for a drag-to-draw area selection. */
+  areaSelecting: boolean;
   hour: number;
   autoHour: boolean; // snap to "now" after the first load
   pendingHour: number | null; // frame being rendered during playback (for overlays)
@@ -363,6 +437,9 @@ interface SoundingViewerState {
 
   openAt: (lat: number, lon: number) => void;
   openRaob: (station: RaobStation) => void;
+  openArea: (box: AreaBox) => void;
+  setAreaSelecting: (v: boolean) => void;
+  openAcars: (airport: { airport: string; lat: number; lon: number }) => void;
   close: () => void;
   setModel: (model: string) => void;
   setHour: (hour: number) => void;
