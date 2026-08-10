@@ -21,7 +21,9 @@ from typing import Any
 
 import numpy as np
 import requests
-import xarray as xr
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+import h5py
 
 # G19 sits at 75.2W (East: the Americas and the Atlantic), G18 at 137W (West:
 # the Pacific and the western states). Together they cover most of a hemisphere.
@@ -34,7 +36,9 @@ DEFAULT_SAT = "east"
 MAX_MINUTES = 60
 # One granule is 20 s, so an hour is 180 files. Fetching those serially would
 # take minutes; the bucket is happy with a modest amount of parallelism.
-FETCH_WORKERS = 10
+# 24 measured best on a 60-minute window (30.6 s vs 35.7 s at 10 and 38.3 s at
+# 32 -- past ~24 the extra connections cost more than they win).
+FETCH_WORKERS = 24
 # Granules decoded and kept. 60 min x 2 satellites = 360, plus slack.
 CACHE_LIMIT = 420
 
@@ -43,6 +47,17 @@ _FLASHES: dict[str, list[tuple[float, float, float, float]]] = {}
 # (bucket, hour prefix) -> keys, so a poll does not re-list a settled hour.
 _LISTINGS: dict[tuple[str, str], list[str]] = {}
 _LOCK = threading.Lock()
+
+# One pooled session for every granule fetch. `requests.get` opens a new TCP+TLS
+# connection each call, which is pure overhead when 179 files come from one
+# host; the pool must be at least as large as FETCH_WORKERS or the threads
+# queue on it.
+_S3 = requests.Session()
+_S3.mount("https://", HTTPAdapter(pool_connections=4, pool_maxsize=FETCH_WORKERS + 8,
+                                  max_retries=Retry(total=2, connect=2, read=1,
+                                                    backoff_factor=0.3,
+                                                    status_forcelist=(429, 500, 502, 503, 504),
+                                                    allowed_methods=frozenset(["GET"]))))
 
 _KEY_TIME = re.compile(r"_s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)")
 
@@ -90,6 +105,53 @@ def _list_hour(bucket: str, when: datetime) -> list[str]:
     return keys
 
 
+_UINT_OF = {1: "u1", 2: "u2", 4: "u4", 8: "u8"}
+
+
+def _decode_var(f: "h5py.File", name: str) -> np.ndarray:
+    """One NetCDF-in-HDF5 variable, with the conventions xarray would apply.
+
+    `_Unsigned: "true"` on a signed integer means the bits are really unsigned;
+    `_FillValue` marks missing and MUST be masked before scaling, or a fill of
+    -1 read as uint16 becomes 65535 and scales into an enormous value.
+    """
+    d = f[name]
+    raw = d[:]
+    a = d.attrs
+    fill = a.get("_FillValue")
+    missing = None
+    if fill is not None:
+        missing = raw == np.asarray(fill).ravel()[0]
+    if a.get("_Unsigned", b"") in (b"true", "true") and raw.dtype.kind == "i":
+        raw = raw.astype(_UINT_OF.get(raw.dtype.itemsize, "u4"))
+    vals = raw.astype("float64")
+    if "scale_factor" in a:
+        vals = vals * float(np.asarray(a["scale_factor"]).ravel()[0])
+    if "add_offset" in a:
+        vals = vals + float(np.asarray(a["add_offset"]).ravel()[0])
+    if missing is not None and missing.any():
+        vals[missing] = np.nan
+    return vals
+
+
+def _decode_time(f: "h5py.File", name: str) -> np.ndarray:
+    """A time variable -> unix seconds, using its own `units` epoch."""
+    offs = _decode_var(f, name)
+    units = f[name].attrs.get("units", b"")
+    if isinstance(units, bytes):
+        units = units.decode("ascii", "ignore")
+    base = 0.0
+    if "since" in str(units):
+        stamp = str(units).split("since", 1)[1].strip()
+        for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f"):
+            try:
+                base = datetime.strptime(stamp, fmt).replace(tzinfo=timezone.utc).timestamp()
+                break
+            except ValueError:
+                continue
+    return base + offs
+
+
 def _read_granule(bucket: str, key: str) -> list[tuple[float, float, float, float]]:
     """Decode one granule to (lat, lon, unix, energy) per flash."""
     with _LOCK:
@@ -99,28 +161,31 @@ def _read_granule(bucket: str, key: str) -> list[tuple[float, float, float, floa
 
     out: list[tuple[float, float, float, float]] = []
     try:
-        raw = requests.get(f"https://{bucket}.s3.amazonaws.com/{key}", timeout=60).content
+        raw = _S3.get(f"https://{bucket}.s3.amazonaws.com/{key}", timeout=60).content
         if not raw:
             return out
-        with xr.open_dataset(io.BytesIO(raw), engine="h5netcdf") as ds:
-            n = int(ds.sizes.get("number_of_flashes", 0))
-            if n:
-                lat = np.asarray(ds["flash_lat"].values, dtype=float)
-                lon = np.asarray(ds["flash_lon"].values, dtype=float)
-                energy = np.asarray(ds["flash_energy"].values, dtype=float)
-                # Flash times are an offset from the granule's product_time.
-                base = np.datetime64(ds["product_time"].values).astype("datetime64[ms]")
-                base_unix = base.astype("int64") / 1000.0
-                off = np.asarray(ds["flash_time_offset_of_first_event"].values, dtype="datetime64[ms]")
-                # The offset variable is itself absolute once decoded; fall back
-                # to the granule time for anything that comes through unset.
-                t = off.astype("int64") / 1000.0
-                bad = ~np.isfinite(t) | (t <= 0)
-                if bad.any():
-                    t = np.where(bad, base_unix, t)
-                good = np.isfinite(lat) & np.isfinite(lon)
-                for la, lo, tt, en in zip(lat[good], lon[good], t[good], energy[good]):
-                    out.append((float(la), float(lo), float(tt), float(en) if np.isfinite(en) else 0.0))
+        # h5py directly, NOT xarray. Building an xarray Dataset costs ~0.27 s per
+        # granule against ~0.001 s for the four arrays we actually read -- and
+        # since the decode holds the GIL, that cost does not parallelise, which
+        # is why a 60-minute window took nearly two minutes. Verified against
+        # xarray's own output: lat, lon and time are bit-identical, energy
+        # differs by 1e-7 relative (we scale in float64, xarray in float32) and
+        # is identical once rounded for display.
+        with h5py.File(io.BytesIO(raw), "r") as f:
+            if "flash_lat" not in f:
+                return out
+            lat = _decode_var(f, "flash_lat")
+            lon = _decode_var(f, "flash_lon")
+            energy = _decode_var(f, "flash_energy")
+            t_arr = _decode_time(f, "flash_time_offset_of_first_event")
+            n = min(len(lat), len(lon), len(energy), len(t_arr))
+            if not n:
+                return out
+            good = np.isfinite(lat[:n]) & np.isfinite(lon[:n]) & np.isfinite(t_arr[:n])
+            for la, lo, tt, en in zip(lat[:n][good], lon[:n][good],
+                                      t_arr[:n][good], energy[:n][good]):
+                out.append((float(la), float(lo), float(tt),
+                            float(en) if np.isfinite(en) else 0.0))
     except Exception:  # noqa: BLE001 - one bad granule must not sink the window
         return []
 

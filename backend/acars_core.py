@@ -24,6 +24,7 @@ import io
 import math
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -48,9 +49,16 @@ _SESSION.mount(
 )
 
 FILL = 99999.0
-MAX_HOURS = 24
+MAX_HOURS = 48
 DEFAULT_HOURS = 8
 MIN_LEVELS = 6
+# The timeline must be able to step back 7 ascents, so a profile needs 8 frames.
+# Most fields cannot supply that in 12 h -- of 55 airports reporting in a recent
+# 12 h window, 45 had fewer than 8 ascents -- so the window for ONE airport
+# expands backwards until it has enough, instead of being a fixed span.
+TARGET_FRAMES = 8
+# Hourly files fetched at once while walking back; the walk is latency-bound.
+HOUR_WORKERS = 8
 
 _HOUR_CACHE: dict[str, tuple[float, list[dict]]] = {}
 _HOUR_TTL_LIVE = 300.0   # the current hour is still filling
@@ -184,7 +192,9 @@ def _read_hour(stamp: str) -> list[dict]:
         })
 
     _HOUR_CACHE[stamp] = (now, out)
-    while len(_HOUR_CACHE) > 40:
+    # Must comfortably exceed MAX_HOURS: at 40 entries a 48 h walk evicted the
+    # hours it had just read and re-downloaded them on the next airport.
+    while len(_HOUR_CACHE) > MAX_HOURS + 16:
         _HOUR_CACHE.pop(next(iter(_HOUR_CACHE)))
     return out
 
@@ -200,11 +210,19 @@ def list_profiles(hours: int = DEFAULT_HOURS, end_unix: Optional[float] = None) 
 
     profiles: list[dict] = []
     errors: list[str] = []
-    for stamp in _hour_keys(hours, end):
+    stamps = _hour_keys(hours, end)
+
+    def safe(stamp: str):
         try:
-            profiles.extend(_read_hour(stamp))
+            return stamp, _read_hour(stamp), None
         except Exception as exc:  # noqa: BLE001 - one bad hour shouldn't empty the map
-            errors.append(f"{stamp}: {exc}")
+            return stamp, [], str(exc)
+
+    with ThreadPoolExecutor(max_workers=HOUR_WORKERS) as pool:
+        for stamp, got, err in pool.map(safe, stamps):
+            profiles.extend(got)
+            if err:
+                errors.append(f"{stamp}: {err}")
 
     profiles.sort(key=lambda p: p["unix"], reverse=True)
 
@@ -236,30 +254,60 @@ def list_profiles(hours: int = DEFAULT_HOURS, end_unix: Optional[float] = None) 
     }
 
 
-def find_profile(airport: str, unix: Optional[int] = None,
-                 hours: int = DEFAULT_HOURS) -> dict:
-    """The profile for an airport at (or nearest before) a time."""
+def airport_profiles(airport: str, hours: int = DEFAULT_HOURS,
+                     min_frames: int = TARGET_FRAMES) -> list[dict]:
+    """Every profile one airport has, newest first, walking back until it has
+    at least `min_frames` of them (or the archive window runs out).
+
+    Read in BATCHES, in parallel: the hourly files are tiny (~7 KB) and the walk
+    is entirely latency-bound, so 48 sequential fetches cost ~12 s while eight at
+    a time cost ~2 s. Batching rather than fetching all 48 keeps the early exit,
+    so a busy hub still stops after the first batch. The files are shared between
+    airports and cached, so the second airport asked about is nearly free.
+    """
     airport = (airport or "").strip().upper()
     if not airport:
         raise ValueError("airport is required")
 
-    best: Optional[dict] = None
-    for stamp in _hour_keys(max(hours, 1)):
-        for p in _read_hour(stamp):
-            if p["airport"] != airport:
-                continue
-            if unix is None:
-                if best is None or p["unix"] > best["unix"]:
-                    best = p
-            else:
-                # nearest in time, ties to the later one
-                if best is None or abs(p["unix"] - unix) < abs(best["unix"] - unix):
-                    best = p
-    if best is None:
+    stamps = _hour_keys(MAX_HOURS)
+    found: list[dict] = []
+    seen: set[int] = set()
+    read = 0
+
+    def safe_read(stamp: str) -> list[dict]:
+        try:
+            return _read_hour(stamp)
+        except Exception:  # noqa: BLE001 - one unreachable hour must not end the walk
+            return []
+
+    with ThreadPoolExecutor(max_workers=HOUR_WORKERS) as pool:
+        for i in range(0, len(stamps), HOUR_WORKERS):
+            batch = stamps[i : i + HOUR_WORKERS]
+            for hour_profiles in pool.map(safe_read, batch):
+                for p in hour_profiles:
+                    if p["airport"] == airport and p["unix"] not in seen:
+                        seen.add(p["unix"])
+                        found.append(p)
+            read += len(batch)
+            # Keep going past `hours` only while short of frames.
+            if read >= max(hours, 1) and len(found) >= min_frames:
+                break
+
+    found.sort(key=lambda p: p["unix"], reverse=True)
+    return found
+
+
+def find_profile(airport: str, unix: Optional[int] = None,
+                 hours: int = DEFAULT_HOURS) -> dict:
+    """The profile for an airport at (or nearest before) a time."""
+    profiles = airport_profiles(airport, hours)
+    if not profiles:
         raise NoProfileError(
-            f"No aircraft sounding for {airport} in the last {hours} h."
+            f"No aircraft sounding for {airport} in the last {MAX_HOURS} h."
         )
-    return best
+    if unix is None:
+        return profiles[0]
+    return min(profiles, key=lambda p: abs(p["unix"] - unix))
 
 
 def build_acars(airport: str, unix: Optional[int] = None,
@@ -270,19 +318,21 @@ def build_acars(airport: str, unix: Optional[int] = None,
 
     import sounding_core
 
-    prof = find_profile(airport, unix, hours)
+    profiles = airport_profiles(airport, hours)
+    if not profiles:
+        raise NoProfileError(
+            f"No aircraft sounding for {(airport or '').upper()} in the last {MAX_HOURS} h."
+        )
+    prof = profiles[0] if unix is None else min(profiles, key=lambda p: abs(p["unix"] - unix))
     levels = prof["levels"]
     if len(levels) < 4:
         raise RuntimeError("Not enough levels in this aircraft profile")
 
     result = sounding_core.compute(levels, lat=prof["lat"])
 
-    # Every profile the window holds for this field becomes the time axis, so
-    # the global timeline steps between ascents instead of carrying its own.
-    times = sorted(
-        {p["unix"] for stamp in _hour_keys(hours) for p in _read_hour(stamp)
-         if p["airport"] == airport}
-    )
+    # The time axis is this airport's own ascent history, oldest first, so the
+    # global timeline steps between real ascents rather than a synthetic grid.
+    times = sorted(p["unix"] for p in profiles)
     try:
         hour_index = times.index(prof["unix"])
     except ValueError:

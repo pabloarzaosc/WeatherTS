@@ -386,6 +386,13 @@ def lightning(
 ):
     """GOES GLM flashes over a trailing window, optionally ending in the past."""
     try:
+        # A client that sends milliseconds gets a readable answer instead of the
+        # raw OSError datetime.fromtimestamp raises on Windows for an epoch that
+        # far in the future ("[Errno 22] Invalid argument", which says nothing).
+        if end is not None and end > 4_102_444_800:  # year 2100
+            raise ValueError(
+                f"`end` looks like milliseconds ({end:.0f}); it must be unix seconds"
+            )
         box = None
         if bbox:
             parts = [float(x) for x in bbox.split(",")]

@@ -43,6 +43,7 @@ interface LightningState {
   granules: number;
   satellites: string[];
   /** When the last successful poll landed, for the "updated" readout. */
+  /** When the last fetch landed, in unix SECONDS (not ms). */
   updatedAt: number | null;
   /** End of the displayed window. Null means the live edge. */
   endUnix: number | null;

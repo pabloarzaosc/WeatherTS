@@ -112,12 +112,18 @@ function freshFilter(now: number): ExpressionSpecification {
 
 interface PaneState {
   abort: AbortController | null;
+  /** Query currently being decoded. Polling must not abort this same request. */
+  requestKey: string | null;
   poll: number;
   tick: number;
   unsub: () => void;
   seq: number;
 }
 const state = new WeakMap<import("maplibre-gl").Map, PaneState>();
+
+function queryKey(minutes: number, sat: LightningSat, endUnix: number | null): string {
+  return `${minutes}|${sat}|${endUnix ?? "live"}`;
+}
 
 /** Whether this particular pane should draw, honouring the sync setting. */
 function visibleHere(map: import("maplibre-gl").Map): boolean {
@@ -151,12 +157,22 @@ async function draw(map: import("maplibre-gl").Map): Promise<void> {
   const src = map.getSource(SRC) as GeoJSONSource | undefined;
   if (!src) return;
 
-  st.abort?.abort();
+  const { minutes, sat, endUnix, followNewest } = useLightningStore.getState();
+  const key = queryKey(minutes, sat, endUnix);
+  // A cold 60-minute/two-satellite request can take longer than the 25-second
+  // polling interval. Aborting it on every poll meant that the largest valid
+  // window could never finish loading. Only cancel when the requested query
+  // actually changed; a poll for the same query simply waits for the in-flight
+  // request to complete.
+  if (st.abort && !st.abort.signal.aborted) {
+    if (st.requestKey === key) return;
+    st.abort.abort();
+  }
   const ctrl = new AbortController();
   st.abort = ctrl;
+  st.requestKey = key;
   const seq = ++st.seq;
 
-  const { minutes, sat, endUnix, followNewest } = useLightningStore.getState();
   useLightningStore.getState().setStatus({ busy: true, error: null });
 
   try {
@@ -173,7 +189,11 @@ async function draw(map: import("maplibre-gl").Map): Promise<void> {
       newestUnix: field.newestUnix,
       granules: field.granules,
       satellites: field.satellites,
-      updatedAt: Date.now(),
+      // SECONDS. Every other time in this app is unix seconds, and the
+      // timeline reads this one as the live window end -- storing ms here made
+      // it hand the backend an `end` a thousand times too large, which surfaced
+      // as an unreadable "[Errno 22] Invalid argument".
+      updatedAt: Date.now() / 1000,
     });
 
     if (followNewest && field.newestUnix) {
@@ -191,6 +211,11 @@ async function draw(map: import("maplibre-gl").Map): Promise<void> {
       busy: false,
       error: err instanceof Error ? err.message : String(err),
     });
+  } finally {
+    if (seq === st.seq && st.abort === ctrl) {
+      st.abort = null;
+      st.requestKey = null;
+    }
   }
 }
 
@@ -257,6 +282,7 @@ export const lightningLayer: LayerModule = {
 
     state.set(map, {
       abort: null,
+      requestKey: null,
       seq: 0,
       poll,
       tick,
