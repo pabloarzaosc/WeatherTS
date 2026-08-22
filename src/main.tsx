@@ -6,6 +6,7 @@ import "./styles/theme.css";
 import "./styles/app.css";
 import "./styles/sounding.css";
 import "./styles/storms.css";
+import "./styles/auth.css";
 
 // Side-effect import: every LayerModule registers itself here. The store and the
 // catalog/layers panels are built from that registry, so a new phase only edits
@@ -14,10 +15,20 @@ import "./layers";
 
 import App from "./App";
 import { LoginGate } from "./ui/LoginGate";
+import { useAlertStore } from "./store/useAlertStore";
 import { useAppStore } from "./store/useAppStore";
+import { useAuthStore } from "./store/useAuthStore";
+import { useChaserStore } from "./store/useChaserStore";
+import { useMesoscaleStore } from "./store/useMesoscaleStore";
 import { useSoundingViewerStore } from "./store/useSoundingViewerStore";
+import { useSoundingViewStore } from "./store/useSoundingViewStore";
+import { useAcarsStore } from "./store/useAcarsStore";
+import { useNexradStore } from "./store/useNexradStore";
+import { useVwpStore } from "./store/useVwpStore";
 import { useSurfaceObsStore } from "./store/useSurfaceObsStore";
-import { applyReduceMotion } from "./lib/theme";
+import { useThemeStore } from "./store/useThemeStore";
+import { applyReduceMotion, applyTheme, resolveTheme, type ResolvedTheme } from "./lib/theme";
+import { themeLinkedBasemap } from "./map/basemaps";
 
 // DEV-only hook so the sounding viewer can be driven without a right-click
 // (headless preview can't size the WebGL map). Harmless in production builds.
@@ -26,14 +37,26 @@ if (import.meta.env.DEV) {
     useSoundingViewerStore.getState().openAt(lat, lon);
   // Read-only handles on the stores, for checking state from the console the
   // way __map already allows for the map.
+  // These must be the app's own instances: a dynamic import() from the console
+  // returns a second copy of the module, whose state is always empty and looks
+  // exactly like a broken fetch.
   (window as unknown as { __stores?: Record<string, unknown> }).__stores = {
     app: useAppStore,
+    auth: useAuthStore,
+    chasers: useChaserStore,
     surfaceObs: useSurfaceObsStore,
+    alerts: useAlertStore,
+    mesoscale: useMesoscaleStore,
+    soundingViewer: useSoundingViewerStore,
+    soundingView: useSoundingViewStore,
+    acars: useAcarsStore,
+    nexrad: useNexradStore,
+    vwp: useVwpStore,
   };
 }
 
 // Seed per-layer UI state from the registry defaults, then apply the saved
-// reduced-motion preference. The palette is a single fixed gray theme (CSS).
+// reduced-motion preference.
 useAppStore.getState().initLayers();
 
 // Coerce any stale persisted view (e.g. the removed "Tools" tab) to the catalog.
@@ -44,6 +67,24 @@ if (persistedView !== "catalog" && persistedView !== "layers" && persistedView !
 
 applyReduceMotion(useAppStore.getState().reduceMotion);
 useAppStore.subscribe((s) => s.reduceMotion, applyReduceMotion);
+
+// "auto" theme follows the visitor's own clock, so re-resolve on every mode
+// change plus a slow tick that catches the day/night boundary without a reload.
+// The map's basemap rides along too, but only on an actual theme transition --
+// not every tick -- so a manual basemap pick made mid-theme isn't fought.
+let lastTheme: ResolvedTheme | null = null;
+const syncTheme = () => {
+  const theme = resolveTheme(useThemeStore.getState().mode);
+  applyTheme(theme);
+  if (theme !== lastTheme) {
+    const nextBasemap = themeLinkedBasemap(theme, useAppStore.getState().basemapId);
+    if (nextBasemap) useAppStore.getState().setBasemap(nextBasemap);
+  }
+  lastTheme = theme;
+};
+syncTheme();
+useThemeStore.subscribe(syncTheme);
+setInterval(syncTheme, 60_000);
 
 import { ErrorBoundary } from "./ErrorBoundary";
 

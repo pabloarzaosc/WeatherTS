@@ -17,10 +17,16 @@ import base64
 import math
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
 
 import requests
+
+
+class _SkipRender(Exception):
+    """Not an error: the caller asked for parameters without the plot."""
+
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -32,7 +38,9 @@ IEM_URL = "https://mesonet.agron.iastate.edu/json/raob.py"
 WYO_URL = "https://weather.uwyo.edu/wsgi/sounding"
 
 # Recent synoptic times to expose on the timeline (00Z/12Z), newest last.
-SYNOPTIC_WINDOW = 8  # 4 days of 00/12Z
+SYNOPTIC_WINDOW = 20  # 10 days of 00/12Z. A twice-daily site gives ~20 frames,
+                      # a 00Z-only site ~10 -- and probing them is concurrent,
+                      # so a wider window costs almost nothing in wall time.
 MISSING = -9999.0
 MS2KT = 1.9438445  # Wyoming reports wind speed in m/s; SHARPpy wants knots.
 
@@ -255,6 +263,28 @@ def _levels_at(station: str, wmo: Optional[str], unix: int) -> tuple[list[dict],
     return [], None
 
 
+def _available_slots(
+    station: str, wmo: Optional[str], slots: list[int]
+) -> list[tuple[int, list[dict], Optional[str]]]:
+    """Every synoptic slot this station actually reported at, ascending.
+
+    Probed concurrently: eight sequential fetches would put seconds on the
+    first open of every station, and they are independent of one another.
+    """
+    def probe(unix: int):
+        try:
+            levels, source = _levels_at(station, wmo, unix)
+        except NetworkError:
+            raise
+        except Exception:  # noqa: BLE001 - one bad slot is a gap, not a failure
+            return None
+        return (unix, levels, source) if len(levels) >= 4 else None
+
+    with ThreadPoolExecutor(max_workers=min(8, len(slots))) as pool:
+        results = list(pool.map(probe, slots))
+    return [r for r in results if r]
+
+
 def _find_available(
     station: str, wmo: Optional[str], times: list[int], want_index: int
 ) -> tuple[Optional[list[dict]], Optional[int], Optional[str]]:
@@ -276,30 +306,67 @@ def _find_available(
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
-def build_raob(station: str, name: str, lat: float, lon: float, hour: int, wmo: str = "") -> dict:
+def build_raob(station: str, name: str, lat: float, lon: float, hour: int, wmo: str = "",
+               view: Optional[dict] = None, render: bool = True, axis: bool = True) -> dict:
     station = (station or "").strip()
     wmo = (wmo or "").strip() or None
     if not station and not wmo:
         raise NoObservationError("No station id was provided.")
 
-    times = _recent_synoptic()
-    requested_index = max(0, min(int(hour), len(times) - 1))
+    slots = _recent_synoptic()
 
-    cache_key = (station.upper(), wmo or "", requested_index)
+    view = view or {}
+    # `render` belongs in the key as much as the plot options do. Without it,
+    # the parameters-only responses the Compare/Trends/Risk tabs ask for were
+    # cached under the same key the viewer uses -- so running a risk scan and
+    # then opening one of those stations handed back the image-less copy, and
+    # the viewer reported "SHARPpy could not render this sounding" for a
+    # sounding that had never been asked to render.
+    cache_key = (station.upper(), wmo or "", int(hour), bool(render), bool(axis),
+                 tuple(sorted(view.items())))
     now = time.time()
     hit = _RESULT_CACHE.get(cache_key)
     if hit and now - hit[0] < _TTL:
         return hit[1]
 
-    levels, actual_index, source = _find_available(station, wmo, times, requested_index)
-    if levels is None or actual_index is None:
+    # Build the axis from the cycles this station ACTUALLY launched at, not
+    # from all eight synoptic slots.
+    #
+    # Most sites launch twice a day, but plenty only launch at 00Z, and a
+    # fixed eight-slot axis made half the stepper dead: pressing next landed
+    # on an empty cycle, the search fell back to the neighbour, and the same
+    # sounding reappeared with a "showing a different time" notice. Probing
+    # the slots first costs one round of concurrent requests on a cold
+    # station -- they are small JSON documents, and _levels_at caches each
+    # (station, time) afterwards -- and it buys a timeline where every step
+    # lands on a real observation.
+    if axis:
+        found = _available_slots(station, wmo, slots)
+    else:
+        # A caller that only wants this station's current numbers -- the risk
+        # scan asks for two dozen of them -- does not need the whole window
+        # probed. Walk outward from the newest and stop at the first hit.
+        want = max(0, min(int(hour), len(slots) - 1))
+        levels, idx, source = _find_available(station, wmo, slots, want)
+        found = [(slots[idx], levels, source)] if levels and idx is not None else []
+    if not found:
+        # Name the window and the sources. The old wording ("the last few
+        # 00Z/12Z times") read as if only the newest cycle had been tried, when
+        # in fact every slot in the window was, from both feeds -- so the user
+        # was left retrying a station that has no data to find.
+        span_h = round((slots[-1] - slots[0]) / 3600)
+        tried = "IEM" + (" and U. Wyoming" if (wmo or station.isdigit()) else "")
         raise NoObservationError(
-            f"No observed sounding was reported for {name or station} at any of the "
-            "last few 00Z/12Z times. Not every station launches every cycle - try "
-            "another station or come back later."
+            f"No observed sounding for {name or station} in the last {span_h} h. "
+            f"All {len(slots)} of the 00Z/12Z cycles were checked against {tried}. "
+            "Not every station launches every cycle, and some report to neither "
+            "feed - try a nearby station."
         )
 
-    valid_unix = times[actual_index]
+    times = [t for t, _lv, _src in found]
+    requested_index = max(0, min(int(hour), len(times) - 1))
+    valid_unix, levels, source = found[requested_index]
+    actual_index = requested_index
     label = f"{name or station}".strip()
 
     meta = {
@@ -311,10 +378,9 @@ def build_raob(station: str, name: str, lat: float, lon: float, hour: int, wmo: 
         "requestedModelLabel": f"{label} (RAOB)",
         "modelGroup": "Observed",
         "openMeteoModel": "iem_raob",
-        "fallbackReason": (
-            None if actual_index == requested_index
-            else f"No observation at {_iso_z(times[requested_index])[:16]}Z; showing {_iso_z(valid_unix)[:16]}Z."
-        ),
+        # Nothing to explain any more: every index on the axis is a real
+        # observation, so a step always lands where it says it does.
+        "fallbackReason": None,
         "hour": actual_index,
         "requestedHour": requested_index,
         "forecastMaxHour": len(times) - 1,
@@ -337,10 +403,21 @@ def build_raob(station: str, name: str, lat: float, lon: float, hour: int, wmo: 
 
     image = None
     image_error = None
+    # Skipping the plot is what makes a multi-station scan possible at all:
+    # the parameters are already computed above, while the SHARPpy render is
+    # seconds of Qt work per profile.
     try:
+        if not render:
+            raise _SkipRender()
         from sharppy_renderer import render_spc_widget_png
 
+        # The panel's parcel / storm-motion choices ride in the same meta the
+        # renderer already receives, so nothing else in the path changes.
+        meta.update(view or {})
+
         image = base64.b64encode(render_spc_widget_png(render_levels, meta)).decode("ascii")
+    except _SkipRender:
+        pass
     except Exception as exc:  # noqa: BLE001
         # If the main renderer fails, try in-process rendering directly
         image_error = str(exc)

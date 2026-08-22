@@ -7,7 +7,6 @@ import { useAppStore } from "../store/useAppStore";
 import { useNexradStore } from "../store/useNexradStore";
 import { selectCurrentModel, useModelStore } from "../store/useModelStore";
 import { useMslpStore } from "../store/useMslpStore";
-import { useLightningStore } from "../store/useLightningStore";
 import { useLsrStore } from "../store/useLsrStore";
 import { useFrontsStore } from "../store/useFrontsStore";
 
@@ -21,8 +20,8 @@ const MO = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct"
 
 // Model-mode fallback axis when no sounding is open yet (hourly forecast steps).
 const MODEL_PLACEHOLDER_MAX = 48;
-const LIGHTNING_STEP_S = 15 * 60;
-const LIGHTNING_HISTORY_S = 24 * 60 * 60;
+const STEP_15MIN_S = 15 * 60;
+const HISTORY_24H_S = 24 * 60 * 60;
 
 function fmtValid(unix: number | null): string {
   if (!unix) return "--";
@@ -55,12 +54,12 @@ function recentSynoptic(count = 8): number[] {
   return times.sort((a, b) => a - b);
 }
 
-/** Lightning history is sampled every 15 minutes, with each frame showing the
- * configured trailing window ending at that timestamp. */
-function recentLightning(endUnix: number): number[] {
-  const end = Math.floor(endUnix / LIGHTNING_STEP_S) * LIGHTNING_STEP_S;
-  const count = LIGHTNING_HISTORY_S / LIGHTNING_STEP_S + 1;
-  return Array.from({ length: count }, (_, i) => end - (count - 1 - i) * LIGHTNING_STEP_S);
+/** A 24-hour axis on a 15-minute grid ending at the given instant. Storm
+ * reports step this grid; each frame shows the window ending there. */
+function recentQuarterHours(endUnix: number): number[] {
+  const end = Math.floor(endUnix / STEP_15MIN_S) * STEP_15MIN_S;
+  const count = HISTORY_24H_S / STEP_15MIN_S + 1;
+  return Array.from({ length: count }, (_, i) => end - (count - 1 - i) * STEP_15MIN_S);
 }
 
 /**
@@ -87,10 +86,7 @@ export function MapTimeline() {
   const radarScans = useNexradStore((s) => s.scans);
   const radarIndex = useNexradStore((s) => s.index);
   const radarLoading = useNexradStore((s) => s.loading);
-  const lightningVisible = useAppStore((s) => s.layers["lightning"]?.visible ?? false);
-  const lightningEndUnix = useLightningStore((s) => s.endUnix);
-  const lightningBusy = useLightningStore((s) => s.busy);
-  const lightningUpdatedAt = useLightningStore((s) => s.updatedAt);
+  const radarArchiveDay = useNexradStore((s) => s.archiveDate);
   // Model fields (pressure today, more later) scrub forecast hours on this same
   // timeline rather than carrying a second slider of their own.
   const lsrVisible = useAppStore((s) => s.layers["lsr"]?.visible ?? false);
@@ -110,26 +106,23 @@ export function MapTimeline() {
   const [speed, setSpeed] = useState<(typeof PLAY_SPEEDS)[number]>(1);
   const [loop, setLoop] = useState(false);
   const [obsTimes] = useState<number[]>(() => recentSynoptic());
-  const liveLightningEnd = lightningUpdatedAt ?? Date.now() / 1000;
-  const lightningTimes = recentLightning(lightningEndUnix ?? liveLightningEnd);
   const [lsrNow] = useState<number>(() => Date.now() / 1000);
-  const lsrTimes = recentLightning(lsrEndUnix ?? lsrNow);
+  const lsrTimes = recentQuarterHours(lsrEndUnix ?? lsrNow);
 
   // What drives the timeline: an open sounding wins; then radar scans (the
   // live product); then a model field; else the closed sounding axis.
   const isRadar = !open && radarVisible && radarScans.length > 0;
   const isModel = !open && !isRadar && mslpVisible && modelHours.length > 0;
-  const isLightning = !open && !isRadar && !isModel && lightningVisible;
   // Storm reports drive the axis only when nothing more specific does; the rest
   // of the time they FOLLOW whatever does (see the sync effect below), which is
   // what keeps every product on one clock.
-  const isLsr = !open && !isRadar && !isModel && !isLightning && lsrVisible;
+  const isLsr = !open && !isRadar && !isModel && lsrVisible;
   // Fronts drive the axis when nothing more specific does; the frames ARE the
   // axis (3-hourly analyses plus the 12 h and 24 h progs), so there is no grid
   // to invent.
   const isFronts =
-    !open && !isRadar && !isModel && !isLightning && !isLsr && frontsVisible && frontFrames.length > 0;
-  const active = open || isRadar || isModel || isLightning || isLsr || isFronts;
+    !open && !isRadar && !isModel && !isLsr && frontsVisible && frontFrames.length > 0;
+  const active = open || isRadar || isModel || isLsr || isFronts;
   // Which axis the closed viewer would use. Area soundings scrub forecast hours
   // exactly like a point sounding, so only RAOB (and ACARS, which is observed)
   // need the observation axis.
@@ -148,14 +141,11 @@ export function MapTimeline() {
     const base = modelRunIso ? Date.parse(modelRunIso) / 1000 : null;
     times = base ? modelHours.map((h) => base + h * 3600) : null;
     maxHour = Math.max(modelHours.length - 1, 0);
-  } else if (isLightning) {
-    times = lightningTimes;
-    maxHour = lightningTimes.length - 1;
   } else if (isFronts) {
     times = frontFrames.map((f) => f.validUnix ?? 0);
     maxHour = Math.max(frontFrames.length - 1, 0);
   } else if (isLsr) {
-    // Same 15-minute grid the lightning axis uses -- reports arrive irregularly,
+    // A 15-minute grid -- reports arrive irregularly,
     // so a regular clock is the only sensible axis.
     times = lsrTimes;
     maxHour = lsrTimes.length - 1;
@@ -171,9 +161,6 @@ export function MapTimeline() {
   }
 
   const modelIndex = isModel ? Math.max(0, modelHours.indexOf(modelHour)) : 0;
-  const lightningIndex = isLightning
-    ? Math.max(0, lightningTimes.indexOf(lightningEndUnix ?? lightningTimes[lightningTimes.length - 1]))
-    : 0;
   const lsrIndex = isLsr
     ? Math.max(0, lsrTimes.indexOf(lsrEndUnix ?? lsrTimes[lsrTimes.length - 1]))
     : 0;
@@ -184,29 +171,40 @@ export function MapTimeline() {
         ? radarIndex
         : isModel
           ? modelIndex
-          : isLightning
-            ? lightningIndex
-            : isLsr
-              ? lsrIndex
-              : isFronts
-                ? Math.max(frontIndex, 0)
-                : hour,
+          : isLsr
+            ? lsrIndex
+            : isFronts
+              ? Math.max(frontIndex, 0)
+              : hour,
       maxHour,
     ),
   );
   const selectedUnix = times ? times[value] ?? null : null;
   const canPlay =
-    isRadar || isModel || isLightning || isLsr || isFronts
+    isRadar || isModel || isLsr || isFronts
       ? maxHour > 0
       : active && !!data && maxHour > 0;
+
+  // Parked on the newest frame of a live loop, the timeline is not showing a
+  // past instant -- it is showing "now, as fresh as this radar gets". Radars
+  // publish on their own clocks and some run minutes behind, so pinning the
+  // alert filter to that frame's exact timestamp hid every warning issued
+  // since the volume was made: switch to a site whose newest scan is twenty
+  // minutes old and twenty minutes of warnings vanished off the map. Worse,
+  // it is not the same set from radar to radar, which is what made it look
+  // like alerts came and went with the site picker.
+  //
+  // An archive day is genuinely history, and a scrubbed-back frame is a
+  // deliberate look at the past -- both still filter.
+  const atLiveEdge = isRadar && radarArchiveDay === null && value >= maxHour;
 
   // Keep alerts on the same clock as the scan underneath them: a warning issued
   // after the frame you're looking at shouldn't be drawn over it. Only while
   // radar drives the timeline -- `isRadar` already means no sounding is open, so
   // opening one releases the alerts back to live and closing it re-syncs them.
   useEffect(() => {
-    useAlertStore.getState().setTimeFilter(isRadar ? selectedUnix : null);
-  }, [isRadar, selectedUnix]);
+    useAlertStore.getState().setTimeFilter(isRadar && !atLiveEdge ? selectedUnix : null);
+  }, [isRadar, atLiveEdge, selectedUnix]);
 
   // Storm reports ride the same clock: while an OBSERVED product drives the
   // axis, the LSR window ends at the frame on screen, so a report filed after it
@@ -220,28 +218,27 @@ export function MapTimeline() {
   // analysis or prog nearest the frame on screen is the one drawn.
   useEffect(() => {
     if (!frontsVisible || isFronts) return;
-    useFrontsStore.getState().goToUnix(isRadar || isLightning || isModel || open ? selectedUnix : null);
-  }, [frontsVisible, isFronts, isRadar, isLightning, isModel, open, selectedUnix]);
+    useFrontsStore.getState().goToUnix(isRadar || isModel || open ? selectedUnix : null);
+  }, [frontsVisible, isFronts, isRadar, isModel, open, selectedUnix]);
 
   useEffect(() => {
     if (!lsrVisible || isLsr) return;
-    const follows = isRadar || isLightning;
+    const follows = isRadar;
     useLsrStore.getState().setEndUnix(follows ? selectedUnix : null);
-  }, [lsrVisible, isLsr, isRadar, isLightning, selectedUnix]);
+  }, [lsrVisible, isLsr, isRadar, selectedUnix]);
 
 
   const scrub = (h: number) => {
     const clamped = Math.max(0, Math.min(h, maxHour));
     if (isRadar) void useNexradStore.getState().showIndex(clamped);
     else if (isModel) useModelStore.getState().setHour(modelHours[clamped] ?? 0);
-    else if (isLightning) useLightningStore.getState().setEndUnix(times?.[clamped] ?? null);
     else if (isLsr) useLsrStore.getState().setEndUnix(times?.[clamped] ?? null);
     else if (isFronts) useFrontsStore.getState().setIndex(clamped);
     else if (open) setHour(clamped);
     else setPreselectHour(clamped);
   };
   const step = (delta: number) => {
-    if (isRadar || isModel || isLightning || isLsr || isFronts) scrub(value + delta);
+    if (isRadar || isModel || isLsr || isFronts) scrub(value + delta);
     else if (open) stepHour(delta);
     else scrub(value + delta);
   };
@@ -249,10 +246,6 @@ export function MapTimeline() {
   // Jump to the frame closest to the current real-world time (latest obs for
   // RAOB, nearest forecast hour for models).
   const goNow = () => {
-    if (isLightning) {
-      useLightningStore.getState().setEndUnix(null);
-      return;
-    }
     if (isLsr) {
       useLsrStore.getState().setEndUnix(null);
       return;
@@ -356,29 +349,7 @@ export function MapTimeline() {
       }
     }
 
-    // Lightning frames fetch a trailing window ending at each timeline step.
-    async function runLightning() {
-      while (!cancelled) {
-        await wait(900 / speed);
-        if (cancelled) return;
-        const ls = useLightningStore.getState();
-        const current = ls.endUnix ?? lightningTimes[lightningTimes.length - 1];
-        const i = Math.max(0, lightningTimes.indexOf(current));
-        const atEnd = i >= lightningTimes.length - 1;
-        if (atEnd && !loop) {
-          setPlaying(false);
-          return;
-        }
-        ls.setEndUnix(lightningTimes[atEnd ? 0 : i + 1]);
-        await wait(80);
-        for (let k = 0; k < 250 && useLightningStore.getState().busy; k++) {
-          if (cancelled) return;
-          await wait(100);
-        }
-      }
-    }
-
-    // Storm reports step the same 15-minute grid as lightning; each frame is a
+    // Storm reports step the 15-minute grid; each frame is a
     // fresh window fetch, so wait for it to land before advancing.
     async function runLsr() {
       while (!cancelled) {
@@ -421,8 +392,6 @@ export function MapTimeline() {
       ? runRadar()
       : isModel
         ? runModel()
-        : isLightning
-          ? runLightning()
           : isLsr
             ? runLsr()
             : isFronts
@@ -431,7 +400,7 @@ export function MapTimeline() {
     return () => {
       cancelled = true;
     };
-  }, [playing, speed, loop, canPlay, isRadar, isModel, isLightning, isLsr, isFronts, gotoPlaybackHour, setPendingHour]);
+  }, [playing, speed, loop, canPlay, isRadar, isModel, isLsr, isFronts, gotoPlaybackHour, setPendingHour]);
 
   // Stop playing if the context can no longer play (e.g. viewer closed).
   useEffect(() => {
@@ -456,7 +425,7 @@ export function MapTimeline() {
       ? `F${String(modelHour).padStart(3, "0")}`
       : isFronts
         ? (frontFrames[value]?.kind === "forecast" ? frontFrames[value]?.label ?? "PROG" : "ANALYSIS")
-      : isLightning || isLsr
+      : isLsr
         ? fmtScan(selectedUnix)
       : isRaob
         ? fmtObsShort(selectedUnix)
@@ -465,10 +434,8 @@ export function MapTimeline() {
     ? radarLoading
     : isModel
       ? modelBusy
-      : isLightning
-        ? lightningBusy
-        : isLsr
-          ? lsrBusy
+      : isLsr
+        ? lsrBusy
         : isFronts
           ? frontBusy
           : busy && pendingHour != null;

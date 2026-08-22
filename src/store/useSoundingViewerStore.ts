@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { useAcarsStore } from "./useAcarsStore";
+import { viewQuery } from "./useSoundingViewStore";
 
 import {
   fetchViewerModels,
@@ -17,7 +19,30 @@ export type SoundingMode = "model" | "raob" | "area" | "acars";
 
 /** Sampling grid side for an area mean: 5 -> 25 points inside the rectangle. */
 export const AREA_SIDE = 5;
-export const ACARS_WINDOW_H = 12;
+
+/**
+ * "Open on the newest observation."
+ *
+ * An observed sounding's time axis runs oldest-first, so hour 0 is the slot
+ * three and a half days back -- opening a station there fetched a stale
+ * profile, drew it, and only then snapped forward, so the first thing on
+ * screen was a sounding from Saturday labelled as the latest. The backend
+ * clamps the index to the newest available, so asking past the end is the way
+ * to say "the most recent one" without knowing yet how many there are.
+ */
+const LATEST_OBS = 9_999;
+
+/**
+ * The aircraft window the viewer fetches with, taken from the layer's own
+ * setting rather than fixed.
+ *
+ * The dot on the map and the sounding behind it have to agree: with the layer
+ * widened to 24 h and this pinned at 12, clicking a dot for an eighteen-hour-old
+ * ascent asked for a window that could not contain it and opened empty.
+ */
+function acarsWindowH(): number {
+  return useAcarsStore.getState().windowH;
+}
 
 let controller: AbortController | null = null;
 let loadTimer: number | null = null;
@@ -76,12 +101,16 @@ export const useSoundingViewerStore = create<SoundingViewerState>((set, get) => 
   // prefetch, load) is source-agnostic and just uses this key + fetchFrame().
   function sourceKey(): string {
     const s = get();
-    if (s.mode === "raob" && s.station) return `raob:${s.station.id}`;
-    if (s.mode === "acars" && s.airport) return `acars:${s.airport}`;
+    // The plot options identify the rendered image as much as the location
+    // does: without them here, switching parcel or storm motion hands back the
+    // cached picture of the previous setting and the controls look dead.
+    const view = viewQuery();
+    if (s.mode === "raob" && s.station) return `raob:${s.station.id}${view}`;
+    if (s.mode === "acars" && s.airport) return `acars:${s.airport}${view}`;
     // The box is part of the identity: a different rectangle is a different
     // sounding, so its frames must not be served from the old one's cache.
-    if (s.mode === "area") return `area:${(s.areaBox ?? []).join(",")}:${s.model}`;
-    return s.model;
+    if (s.mode === "area") return `area:${(s.areaBox ?? []).join(",")}:${s.model}${view}`;
+    return `${s.model}${view}`;
   }
 
   function fetchFrame(hour: number, signal: AbortSignal): Promise<SoundingData> {
@@ -91,7 +120,7 @@ export const useSoundingViewerStore = create<SoundingViewerState>((set, get) => 
       // The aircraft time axis is a list of actual ascent times, so an hour
       // index only means something once the first frame has told us the times.
       const unix = s.data?.meta.times?.[hour] ?? null;
-      return fetchAcarsSounding(s.airport, unix, ACARS_WINDOW_H, signal);
+      return fetchAcarsSounding(s.airport, unix, acarsWindowH(), signal);
     }
     if (s.mode === "area") {
       // Never fall through to the point fetch here: that would quietly return a
@@ -246,7 +275,7 @@ export const useSoundingViewerStore = create<SoundingViewerState>((set, get) => 
         data: null,
         error: null,
         autoHour: pre == null,
-        hour: pre ?? 0,
+        hour: pre ?? LATEST_OBS,
         preselectHour: null,
       });
       void get().load();

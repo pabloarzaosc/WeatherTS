@@ -1,6 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
+
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
+# The .pal tables live outside backend/ because the folder is meant to be
+# edited: <repo>/palettes is the source of truth in a checkout. Bundling it
+# is not optional -- nexrad_core reads PAL_TABLES["FILE_DR"] and friends at
+# import time, so a build without these files is a backend that dies on
+# startup rather than one that falls back to the built-in tables.
+PAL_SRC = os.path.join(SPECPATH, os.pardir, "palettes")
 
 block_cipher = None
 
@@ -18,7 +27,11 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=collect_data_files('sharppy') + collect_data_files('sutils'),
+    datas=(
+        collect_data_files('sharppy')
+        + collect_data_files('sutils')
+        + [(os.path.join(PAL_SRC, '*.pal'), 'palettes')]
+    ),
     hiddenimports=[
         *sharppy_imports,
         *sutils_imports,
@@ -150,10 +163,9 @@ a = Analysis(
         'surface_obs',
         'pal_tables',
         'sharppy_renderer',
-        # These two are imported by main.py but were never listed, so the
-        # packaged backend had no pressure field and no lightning at all.
+        # Imported by main.py but never listed, so the packaged backend had
+        # no pressure field at all.
         'model_fields',
-        'lightning_core',
     ],
     hookspath=[],
     hooksconfig={},

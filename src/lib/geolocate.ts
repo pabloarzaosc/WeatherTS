@@ -46,3 +46,62 @@ export function flyToMyLocation(): Promise<void> {
     );
   });
 }
+
+export interface Fix {
+  lat: number;
+  lon: number;
+  /** Metres, as reported by the device. */
+  accuracy: number | null;
+  /** Degrees true, only while actually moving. */
+  heading: number | null;
+  /** Metres per second. */
+  speed: number | null;
+  /** When the device took the reading, unix ms. */
+  at: number;
+}
+
+/**
+ * Follow the device's position until the returned function is called.
+ *
+ * Separate from flyToMyLocation, which answers "where am I" once and moves the
+ * camera. This one never touches the camera -- a map that yanks itself back
+ * every few seconds is unusable while you are also trying to look ahead of the
+ * storm -- it only reports fixes.
+ */
+export function watchPosition(
+  onFix: (fix: Fix) => void,
+  onError?: (err: GeolocationPositionError) => void,
+): () => void {
+  if (!("geolocation" in navigator)) {
+    onError?.({
+      code: 2,
+      message: "Geolocation unavailable",
+      PERMISSION_DENIED: 1,
+      POSITION_UNAVAILABLE: 2,
+      TIMEOUT: 3,
+    } as GeolocationPositionError);
+    return () => {};
+  }
+
+  const id = navigator.geolocation.watchPosition(
+    (pos) => {
+      const c = pos.coords;
+      onFix({
+        lat: c.latitude,
+        lon: c.longitude,
+        accuracy: Number.isFinite(c.accuracy) ? c.accuracy : null,
+        // Both are null when stationary, and NaN on some devices; either way
+        // there is no heading to report rather than a heading of zero.
+        heading: c.heading != null && Number.isFinite(c.heading) ? c.heading : null,
+        speed: c.speed != null && Number.isFinite(c.speed) ? c.speed : null,
+        at: pos.timestamp,
+      });
+    },
+    (err) => onError?.(err),
+    // No maximumAge: a cached fix from before the last few miles of driving is
+    // worse than waiting for a real one when the whole point is where you are
+    // right now.
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+  );
+  return () => navigator.geolocation.clearWatch(id);
+}

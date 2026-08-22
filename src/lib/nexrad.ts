@@ -146,8 +146,26 @@ export interface StormCell {
   speedKt: number | null;
   /** Past positions, newest first, as [lon, lat]. */
   past: [number, number][];
-  /** Forecast positions at 15-minute steps, as [lon, lat]. */
+  /** The current position followed by the 15/30/45/60-minute forecast
+   *  positions, as [lon, lat]. Shorter when SCIT published fewer steps. */
   forecast: [number, number][];
+
+  // --- hail (Level III product 59) ---------------------------------------
+  // Absent when the hail algorithm did not evaluate the cell -- it reports
+  // UNKNOWN past roughly 130 nm, which is not the same as "no hail".
+  probHailPct?: number;
+  probSevereHailPct?: number;
+  maxHailSizeIn?: number;
+  /** The size is a below-threshold reading, shown as "<0.50" not "0.50". */
+  hailSizeBelowThreshold?: boolean;
+
+  // --- structure (Level III product 62) -----------------------------------
+  cellTopKft?: number;
+  cellBaseKft?: number;
+  cellBaseBelowThreshold?: boolean;
+  vilKgM2?: number;
+  maxRefDbz?: number;
+  maxRefHeightKft?: number;
 }
 
 export interface StormMeso {
@@ -169,6 +187,9 @@ export interface StormReport {
     key: string | null;
     cellCount: number;
     mesoCount: number;
+    /** How many cells came back with hail/structure attributes. 0 during
+     *  archive playback, where the live feed cannot answer. */
+    attributedCount: number;
   };
   cells: StormCell[];
   mesos: StormMeso[];
@@ -187,6 +208,42 @@ export async function fetchNexradStorms(
   const r = await fetch(url, { signal });
   if (!r.ok) throw new Error(`storms ${r.status}`);
   return r.json();
+}
+
+/** One volume's worth of a cell's attributes, for the trend charts. */
+export interface StormCellSample {
+  unix: number;
+  probHailPct?: number;
+  probSevereHailPct?: number;
+  maxHailSizeIn?: number;
+  hailSizeBelowThreshold?: boolean;
+  cellTopKft?: number;
+  cellBaseKft?: number;
+  cellBaseBelowThreshold?: boolean;
+  vilKgM2?: number;
+  maxRefDbz?: number;
+  maxRefHeightKft?: number;
+}
+
+/**
+ * How one cell's hail and structure changed over recent volumes, oldest first.
+ * An empty list is normal: the feed reaches back about a day, and a cell only
+ * appears in the scans it was actually tracked in.
+ */
+export async function fetchStormCellHistory(
+  site: string,
+  cell: string,
+  volumes?: number,
+  signal?: AbortSignal,
+): Promise<StormCellSample[]> {
+  const url =
+    `${BASE}/api/nexrad/storms/history?site=${encodeURIComponent(site)}` +
+    `&cell=${encodeURIComponent(cell)}` +
+    (volumes != null ? `&volumes=${Math.round(volumes)}` : "");
+  const r = await fetch(url, { signal });
+  if (!r.ok) throw new Error(`storm history ${r.status}`);
+  const d = (await r.json()) as { samples?: StormCellSample[] };
+  return d.samples ?? [];
 }
 
 // --- VAD wind profile ------------------------------------------------------
@@ -225,6 +282,63 @@ export interface VwpReport {
     source: string;
   };
   columns: VwpColumn[];
+}
+
+/** The whole VWP hodograph panel, rendered server-side with SHARPpy. */
+export interface VwpPanelVec {
+  dir: number;
+  spd: number;
+}
+
+export interface VwpPanelRow {
+  label: string;
+  shear: VwpPanelVec | null;
+  srh: number | null;
+  srWind: VwpPanelVec | null;
+  ehi: number | null;
+}
+
+export interface VwpPanelReport {
+  image: string;
+  meta: {
+    site: string;
+    lat: number;
+    lon: number;
+    validUnix: number | null;
+    motion: string;
+    vadTopAglM: number;
+    vadLevels: number;
+    thermoModel: string | null;
+    note: string;
+  };
+  motions: Record<string, VwpPanelVec>;
+  rows: VwpPanelRow[];
+  critical: number | null;
+}
+
+export async function fetchVwpPanel(
+  site: string,
+  motion: string,
+  custom: { dir: number; spd: number } | null,
+  signal?: AbortSignal,
+): Promise<VwpPanelReport> {
+  const q = new URLSearchParams({ site, motion });
+  if (motion === "custom" && custom) {
+    q.set("motionDir", String(custom.dir));
+    q.set("motionSpd", String(custom.spd));
+  }
+  const r = await fetch(`${BASE}/api/nexrad/vwp/panel?${q.toString()}`, { signal });
+  if (!r.ok) {
+    let detail = `vwp panel ${r.status}`;
+    try {
+      const body = await r.json();
+      if (body?.detail) detail = String(body.detail);
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+  return (await r.json()) as VwpPanelReport;
 }
 
 export async function fetchNexradVwp(

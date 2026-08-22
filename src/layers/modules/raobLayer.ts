@@ -1,6 +1,7 @@
 import maplibregl, { type MapLayerMouseEvent } from "maplibre-gl";
 import type { LayerModule } from "../types";
 import { useSoundingViewerStore } from "../../store/useSoundingViewerStore";
+import { registerMarkerLayers, unregisterMarkerLayers } from "../clickPriority";
 
 const SRC = "raob-src";
 const DOTS = "raob-dots";
@@ -100,6 +101,7 @@ export const raobLayer: LayerModule = {
       map.getCanvas().style.cursor = "";
       popup.remove();
     };
+    registerMarkerLayers([DOTS]);
     map.on("click", DOTS, onClick);
     map.on("mouseenter", DOTS, onEnter);
     map.on("mouseleave", DOTS, onLeave);
@@ -115,6 +117,7 @@ export const raobLayer: LayerModule = {
       st.popup.remove();
       state.delete(map);
     }
+    unregisterMarkerLayers([DOTS]);
     if (map.getLayer(DOTS)) map.removeLayer(DOTS);
     if (map.getSource(SRC)) map.removeSource(SRC);
   },
@@ -126,4 +129,12 @@ export const raobLayer: LayerModule = {
   getLayerIds() {
     return [DOTS];
   },
+
+  // Same reasoning as the ACARS dots: a small clickable marker that opens a
+  // sounding must not end up under a radar sweep or an alert fill. Just below
+  // ACARS so the two never fight over the same pixel in a predictable way.
+  topLayerIds() {
+    return [DOTS];
+  },
+  topPriority: 38,
 };

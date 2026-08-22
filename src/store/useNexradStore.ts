@@ -28,10 +28,56 @@ import { usePaletteStore } from "./usePaletteStore";
 
 let controller: AbortController | null = null;
 let pollTimer: number | null = null;
-let stormController: AbortController | null = null;
-// Frame time the loaded storm scan belongs to, so replaying frames inside one
-// volume doesn't refetch it every step.
-let lastStormFrame: number | null = null;
+// Which frame the storm scan on screen answers for, so replaying frames inside
+// one volume doesn't reapply it every step.
+let lastStormKey: string | null = null;
+
+/**
+ * Storm scans, kept per frame.
+ *
+ * Playback asks for a new one every few hundred milliseconds. The old code
+ * aborted the in-flight request each time a frame advanced, so at 1x every
+ * request was cancelled by the next one and nothing ever landed -- the tracks
+ * sat frozen on whichever volume happened to load before playback started.
+ * Requests are now left to finish and their answers kept; only the answer that
+ * still matches the frame on screen is applied.
+ */
+const stormCache = new Map<string, StormReport>();
+const stormInFlight = new Map<string, Promise<StormReport | null>>();
+/** Roughly a day of frames. Small objects -- a few dozen cells each. */
+const STORM_CACHE_MAX = 300;
+/** How far ahead of the playhead to warm storm scans, and how hard. Bounded on
+ *  purpose: a loop can be 240 frames, and the tracks are a garnish on the
+ *  radar, not the picture. */
+const STORM_WARM_AHEAD = 8;
+const STORM_WARM_CONCURRENCY = 2;
+
+const stormKeyFor = (site: string, unix: number | null) => `${site}:${unix ?? "latest"}`;
+
+function stormFor(site: string, unix: number | null): Promise<StormReport | null> {
+  const k = stormKeyFor(site, unix);
+  const hit = stormCache.get(k);
+  if (hit) return Promise.resolve(hit);
+  const running = stormInFlight.get(k);
+  if (running) return running;
+
+  const p = fetchNexradStorms(site, unix)
+    .then((report) => {
+      if (stormCache.size >= STORM_CACHE_MAX) {
+        // Map keeps insertion order, so the first key is the oldest.
+        const oldest = stormCache.keys().next().value;
+        if (oldest !== undefined) stormCache.delete(oldest);
+      }
+      stormCache.set(k, report);
+      return report;
+    })
+    .catch(() => null)
+    .finally(() => {
+      stormInFlight.delete(k);
+    });
+  stormInFlight.set(k, p);
+  return p;
+}
 
 // How many scans the loop covers. A day holds ~200-440 per product, so the list
 // is thinned evenly to this many (newest always kept). Each frame is ~220 KB
@@ -330,6 +376,8 @@ interface NexradState {
   selectedCellId: string | null; // cell whose popup is open
   smooth: boolean; // interpolate gate colours (off = raw gates)
   threshold: number | null; // hide gates below this value
+  /** Follow the pointer with the gate value and beam height under it. */
+  showReadout: boolean;
   autoUpdate: boolean; // poll for new scans while live
 
   scans: NexradScan[];
@@ -374,6 +422,7 @@ interface NexradState {
   focusPane: (id: string) => void;
   setSmooth: (v: boolean) => void;
   setThreshold: (v: number | null) => void;
+  setShowReadout: (v: boolean) => void;
   setAutoUpdate: (v: boolean) => void;
   /** Rebuild the current mesh from the scan already in memory. */
   loadScans: () => Promise<void>;
@@ -413,6 +462,7 @@ export const useNexradStore = create<NexradState>((set, get) => ({
   selectedCellId: null,
   smooth: false,
   threshold: null,
+  showReadout: true,
   autoUpdate: true,
   scans: [],
   index: 0,
@@ -494,7 +544,7 @@ export const useNexradStore = create<NexradState>((set, get) => ({
     // A different site shares nothing with the cached meshes; free them so the
     // budget isn't spent holding geometry for a radar no longer on screen.
     clearMeshCache();
-    lastStormFrame = null;
+    lastStormKey = null;
     set({
       site, scan: null, mesh: null, meshRev: get().meshRev + 1, scans: [], index: 0,
       error: null, storms: null, selectedCellId: null,
@@ -732,6 +782,7 @@ export const useNexradStore = create<NexradState>((set, get) => ({
 
 
   setShowRing: (showRing) => set({ showRing }),
+  setShowReadout: (showReadout) => set({ showReadout }),
   setShowTracks: (showTracks) => {
     set({ showTracks, selectedCellId: showTracks ? get().selectedCellId : null });
     if (showTracks && !get().storms) void get().loadStorms();
@@ -744,22 +795,30 @@ export const useNexradStore = create<NexradState>((set, get) => ({
   loadStorms: async () => {
     const { site, showTracks, scans, index } = get();
     if (!site || !showTracks) return;
-    const frameUnix = scans[index]?.time ?? null;
-    // Don't refetch the same storm scan while the loop replays frames that all
-    // fall inside one volume.
-    if (frameUnix != null && lastStormFrame === frameUnix && get().storms) return;
-    stormController?.abort();
-    stormController = new AbortController();
-    const mine = stormController;
-    try {
-      const storms = await fetchNexradStorms(site, frameUnix, mine.signal);
-      if (mine.signal.aborted) return;
-      lastStormFrame = frameUnix;
-      const stillThere = storms.cells.some((c) => c.id === get().selectedCellId);
-      set({ storms, selectedCellId: stillThere ? get().selectedCellId : null });
-    } catch {
-      if (!mine.signal.aborted) set({ storms: null, selectedCellId: null });
+    const k = stormKeyFor(site, scans[index]?.time ?? null);
+    // Already showing this one -- frames inside a single volume all land here.
+    if (lastStormKey === k && get().storms) return;
+
+    const apply = (report: StormReport) => {
+      // The playhead may have moved on while this was in flight. A late answer
+      // for a frame nobody is looking at must not overwrite the one they are.
+      const cur = get();
+      if (!cur.site || stormKeyFor(cur.site, cur.scans[cur.index]?.time ?? null) !== k) return;
+      lastStormKey = k;
+      const stillThere = report.cells.some((c) => c.id === cur.selectedCellId);
+      set({ storms: report, selectedCellId: stillThere ? cur.selectedCellId : null });
+    };
+
+    const cached = stormCache.get(k);
+    if (cached) {
+      apply(cached);
+      return;
     }
+    // Deliberately no abort and no clearing on failure: during playback the
+    // tracks blinking off between volumes is worse than one frame's worth of
+    // staleness, and the next frame's answer replaces them anyway.
+    const report = await stormFor(site, scans[index]?.time ?? null);
+    if (report) apply(report);
   },
 
   setSmooth: (smooth) => {
@@ -844,6 +903,24 @@ export const useNexradStore = create<NexradState>((set, get) => ({
       }
     };
     for (let i = 0; i < WARM_CONCURRENCY; i++) void pump();
+
+    // Warm the storm scans just ahead of the playhead too, so pressing play
+    // reads them out of the cache instead of waiting on a round trip at every
+    // step. Many frames resolve to the same volume, which the backend caches,
+    // so this is cheap after the first pass over a stretch of the loop.
+    if (get().showTracks) {
+      const ahead = scans.slice(from, from + STORM_WARM_AHEAD);
+      let at = 0;
+      const pumpStorms = async (): Promise<void> => {
+        while (at < ahead.length) {
+          if (token !== warmToken) return;
+          const frame = ahead[at++];
+          await stormFor(site, frame.time ?? null);
+        }
+      };
+      for (let i = 0; i < STORM_WARM_CONCURRENCY; i++) void pumpStorms();
+    }
+
     set({ warm: get().countWarm() });
   },
 
@@ -977,8 +1054,7 @@ export const useNexradStore = create<NexradState>((set, get) => ({
   clear: () => {
     controller?.abort();
     controller = null;
-    stormController?.abort();
-    stormController = null;
+    lastStormKey = null;
     get().stopAutoRefresh();
     clearMeshCache();
     set({

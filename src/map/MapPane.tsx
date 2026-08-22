@@ -98,9 +98,55 @@ export function MapPane({ id }: { id: string }) {
     }
 
     const manager = new LayerManager(map);
-    const syncLayers = () => void manager.sync(store.getState());
+
+    /**
+     * Sync only once the style can actually take layers, and re-run when it can.
+     *
+     * addSource/addLayer throw while the style is still loading, and the "load"
+     * event is one-shot: if the style request to the tile host is slow or
+     * fails, that event never fires and NOTHING is ever added -- not radar, not
+     * alerts, not boundaries. That is the "nothing works at all" state, and
+     * without this it never recovered, because every later toggle threw too.
+     *
+     * The gate is a latch, NOT map.isStyleLoaded(). That method answers "is
+     * everything in the style settled right now", which folds in whether every
+     * source has finished loading -- so a layer holding an unsettled source
+     * (a live feed, a custom WebGL layer) pins it to false for as long as the
+     * app runs. Gating on it meant that after the first successful sync every
+     * later toggle took the "not ready yet" branch and parked itself on a
+     * style.load that only fires on setStyle: pendingSync latched true and no
+     * layer switched on again until the page was reloaded or the basemap
+     * changed. That is the "I turn it on and nothing happens" bug, and it was
+     * never about the layer being toggled.
+     *
+     * style.load fires again after each setStyle, so waiting on it also covers
+     * a basemap switch that lands mid-sync.
+     */
+    let styleReady = false;
+    let pendingSync = false;
+    const syncLayers = () => {
+      if (styleReady) {
+        void manager.sync(store.getState());
+        return;
+      }
+      if (pendingSync) return;
+      pendingSync = true;
+      map.once("style.load", () => {
+        pendingSync = false;
+        styleReady = true;
+        void manager.sync(store.getState());
+      });
+    };
+
+    // MapLibre swallows style/tile failures into an "error" event that nothing
+    // was listening for, so a map that never finished loading looked identical
+    // to one with no data. Log it -- this is the breadcrumb for "nothing works".
+    map.on("error", (e) => {
+      console.error("[map]", (e as { error?: Error }).error?.message ?? e);
+    });
 
     map.on("load", () => {
+      styleReady = true;
       map.setProjection({ type: store.getState().projection });
       if (primary) {
         const c = map.getCenter();
@@ -155,8 +201,13 @@ export function MapPane({ id }: { id: string }) {
     const unsubBasemap = store.subscribe(
       (s) => s.basemapId,
       (basemapId) => {
+        // The new style has no custom layers yet, so the latch drops until its
+        // own style.load lands -- otherwise a toggle arriving mid-swap would be
+        // told the style was ready and throw against a style being replaced.
+        styleReady = false;
         map.setStyle(buildBasemapStyle(basemapId), { diff: false });
         map.once("style.load", () => {
+          styleReady = true;
           map.setProjection({ type: store.getState().projection });
           manager.reset();
           syncLayers();
@@ -176,6 +227,10 @@ export function MapPane({ id }: { id: string }) {
       if (primary) map.off("mousemove", onMouseMove);
       useNexradStore.getState().dropPane(id);
       registerMap(id, null);
+      // Before remove(), not after: the modules unsubscribe from their stores
+      // in removeFrom, and a listener that outlives the map fires against a
+      // destroyed style on the next store write.
+      manager.destroy();
       map.remove();
     };
   }, [id, primary]);

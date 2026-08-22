@@ -32,8 +32,6 @@ interface AppState {
   dataView: DataView;
   catalogTab: CatalogTab;
   measureMode: MeasureMode;
-  /** Centre crosshair reading the radar value under it. */
-  pixelReadout: boolean;
   /** Split-screen: how many map panes are on screen. */
   paneCount: 1 | 2 | 4 | 6;
 
@@ -44,6 +42,9 @@ interface AppState {
   // ---- preferences -------------------------------------------------------
   reduceMotion: boolean;
   coordFormat: CoordFormat;
+  /** Display unit per radar product kind. Absent = that kind's default.
+   *  Only affects what is printed; the colours are decided by the palette. */
+  radarUnits: Record<string, string>;
 
   // ---- live map readout --------------------------------------------------
   cursor: { lng: number; lat: number } | null;
@@ -57,17 +58,16 @@ interface AppState {
   setProjection: (projection: Projection) => void;
   toggleProjection: () => void;
   setBasemap: (basemapId: string) => void;
-  setLeftPanelOpen: (open: boolean) => void;
   toggleLeftPanel: () => void;
   setDataView: (view: DataView) => void;
   setCatalogTab: (tab: CatalogTab) => void;
   setSelectedModel: (id: string | null) => void;
   setSelectedVariable: (id: string | null) => void;
   setMeasureMode: (mode: MeasureMode) => void;
-  togglePixelReadout: () => void;
   setPaneCount: (n: 1 | 2 | 4 | 6) => void;
   setReduceMotion: (reduceMotion: boolean) => void;
   setCoordFormat: (coordFormat: CoordFormat) => void;
+  setRadarUnit: (kind: string, unit: string) => void;
   setReadout: (lng: number, lat: number, zoom: number) => void;
   setZoom: (zoom: number) => void;
   initLayers: () => void;
@@ -106,10 +106,10 @@ export const useAppStore = create<AppState>()(
         selectedModel: "Global::USA::GFS",
         selectedVariable: "Surface::TEMPERATURE::2m Temperature",
         measureMode: "off",
-        pixelReadout: false,
         paneCount: 1,
         reduceMotion: false,
         coordFormat: "decimal",
+        radarUnits: {},
         cursor: null,
         zoom: 4,
         layers: {},
@@ -120,18 +120,18 @@ export const useAppStore = create<AppState>()(
         toggleProjection: () =>
           set({ projection: get().projection === "globe" ? "mercator" : "globe" }),
 
-        setLeftPanelOpen: (leftPanelOpen) => set({ leftPanelOpen }),
         toggleLeftPanel: () => set({ leftPanelOpen: !get().leftPanelOpen }),
         setDataView: (dataView) => set({ dataView, leftPanelOpen: true }),
         setCatalogTab: (catalogTab) => set({ catalogTab }),
         setSelectedModel: (selectedModel) => set({ selectedModel }),
         setSelectedVariable: (selectedVariable) => set({ selectedVariable }),
         setMeasureMode: (measureMode) => set({ measureMode }),
-        togglePixelReadout: () => set({ pixelReadout: !get().pixelReadout }),
         setPaneCount: (paneCount) => set({ paneCount }),
 
         setReduceMotion: (reduceMotion) => set({ reduceMotion }),
         setCoordFormat: (coordFormat) => set({ coordFormat }),
+        setRadarUnit: (kind, unit) =>
+          set({ radarUnits: { ...get().radarUnits, [kind]: unit } }),
 
         setReadout: (lng, lat, zoom) => set({ cursor: { lng, lat }, zoom }),
         setZoom: (zoom) => set({ zoom }),
@@ -204,7 +204,7 @@ export const useAppStore = create<AppState>()(
           basemapId: s.basemapId,
           reduceMotion: s.reduceMotion,
           coordFormat: s.coordFormat,
-          pixelReadout: s.pixelReadout,
+          radarUnits: s.radarUnits,
           paneCount: s.paneCount,
           leftPanelOpen: s.leftPanelOpen,
           dataView: s.dataView,

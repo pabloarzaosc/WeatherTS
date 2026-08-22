@@ -70,7 +70,9 @@ function Chart({ rows, metricKey, color }: { rows: SurfaceObsHistory[]; metricKe
   const line = pts.map((o, k) => `${k ? "L" : "M"}${X(o.i).toFixed(1)},${Y(o.v).toFixed(1)}`).join("");
   const area = `${line}L${X(pts[pts.length - 1].i).toFixed(1)},${H - B}L${X(pts[0].i).toFixed(1)},${H - B}Z`;
   const dec = step < 1 ? 1 : 0;
-  const marks = [0, Math.floor(n / 2), n];
+  // Deduped: with only two readings n is 1, so the "middle" tick collapses onto
+  // the first and the two time labels render on top of each other.
+  const marks = [...new Set([0, Math.floor(n / 2), n])];
 
   return (
     <svg className="stp__chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="History">
@@ -88,7 +90,7 @@ function Chart({ rows, metricKey, color }: { rows: SurfaceObsHistory[]; metricKe
           x={X(i)}
           y={H - 6}
           className="stp__xlab"
-          textAnchor={k === 0 ? "start" : k === 2 ? "end" : "middle"}
+          textAnchor={k === 0 ? "start" : k === marks.length - 1 ? "end" : "middle"}
         >
           {hhmm(rows[i]?.obsTime)}
         </text>

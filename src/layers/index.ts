@@ -21,25 +21,34 @@ import { terminatorLayer } from "./modules/terminator";
 import { alertsLayer } from "./modules/alertsLayer";
 import { outlookLayers } from "./modules/outlooksLayer";
 import { raobLayer } from "./modules/raobLayer";
+import { vwpLayer } from "./modules/vwpLayer";
 import { surfaceObsLayer } from "./modules/surfaceObsLayer";
 import { mslpLayer } from "./modules/mslpLayer";
-import { lightningLayer } from "./modules/lightningLayer";
 import { nexradLayer } from "./modules/nexradLayer";
 import { lsrLayer } from "./modules/lsrLayer";
 import { frontsLayer } from "./modules/frontsLayer";
 import { acarsLayer } from "./modules/acarsLayer";
+import { chasersLayer } from "./modules/chasersLayer";
+import { homesLayer } from "./modules/homesLayer";
+import { mesoscaleLayer } from "./modules/mesoscaleLayer";
 
 registerLayer(boundariesLayer);
 registerLayer(graticuleLayer);
 registerLayer(terminatorLayer);
 for (const layer of outlookLayers) registerLayer(layer);
 registerLayer(alertsLayer);
+// Above the outlooks it refines: an MD is hours newer than the day outlook.
+registerLayer(mesoscaleLayer);
 registerLayer(raobLayer);
+registerLayer(vwpLayer);
 registerLayer(mslpLayer);
-registerLayer(lightningLayer);
 registerLayer(surfaceObsLayer);
 registerLayer(acarsLayer);
 registerLayer(frontsLayer);
 registerLayer(nexradLayer);
 // Ground truth sits on top of every product it might be checked against.
 registerLayer(lsrLayer);
+// Home pins first: they are the static backdrop to the live positions above.
+registerLayer(homesLayer);
+// People sit above everything: where someone actually is must never be buried.
+registerLayer(chasersLayer);

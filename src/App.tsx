@@ -9,7 +9,6 @@ import { AlertController } from "./ui/AlertController";
 import { AlertPanel } from "./ui/AlertPanel";
 import { OutlookLegend } from "./ui/OutlookLegend";
 import { MslpLegend } from "./ui/MslpLegend";
-import { LightningCounter } from "./ui/LightningCounter";
 import { BasemapPicker } from "./ui/BasemapPicker";
 import { MapContextMenu } from "./ui/sounding/MapContextMenu";
 import { SoundingViewer } from "./ui/sounding/SoundingViewer";
@@ -21,12 +20,18 @@ import { LsrCard } from "./ui/LsrCard";
 import { FrontPopup } from "./ui/FrontPopup";
 import { MapTimeline } from "./ui/MapTimeline";
 import { RadarHud } from "./ui/RadarHud";
+import { RadarReadout } from "./ui/RadarReadout";
 import { DayLoadOverlay } from "./ui/DayLoadOverlay";
 import { AnimationModal } from "./ui/AnimationModal";
 import { UpdateBanner } from "./ui/UpdateBanner";
 import { QuickStart } from "./ui/QuickStart";
 import { WhatsNew } from "./ui/WhatsNew";
 import { StationPanel } from "./ui/StationPanel";
+import { StormCellPanel } from "./ui/StormCellPanel";
+import { ChaserController } from "./ui/ChaserController";
+import { ChaserPopup } from "./ui/ChaserPopup";
+import { MesoscalePopup } from "./ui/MesoscalePopup";
+import { MesoscalePanel } from "./ui/MesoscalePanel";
 import { useAppStore } from "./store/useAppStore";
 import { selectRailOpen, useAlertStore } from "./store/useAlertStore";
 import { useLayoutStore } from "./store/useLayoutStore";
@@ -66,14 +71,18 @@ export default function App() {
         <MeasureTool />
         <OutlookLegend />
         <MslpLegend />
-        <LightningCounter />
         <AlertPanel />
         <ZoomControls />
         <StatusBar />
         <SoundingViewer />
         <RadarHud />
+        {/* the gate value under the pointer, pinned to the pointer */}
+        <RadarReadout />
         {/* radar storm-cell card, anchored to the cell it describes */}
         <StormPopup />
+        <ChaserPopup />
+        {/* the clicked SPC mesoscale discussion */}
+        <MesoscalePopup />
         {/* the radar's own wind profile */}
         <VwpPanel />
         {/* the clicked storm report, in full */}
@@ -96,6 +105,12 @@ export default function App() {
           until they have a reason to appear, or Settings opens them */}
       {/* full METAR report, opened from the map card */}
       <StationPanel />
+      {/* full storm-cell report with the per-scan trends, likewise from its card */}
+      <StormCellPanel />
+      {/* joins the chaser channel and, only when opted in, broadcasts this device */}
+      <ChaserController />
+      {/* the full SPC discussion, opened from its card */}
+      <MesoscalePanel />
       <QuickStart />
       <WhatsNew />
     </div>

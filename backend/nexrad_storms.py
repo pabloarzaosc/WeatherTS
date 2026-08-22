@@ -6,6 +6,10 @@ Level III graphic products off Unidata's public S3 archive:
                 position plus its past and forecast tracks.
   * NMD (141) — Mesocyclone Detection Algorithm output.
 
+Per-cell hail and structure attributes come from storm_attributes, off a
+different feed entirely (see that module for why), and are best-effort: the
+tracks here stand on their own when those products are unavailable.
+
 Decode the SYMBOLOGY block, never the tabular one. MetPy garbles `tab_pages`
 for these graphic products (it yields one character per line), while
 `sym_block[0]` comes out clean. Verified live against KMPX, which returned
@@ -29,6 +33,7 @@ from typing import Any, Optional
 
 from metpy.io import Level3File
 
+import storm_attributes
 from nexrad_core import (
     S3,
     _HTTP_TIMEOUT,
@@ -298,16 +303,25 @@ def build_storms(site: str, unix: Optional[int] = None) -> dict:
         if unix is not None:
             out = {"meta": {"site": f"K{site}", "siteLat": None, "siteLon": None,
                             "maxRangeKm": None, "validUnix": None, "key": None,
-                            "cellCount": 0, "mesoCount": 0},
+                            "cellCount": 0, "mesoCount": 0, "attributedCount": 0},
                    "cells": [], "mesos": []}
             _CACHE[ck] = (now, out)
             return out
         raise RuntimeError(f"No recent storm-tracking scan for K{site}.")
     mesos = _mesos(site, cells, meta["siteLat"], meta["siteLon"], unix)
 
+    # Hail and structure ride on a separate live feed, so this is best-effort:
+    # a cell keeps its track whether or not the attributes arrive.
+    try:
+        attributed = storm_attributes.attach(cells, site, meta.get("validUnix"))
+    except Exception:  # noqa: BLE001
+        attributed = 0
+
     # Strongest first: the cell a forecaster cares about should top the list.
-    cells.sort(key=lambda c: (c["speedMph"] or 0), reverse=True)
-    out = {"meta": {**meta, "cellCount": len(cells), "mesoCount": len(mesos)},
+    # VIL beats speed for that -- a fast weak cell is not the one being chased.
+    cells.sort(key=lambda c: (c.get("vilKgM2") or 0, c["speedMph"] or 0), reverse=True)
+    out = {"meta": {**meta, "cellCount": len(cells), "mesoCount": len(mesos),
+                    "attributedCount": attributed},
            "cells": cells, "mesos": mesos}
     _CACHE[ck] = (now, out)
     while len(_CACHE) > 200:

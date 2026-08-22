@@ -110,17 +110,33 @@
   flex: none;
   min-height: 46px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  /* The brand is decoration and yields first; the title always keeps a strip
+     it can ellipsize inside. With `auto` on the brand it refused to shrink and
+     squeezed the title column to 12px, which is how a header 237px wide ended
+     up with a 328px title lying across it. */
+  grid-template-columns: minmax(84px, 1fr) minmax(0, auto) auto;
   align-items: center;
   gap: 12px;
   padding: 9px 10px 9px 12px;
   border-bottom: 1px solid var(--border);
+  overflow: hidden;
 }
 
 .sv__title {
   display: flex;
   align-items: center;
   gap: 9px;
+  min-width: 0;
+}
+
+/* The text block between the icon and the edge.
+ *
+ * A flex item's automatic minimum size is its content, so without this the
+ * wrapper stayed as wide as the longest line no matter how little room the
+ * column had -- and `text-overflow: ellipsis` on the lines inside never fired,
+ * because from their point of view there was always space. The title simply
+ * ran out over the brand and the buttons. */
+.sv__title > div {
   min-width: 0;
 }
 
@@ -152,6 +168,10 @@
 }
 
 .sv__brand {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   padding: 5px 8px;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -199,7 +219,7 @@
   min-height: 58px;
   padding: 9px 12px 10px;
   border-bottom: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.018);
+  background: rgba(var(--wash-rgb), 0.018);
 }
 
 .sv__ctl {
@@ -372,84 +392,10 @@
   overflow-wrap: anywhere;
 }
 
-.sv__timeline {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 7px 12px 10px;
-  border-top: 1px solid var(--border);
-}
-
-.sv__play {
-  width: 31px;
-  height: 31px;
-  flex: none;
-  border-color: var(--accent-ring);
-  border-radius: 50%;
-  color: var(--accent);
-}
-
-.sv__play:disabled {
-  opacity: 0.4;
-}
-
-.sv__speed {
-  flex: none;
-  min-width: 34px;
-  height: 26px;
-  padding: 0 7px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-dim);
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background-color var(--t) var(--ease), border-color var(--t) var(--ease), color var(--t) var(--ease);
-}
-
-.sv__speed:hover:not(:disabled) {
-  border-color: var(--accent-ring);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.sv__speed:disabled {
-  opacity: 0.4;
-}
-
-.sv__loop {
-  flex: none;
-  width: 30px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-dim);
-  cursor: pointer;
-  transition: background-color var(--t) var(--ease), border-color var(--t) var(--ease), color var(--t) var(--ease);
-}
-
-.sv__loop:hover:not(:disabled) {
-  border-color: var(--accent-ring);
-  color: var(--accent);
-}
-
 .sv__loop.is-active {
   border-color: var(--accent-ring);
   background: var(--accent-soft);
   color: var(--accent);
-}
-
-.sv__loop:disabled {
-  opacity: 0.4;
 }
 
 .sv__zoomctl {
@@ -545,13 +491,6 @@
 .sv__scrub:disabled::-webkit-slider-thumb {
   background: var(--text-dim);
   cursor: default;
-}
-
-.sv__tlabel {
-  min-width: 120px;
-  color: var(--text-dim);
-  font-size: 11px;
-  text-align: right;
 }
 
 @media (max-width: 880px) {
@@ -669,3 +608,145 @@
   color: #f0a63c;
 }
 .areabox__hint.is-warn svg { color: #f0a63c; }
+
+/* Parcel / storm-motion chips in the Sounding panel. Wrapping rather than a
+   fixed grid: the labels are names, not codes, and their lengths differ a lot. */
+.snd-parcels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.snd-chip {
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11px;
+  transition: background-color var(--t) var(--ease), color var(--t) var(--ease),
+    border-color var(--t) var(--ease);
+}
+.snd-chip:hover {
+  border-color: var(--accent-ring);
+  color: var(--text);
+}
+.snd-chip.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ============================================================
+   Analysis tabs (Compare / Trends / Risk / Upload)
+   A parameter table has to stay readable in a narrow column, so
+   it scrolls sideways inside its own box rather than widening
+   the panel.
+   ============================================================ */
+.sndtool__table {
+  margin-top: 10px;
+  overflow-x: auto;
+}
+.sndtool__table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.sndtool__table th,
+.sndtool__table td {
+  padding: 4px 7px;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+.sndtool__table thead th {
+  text-align: right;
+  font-weight: 600;
+  color: var(--text);
+  border-bottom: 2px solid var(--border);
+}
+.sndtool__table thead th small,
+.sndtool__table tbody th small {
+  display: block;
+  font-weight: 400;
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+/* The parameter name column is the reader's anchor: left-aligned and sticky so
+   it survives the horizontal scroll the value columns need. */
+.sndtool__table tbody th {
+  position: sticky;
+  left: 0;
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: var(--panel);
+}
+.sndtool__table td {
+  font-family: var(--mono);
+  color: var(--text);
+}
+
+.sndtool__rank {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 10px;
+}
+.sndtool__rankrow {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  grid-template-areas: "id name" "id detail";
+  gap: 0 8px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+.sndtool__rankrow:hover {
+  background: var(--panel-2);
+  border-color: var(--border);
+}
+.sndtool__rankrow b {
+  grid-area: id;
+  align-self: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+}
+.sndtool__rankrow span {
+  grid-area: name;
+  font-size: 11px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sndtool__rankrow i {
+  grid-area: detail;
+  font-style: normal;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.sndtool__paste {
+  width: 100%;
+  min-height: 120px;
+  margin: 6px 0 8px;
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.45;
+  resize: vertical;
+}
+.sndtool__img {
+  width: 100%;
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}

@@ -1,4 +1,4 @@
-/* Design tokens + the single fixed gray palette. Every UI color is a variable. */
+/* Design tokens + the light/dark color palettes. Every UI color is a variable. */
 :root {
   --topbar-h: 44px;
   --tabsbar-h: 38px;
@@ -28,24 +28,74 @@
   --t: 0.2s;
   --t-slow: 0.34s;
 
-  /* gray theme */
+  /* dark theme (default -- also the fallback before JS picks a theme) */
   --bg: #0c0f13;
-  --panel: rgba(22, 26, 31, 0.8);
+  /* 0.94, not 0.8: these panels float over the map, so at 0.8 the basemap
+     showed through and the effective background moved with whatever was
+     underneath -- small text measured 2.65:1 over the Light basemap. The blur
+     still reads as glass at this opacity. */
+  --panel: rgba(22, 26, 31, 0.94);
   --panel-solid: #16191e;
   --panel-2: rgba(255, 255, 255, 0.045);
   --border: rgba(190, 200, 210, 0.12);
   --border-strong: rgba(190, 200, 210, 0.22);
   --text: #e9edf2;
   --text-dim: #a6afba;
-  --text-faint: #6b7480;
+  /* Lifted from #6b7480, which measured 3.72:1 on --panel-solid -- under the
+     4.5:1 WCAG AA floor for text this size, and this token carries the small
+     print (sources, hints, timestamps) across the whole app. */
+  --text-faint: #8892a0;
   --accent: #3b82f6;
   --accent-strong: #2563eb;
   --accent-soft: rgba(59, 130, 246, 0.16);
   --accent-ring: rgba(59, 130, 246, 0.45);
+  /* Accent used as TEXT, which is a different job from accent used as a fill.
+     On a soft-accent chip --accent measured 3.93:1 here, under AA, but simply
+     brightening --accent would drag white-on-accent buttons the other way.
+     Two tokens, so each can be right: fills keep --accent, small accent text
+     takes this. */
+  --accent-text: #6aabff;
   /* danger / "not working" red -- radar offline, failed scans, dead sites */
   --danger: #f26d6d;
   --danger-soft: rgba(222, 80, 80, 0.14);
   --danger-border: rgba(222, 80, 80, 0.44);
   --shadow: 0 10px 34px rgba(0, 0, 0, 0.5);
   --track: rgba(190, 200, 210, 0.18);
+  /* RGB triplet (no alpha) behind every wash/hover overlay in app.css --
+     white to lighten dark surfaces here; the light theme flips it to a dark
+     ink so the same overlays darken instead of vanishing. */
+  --wash-rgb: 255, 255, 255;
+}
+
+/* light theme */
+:root[data-theme="light"] {
+  --bg: #eef1f4;
+  --panel: rgba(255, 255, 255, 0.94);
+  --panel-solid: #ffffff;
+  --panel-2: rgba(15, 23, 32, 0.04);
+  --border: rgba(15, 23, 42, 0.12);
+  --border-strong: rgba(15, 23, 42, 0.22);
+  --text: #12161c;
+  --text-dim: #545e6b;
+  /* Was #8992a0 = 3.14:1 on white -- well under AA. */
+  --text-faint: #5f6874;
+  /* Accent doubles as text on --accent-soft (category counts, status chips,
+     the Full report button). #2563eb measured 4.37:1 there -- under AA. This
+     fixes all of them at once and still passes with white on top (6.7:1). */
+  --accent: #1d4ed8;
+  --accent-strong: #1e40af;
+  --accent-soft: rgba(29, 78, 216, 0.12);
+  --accent-ring: rgba(29, 78, 216, 0.4);
+  /* Light needs no separate text shade: #1d4ed8 already clears AA both as
+     text on the soft chip (5.56) and under white on a filled button (6.7). */
+  --accent-text: #1d4ed8;
+  /* Error text is the one thing that must never be hard to read. #d64545 came
+     out at 4.38:1 on white -- just under AA, and this is what a failed sign-in
+     and every failed fetch is rendered in. */
+  --danger: #c62f2f;
+  --danger-soft: rgba(198, 47, 47, 0.1);
+  --danger-border: rgba(198, 47, 47, 0.35);
+  --shadow: 0 10px 34px rgba(15, 23, 42, 0.16);
+  --track: rgba(15, 23, 42, 0.16);
+  --wash-rgb: 15, 23, 32;
 }

@@ -27,6 +27,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Pull model, so an update found before the banner mounted is not lost.
   getPendingUpdate: () => ipcRenderer.invoke('update:pending'),
 
+  // Sign-in comes back from the provider as a deep link on the weatherts://
+  // protocol, which only the main process can receive. The renderer holds the
+  // PKCE verifier, so the URL has to be handed to it to be worth anything.
+  onAuthCallback: (cb) => ipcRenderer.on('auth:callback', (_e, url) => cb(url)),
+
   getVersion: () => ipcRenderer.invoke('app:version'),
   getBackendPort: () => ipcRenderer.invoke('backend:port'),
 });

@@ -4,6 +4,8 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Loader2,
   Maximize2,
   Minimize2,
@@ -208,7 +210,11 @@ export function SoundingViewer() {
               {isAcars && data?.meta.ascending != null
                 ? ` / ${data.meta.ascending ? "ascent" : "descent"}`
                 : ""}
-              {data ? ` / ${data.meta.elevation.toFixed(0)} m / ${data.meta.source}` : ""}
+              {/* Guarded: a mode whose meta omits elevation used to take the
+                  whole app down with it -- a red error screen instead of a
+                  sounding, from one missing number in a subtitle. */}
+              {data?.meta.elevation != null ? ` / ${data.meta.elevation.toFixed(0)} m` : ""}
+              {data ? ` / ${data.meta.source}` : ""}
             </span>
           </div>
         </div>
@@ -272,6 +278,18 @@ export function SoundingViewer() {
         <div className="sv__ctl sv__ctl--fcst">
           <span>{isRaob ? "OBS TIME" : isAcars ? "ASCENT" : "FORECAST"}</span>
           <div className="sv__stepper">
+            {/* Two at a time as well as one: consecutive ascents from the same
+                airport are often minutes apart and near-identical, so the jump
+                that actually shows a change is the one two back. */}
+            <button
+              type="button"
+              onClick={() => stepHour(-2)}
+              disabled={hour <= 0}
+              title="Back 2"
+              aria-label="Back 2 frames"
+            >
+              <ChevronsLeft size={16} />
+            </button>
             <button type="button" onClick={() => stepHour(-1)} disabled={hour <= 0} title="Previous (Left arrow)">
               <ChevronLeft size={16} />
             </button>
@@ -280,6 +298,15 @@ export function SoundingViewer() {
             </b>
             <button type="button" onClick={() => stepHour(1)} disabled={hour >= maxHour} title="Next (Right arrow)">
               <ChevronRight size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={() => stepHour(2)}
+              disabled={hour >= maxHour}
+              title="Forward 2"
+              aria-label="Forward 2 frames"
+            >
+              <ChevronsRight size={16} />
             </button>
           </div>
         </div>

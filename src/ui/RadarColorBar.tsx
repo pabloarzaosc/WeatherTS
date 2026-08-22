@@ -5,6 +5,7 @@ import { useNexradStore } from "../store/useNexradStore";
 import { usePaletteStore } from "../store/usePaletteStore";
 import { palGradient, palTicks, parsePal } from "../lib/pal";
 import { useDragOffset } from "../lib/useDragOffset";
+import { unitFor, unitTicks } from "../lib/radarUnits";
 
 // The active palette, drawn along the bottom of the map with its data scale.
 // This replaced the palette dropdown: the palette follows the product, so the
@@ -15,6 +16,7 @@ export function RadarColorBar({ paneId }: { paneId?: string } = {}) {
   // selected in the store when the radar layer is switched off, so without this
   // the bar sat over an empty map.
   const radarOn = useAppStore((s) => s.layers.nexrad?.visible ?? false);
+  const radarUnits = useAppStore((s) => s.radarUnits);
   // ...and a scale for a site nobody has picked describes nothing either. The
   // product family carries a default, so without this the bar appeared the
   // instant the layer was switched on, over a map with no scan on it at all.
@@ -60,12 +62,17 @@ export function RadarColorBar({ paneId }: { paneId?: string } = {}) {
       vmin,
       vmax,
       ticks: palTicks(vmin, vmax, table.step),
+      kind: fam.kind,
       units: fam.units || table.units || "",
       product: fam.label,
       label: mine?.label ?? palTables[pid]?.label ?? pid,
       custom: !!mine,
     };
   }, [fam, palTables, kindDefaults, overrides, custom]);
+
+  // The chosen unit relabels the scale; the gradient underneath is untouched,
+  // because the colours belong to the palette and the data, not to the words.
+  const unit = unitFor(bar?.kind, radarUnits);
 
   // After the hooks, never before them.
   if (!radarOn || !site || !bar) return null;
@@ -83,16 +90,20 @@ export function RadarColorBar({ paneId }: { paneId?: string } = {}) {
     >
       <div className="cbar__head">
         <span className="cbar__product">{bar.product}</span>
-        {bar.units && <span className="cbar__units">{bar.units}</span>}
+        {(unit?.label ?? bar.units) && (
+          <span className="cbar__units">{unit?.label ?? bar.units}</span>
+        )}
         {bar.custom && <span className="cbar__badge">custom</span>}
       </div>
       <div className="cbar__bar" style={{ background: `linear-gradient(to right, ${bar.gradient})` }} />
       <div className="cbar__ticks">
-        {bar.ticks.map((v) => (
-          <span key={v} className="cbar__tick" style={{ left: `${pct(v)}%` }}>
-            {v}
-          </span>
-        ))}
+        {(unit ? unitTicks(unit, bar.vmin, bar.vmax) : bar.ticks.map((v) => ({ label: String(v), native: v }))).map(
+          (t) => (
+            <span key={t.label} className="cbar__tick" style={{ left: `${pct(t.native)}%` }}>
+              {t.label}
+            </span>
+          ),
+        )}
       </div>
     </div>
   );

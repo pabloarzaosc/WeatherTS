@@ -5,10 +5,13 @@ import { useAppStore } from "../../store/useAppStore";
 import { useOnboardingStore } from "../../store/useOnboardingStore";
 import { useNexradStore } from "../../store/useNexradStore";
 import { usePaletteStore } from "../../store/usePaletteStore";
+import { useThemeStore, type ThemeMode } from "../../store/useThemeStore";
+import { useChaserStore } from "../../store/useChaserStore";
 import { layoutIsCustom, useLayoutStore, type Side } from "../../store/useLayoutStore";
 import { buildLut, palGradient, parsePal } from "../../lib/pal";
 import { INITIAL_VIEW } from "../../map/mapStyle";
 import { getMap } from "../../map/mapInstance";
+import { DEFAULT_UNIT, UNITS_BY_KIND, UNIT_CHOICES } from "../../lib/radarUnits";
 
 function Segmented<T extends string>({
   value,
@@ -73,6 +76,43 @@ function PalStrip({ pal }: { pal: string }) {
 }
 
 /** Import + manage user .pal colour tables for the radar. */
+/**
+ * The unit each radar product is read in.
+ *
+ * Only the products with a genuine alternative appear: dBZ has no second name
+ * worth offering. Changing one relabels the colour bar and the cursor readout
+ * -- the scan itself is untouched, because the colours come from a palette
+ * whose stops are in the product's own unit.
+ */
+function UnitSettings() {
+  const radarUnits = useAppStore((s) => s.radarUnits);
+  const setRadarUnit = useAppStore((s) => s.setRadarUnit);
+
+  return (
+    <section className="content__sec">
+      <h4 className="content__label">Radar units</h4>
+      <div className="set__units">
+        {UNIT_CHOICES.map(({ kind, label }) => {
+          const options = UNITS_BY_KIND[kind] ?? [];
+          const current = radarUnits[kind] ?? DEFAULT_UNIT[kind] ?? options[0]?.id;
+          return (
+            <label key={kind} className="set__unit">
+              <span>{label}</span>
+              <select value={current} onChange={(e) => setRadarUnit(kind, e.target.value)}>
+                {options.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function PaletteSettings() {
   const custom = usePaletteStore((s) => s.custom);
   const overrides = usePaletteStore((s) => s.overrides);
@@ -248,11 +288,20 @@ export function SettingsContent() {
   const coordFormat = useAppStore((s) => s.coordFormat);
   const setCoordFormat = useAppStore((s) => s.setCoordFormat);
   const setProjection = useAppStore((s) => s.setProjection);
+  const themeMode = useThemeStore((s) => s.mode);
+  const setThemeMode = useThemeStore((s) => s.setMode);
+  const sharing = useChaserStore((s) => s.sharing);
+  const setSharing = useChaserStore((s) => s.setSharing);
+  const shareError = useChaserStore((s) => s.shareError);
+  const chaserStatus = useChaserStore((s) => s.status);
 
   const resetDefaults = () => {
     setProjection("mercator");
     setReduceMotion(false);
     setCoordFormat("decimal");
+    setThemeMode("auto");
+    // Restoring defaults must never leave a location broadcast running.
+    setSharing(false);
     getMap()?.flyTo({
       center: INITIAL_VIEW.center,
       zoom: INITIAL_VIEW.zoom,
@@ -265,6 +314,47 @@ export function SettingsContent() {
   return (
     <div className="content">
       <LayoutSettings />
+
+      <section className="content__sec">
+        <h4 className="content__label">Theme</h4>
+        <Segmented<ThemeMode>
+          value={themeMode}
+          onChange={setThemeMode}
+          options={[
+            { v: "light", label: "Light" },
+            { v: "dark", label: "Dark" },
+            { v: "auto", label: "Auto" },
+          ]}
+        />
+        <p className="content__hint">
+          Auto follows your device&rsquo;s clock -- light from 6am to 7pm, dark the rest of the day.
+        </p>
+      </section>
+
+      <section className="content__sec">
+        <h4 className="content__label">Share my position</h4>
+        <Toggle
+          on={sharing}
+          label={sharing ? "Broadcasting to other chasers" : "Off"}
+          onChange={setSharing}
+        />
+        <p className="content__hint">
+          Puts this device on the map for everyone else running WeatherTS, under your username.
+          Nothing is recorded &mdash; your position exists only while you are connected and
+          disappears the moment you disconnect or switch this off. Turn on the{" "}
+          <b>Chasers</b> layer to see the others; designated WeatherTS chasers are marked
+          with a star.
+        </p>
+        {shareError && <div className="sv__notice">{shareError}</div>}
+        {/* The channel is private, so a refused join means the session was not
+            accepted. Without this the failure is silent and looks like nobody
+            else is out there. */}
+        {chaserStatus === "error" && !shareError && (
+          <div className="sv__notice">
+            Could not join the chaser channel. Sign out and back in, then try again.
+          </div>
+        )}
+      </section>
 
       <section className="content__sec">
         <h4 className="content__label">Motion</h4>
@@ -282,6 +372,8 @@ export function SettingsContent() {
           ]}
         />
       </section>
+
+      <UnitSettings />
 
       <PaletteSettings />
 

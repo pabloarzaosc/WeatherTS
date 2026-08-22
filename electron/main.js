@@ -17,6 +17,10 @@ let mainWindow = null;
 let pendingUpdateInfo = null;
 let backendProcess = null;
 let backendLog = '';
+// A sign-in link that arrived before the window existed. Providers can hand the
+// callback back fast enough to beat a cold start, and dropping it would leave
+// the user staring at a sign-in form they just completed.
+let pendingAuthUrl = null;
 const PREFERRED_BACKEND_PORT = 47837;
 let activeBackendPort = PREFERRED_BACKEND_PORT;
 
@@ -25,13 +29,55 @@ if (!gotSingleInstanceLock) {
   app.quit();
 }
 
+const AUTH_PROTOCOL = 'weatherts';
+
+/** The deep-linked sign-in callback out of a set of process arguments, if any.
+ *  Windows delivers it as an argv entry rather than an event. */
+function authUrlFrom(argv) {
+  return (argv || []).find((a) => typeof a === 'string' && a.startsWith(`${AUTH_PROTOCOL}://`)) || null;
+}
+
+function deliverAuthUrl(url) {
+  if (!url) return;
+  if (mainWindow && !mainWindow.webContents.isLoading()) {
+    mainWindow.webContents.send('auth:callback', url);
+  } else {
+    pendingAuthUrl = url;
+  }
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+}
+
+// Claim the protocol so the browser can hand the callback back to this app. In
+// development the executable is Electron itself running a script, so the path
+// and the script have to be spelled out or Windows registers the wrong target.
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(AUTH_PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient(AUTH_PROTOCOL);
+}
+
 if (gotSingleInstanceLock) {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
+    deliverAuthUrl(authUrlFrom(argv));
     if (!mainWindow) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   });
 }
+
+// macOS delivers it as an event instead of an argument.
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  deliverAuthUrl(url);
+});
+
+// A cold start launched BY the link: the URL is in this process's own argv.
+pendingAuthUrl = authUrlFrom(process.argv);
 
 function getFreePort(preferredPort) {
   return new Promise((resolve, reject) => {
@@ -376,6 +422,15 @@ app.whenReady().then(async () => {
   } else {
     mainWindow.loadURL('http://localhost:1420');
   }
+
+  // A sign-in link that beat the renderer here waits until there is something
+  // listening for it, then goes exactly once.
+  mainWindow.webContents.once('did-finish-load', () => {
+    if (!pendingAuthUrl) return;
+    const url = pendingAuthUrl;
+    pendingAuthUrl = null;
+    mainWindow.webContents.send('auth:callback', url);
+  });
 });
 
 app.on('window-all-closed', () => {

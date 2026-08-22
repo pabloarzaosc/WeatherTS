@@ -215,7 +215,7 @@ def _average(members: list[dict]) -> tuple[list[dict], float]:
 
 def build_area_sounding(lat0: float, lon0: float, lat1: float, lon1: float,
                         model: str = sounding_core.DEFAULT_MODEL, hour: int = 0,
-                        side: int = DEFAULT_SIDE) -> dict:
+                        side: int = DEFAULT_SIDE, view: Optional[dict] = None) -> dict:
     """Average the model's profile over a rectangle and render it like any sounding.
 
     The area is the box the user dragged on the map, given as any two opposite
@@ -355,6 +355,10 @@ def build_area_sounding(lat0: float, lon0: float, lat1: float, lon1: float,
     image_error = None
     try:
         from sharppy_renderer import render_spc_widget_png
+
+        # The panel's parcel / storm-motion choices ride in the same meta the
+        # renderer already receives, so nothing else in the path changes.
+        meta.update(view or {})
 
         image = base64.b64encode(render_spc_widget_png(levels, meta)).decode("ascii")
     except Exception as exc:  # noqa: BLE001

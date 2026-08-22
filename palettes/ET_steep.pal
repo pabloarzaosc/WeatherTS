@@ -1,0 +1,28 @@
+; Enhanced Echo Tops, kft -- ramp tuned to where the data actually lives.
+;
+; The WCT table (ET.pal) reserves red/white/magenta for 60-75 kft, but a real
+; scan puts 99.6% of its gates below 50 and none above 60, so its whole hot end
+; is dead and a 56 kft top -- which is a serious storm -- draws mid-scale
+; yellow. This reaches vivid red at 43 and keeps 45+ for the extremes, so the
+; colour tracks how unusual the top is rather than how close it is to 75.
+
+Product: EET
+Units: KFT
+Step: 5
+
+Color4:  0   0   0   0     0
+Color:   8   0  60 160
+Color:  14   0 110 255
+Color:  20   0 180 255
+Color:  25   0 230 230
+Color:  30   0 200  80
+Color:  35  60 220   0
+Color:  38 170 235   0
+Color:  40 255 240   0
+Color:  41 255 170   0
+Color:  43 255   0   0
+Color:  46 220   0  90
+Color:  49 255   0 255
+Color:  53 170   0 230
+Color:  57 220 190 255
+Color:  60 255 255 255

@@ -257,4 +257,9 @@ export const nexradLayer: LayerModule = {
     // modules -- a tracked cell buried under a warning polygon is unclickable.
     return [...STORM_LAYERS, SITE_LABEL];
   },
+  // Above the mesoscale discussion outline in particular: that layer covers a
+  // whole watch area and would otherwise sit on top of the site name and every
+  // storm cell inside it, which is the one thing this list exists to keep
+  // clickable. Still below LSR -- a filed report outranks a tracked cell.
+  topPriority: 20,
 };

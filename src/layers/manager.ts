@@ -23,6 +23,27 @@ export class LayerManager {
     this.added.clear();
   }
 
+  /**
+   * Tear every module back off the map. Call before map.remove().
+   *
+   * Modules subscribe to stores in addTo() and unsubscribe in removeFrom(), so
+   * a map that is destroyed without this leaves live listeners holding a dead
+   * map: the next store write reaches into a MapLibre instance whose style is
+   * gone and throws "Cannot read properties of undefined (reading 'getLayer')".
+   * Nothing on screen caused it, which is what made it look random.
+   */
+  destroy(): void {
+    for (const id of [...this.added]) {
+      try {
+        getLayerModule(id)?.removeFrom(this.map);
+      } catch {
+        // Best effort: one module failing to detach must not strand the rest,
+        // and this runs while the map is being thrown away regardless.
+      }
+    }
+    this.added.clear();
+  }
+
   /** Reconcile toward `state`. Safe to call rapidly; only the latest wins. */
   async sync(state: LayerRuntimeState): Promise<void> {
     this.next = state;
@@ -44,15 +65,23 @@ export class LayerManager {
       const ls = state.layers[module.id];
       if (!ls) continue;
       const isAdded = this.added.has(module.id);
-      if (ls.visible && !isAdded) {
-        await module.addTo(this.map);
-        module.setOpacity(this.map, ls.opacity);
-        this.added.add(module.id);
-      } else if (!ls.visible && isAdded) {
-        module.removeFrom(this.map);
-        this.added.delete(module.id);
-      } else if (ls.visible) {
-        module.setOpacity(this.map, ls.opacity);
+      // Each module is isolated. addTo may be async and may reach the network,
+      // and an unhandled rejection here used to abort the whole loop -- so one
+      // layer whose feed was down silently took every layer after it in the
+      // registry off the map, which reads as "my layer just does not appear".
+      try {
+        if (ls.visible && !isAdded) {
+          await module.addTo(this.map);
+          module.setOpacity(this.map, ls.opacity);
+          this.added.add(module.id);
+        } else if (!ls.visible && isAdded) {
+          module.removeFrom(this.map);
+          this.added.delete(module.id);
+        } else if (ls.visible) {
+          module.setOpacity(this.map, ls.opacity);
+        }
+      } catch (err) {
+        console.error(`[layers] ${module.id} failed to reconcile`, err);
       }
     }
     this.applyOrder(state.layerOrder);
@@ -71,10 +100,18 @@ export class LayerManager {
     // Then lift the always-on-top ids. Ordering is per module, so this is the
     // only way a module can keep one layer above another module while leaving
     // its other layers below it.
-    for (const id of order) {
-      if (!this.added.has(id)) continue;
-      const module = getLayerModule(id);
-      for (const layerId of module?.topLayerIds?.() ?? []) {
+    //
+    // Lifted in ascending topPriority, so a module that has to beat the other
+    // top layers says so outright instead of depending on where it happens to
+    // sit in the layer order. Ties keep that order, which is what they did
+    // before there was a priority at all.
+    const lifted = order
+      .filter((id) => this.added.has(id))
+      .map((id) => getLayerModule(id))
+      .filter((module): module is NonNullable<typeof module> => Boolean(module?.topLayerIds));
+    lifted.sort((a, b) => (a.topPriority ?? 0) - (b.topPriority ?? 0));
+    for (const module of lifted) {
+      for (const layerId of module.topLayerIds?.() ?? []) {
         if (this.map.getLayer(layerId)) this.map.moveLayer(layerId);
       }
     }

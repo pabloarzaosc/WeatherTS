@@ -48,28 +48,6 @@ interface Palette {
   halo: string;
 }
 
-/** The original workstation gray. Kept exactly so nothing shifts underfoot. */
-const GRAY: Palette = {
-  bg: "#2f3b3f",
-  water: "#60777e",
-  waterway: "#647d84",
-  wood: "#344446",
-  grass: "#3b4849",
-  wetland: "#405154",
-  ice: "#7f8e92",
-  landDefault: "#374447",
-  urban: "#40494b",
-  urbanPark: "#3c4b49",
-  park: "#3a4d4a",
-  country: "#9aa6aa",
-  state: "#87959a",
-  roadMinor: "#657174",
-  roadMajor: "#748084",
-  text: "#d8dee1",
-  textDim: "#c5cdd0",
-  halo: "#29343a",
-};
-
 /** Near-black. For radar and satellite, where the base should get out of the way. */
 const DARK: Palette = {
   bg: "#14181b",
@@ -399,8 +377,7 @@ const GIBS = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best";
 // ------------------------------------------------------------------ table ---
 
 export const BASEMAPS: BasemapInfo[] = [
-  { id: "gray", label: "Gray", group: "Vector", hint: "The workstation default — neutral under any product.", attribution: OFM_ATTRIB },
-  { id: "dark", label: "Dark", group: "Vector", hint: "Near-black; lets radar and satellite carry the colour.", attribution: OFM_ATTRIB },
+  { id: "dark", label: "Dark", group: "Vector", hint: "The workstation default — near-black, lets radar and satellite carry the colour.", attribution: OFM_ATTRIB },
   { id: "light", label: "Light", group: "Vector", hint: "Pale base for bright rooms and printing.", attribution: OFM_ATTRIB },
   { id: "blank", label: "Blank", group: "Vector", hint: "No tiles at all — just the data field.", attribution: "" },
   { id: "satellite", label: "Satellite", group: "Imagery", hint: "High-resolution imagery, borders drawn over it.", attribution: "Imagery © Esri, Maxar, Earthstar Geographics" },
@@ -411,10 +388,26 @@ export const BASEMAPS: BasemapInfo[] = [
   { id: "ocean", label: "Ocean", group: "Terrain", hint: "Seafloor base for marine and tropical work.", attribution: "Esri · GEBCO, NOAA, National Geographic" },
 ];
 
-export const DEFAULT_BASEMAP = "gray";
+export const DEFAULT_BASEMAP = "dark";
 
 export const basemapInfo = (id: string): BasemapInfo =>
   BASEMAPS.find((b) => b.id === id) ?? BASEMAPS[0];
+
+/**
+ * The two vector basemaps built to sit under a light or dark app chrome --
+ * their ids double as the theme names they match. When the UI theme flips,
+ * whichever of these two is on screen swaps to match it. Everything else --
+ * imagery, terrain, "blank" -- has no light/dark counterpart and is a
+ * deliberate choice, so it's left alone.
+ */
+const THEME_LINKED_BASEMAPS = new Set(["light", "dark"]);
+
+/** Next basemap id to switch to for this theme, or null if this basemap
+ *  isn't theme-linked or already matches. */
+export function themeLinkedBasemap(theme: "light" | "dark", currentId: string): string | null {
+  if (!THEME_LINKED_BASEMAPS.has(currentId)) return null;
+  return theme === currentId ? null : theme;
+}
 
 /** Fresh style object per call — MapLibre takes ownership of what it is given. */
 export function buildBasemapStyle(id: string): StyleSpecification {
@@ -469,8 +462,7 @@ export function buildBasemapStyle(id: string): StyleSpecification {
         maxzoom: 13,
         labels: { ...OVER_IMAGERY, country: "#20343d", state: "#3a4e57", text: "#12242c", textDim: "#254049", halo: "#e6f0f4" },
       });
-    case "gray":
     default:
-      return vectorStyle(GRAY);
+      return vectorStyle(DARK);
   }
 }

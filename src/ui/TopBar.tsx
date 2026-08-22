@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { AlertTriangle, Compass, Crosshair, Download, Globe, Globe2, Maximize, Minus, PanelLeft, PenLine, Plus, Ruler, Video } from "lucide-react";
 
 import { useAppStore } from "../store/useAppStore";
@@ -12,6 +12,41 @@ import { downloadBlob } from "../lib/gifExport";
 import { BrandMark } from "./BrandMark";
 import { SearchBar } from "./SearchBar";
 import { OutlookTopButton } from "./OutlookControls";
+import { AccountPanel } from "./auth/AccountPanel";
+import { useAuthStore } from "../store/useAuthStore";
+
+/**
+ * Who is signed in, and the way into their account.
+ *
+ * The avatar rather than a labelled button: it is the one control in the bar
+ * that is about the person instead of the map, and a face-shaped thing in the
+ * corner is where everyone already looks for it.
+ */
+function AccountButton() {
+  const profile = useAuthStore((s) => s.profile);
+  const [open, setOpen] = useState(false);
+  const label = profile?.displayName || profile?.username || "Account";
+  const initial = (profile?.displayName || profile?.username || "?").trim().charAt(0).toUpperCase();
+
+  return (
+    <>
+      <button
+        type="button"
+        className="topbar__acct"
+        title={label}
+        aria-label={`Account — ${label}`}
+        onClick={() => setOpen(true)}
+      >
+        {profile?.avatarUrl ? (
+          <img src={profile.avatarUrl} alt="" />
+        ) : (
+          <span>{initial}</span>
+        )}
+      </button>
+      {open && <AccountPanel onClose={() => setOpen(false)} />}
+    </>
+  );
+}
 
 /** Save the focused pane's current view as a PNG (the top bar's download icon). */
 function saveViewPng() {
@@ -32,17 +67,6 @@ function saveViewPng() {
     ),
   );
 }
-
-// Quick layer toggles (text chips, like a pro workstation's LSR/RAOB labels).
-const QUICK: { id: string; label: string }[] = [
-  { id: "boundaries", label: "BORDERS" },
-  { id: "graticule", label: "GRID" },
-  { id: "terminator", label: "DAY/NIGHT" },
-  { id: "raob", label: "RAOB" },
-  { id: "acars", label: "ACARS" },
-  { id: "lsr", label: "LSR" },
-  { id: "fronts", label: "FRONTS" },
-];
 
 function Tool({
   icon,
@@ -115,8 +139,6 @@ export function TopBar() {
   const toggleLeftPanel = useAppStore((s) => s.toggleLeftPanel);
   const projection = useAppStore((s) => s.projection);
   const toggleProjection = useAppStore((s) => s.toggleProjection);
-  const layers = useAppStore((s) => s.layers);
-  const toggleLayer = useAppStore((s) => s.toggleLayer);
   const measureMode = useAppStore((s) => s.measureMode);
   const setMeasureMode = useAppStore((s) => s.setMeasureMode);
   const openAnim = useGifStore((s) => s.setOpen);
@@ -185,20 +207,6 @@ export function TopBar() {
       />
       <OutlookTopButton />
 
-      <div className="topbar__quick">
-        {QUICK.map((q) => (
-          <button
-            key={q.id}
-            type="button"
-            className={`qtoggle${layers[q.id]?.visible ? " is-on" : ""}`}
-            onClick={() => toggleLayer(q.id)}
-            title={`Toggle layer: ${q.label}`}
-          >
-            {q.label}
-          </button>
-        ))}
-      </div>
-
       <div className="topbar__right">
         <span className="tool__sep tool--desktop" />
         <Tool icon={<Download size={17} />} label="Save current view (PNG)" onClick={saveViewPng} />
@@ -208,6 +216,7 @@ export function TopBar() {
           onClick={() => openAnim(true)}
         />
         <SearchBar />
+        <AccountButton />
       </div>
     </header>
   );

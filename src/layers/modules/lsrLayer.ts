@@ -238,4 +238,8 @@ export const lsrLayer: LayerModule = {
     // they must never be buried under radar or an alert fill.
     return [ICONS, LABELS];
   },
+  // Above radar (20) and the mesoscale discussion outline (10): a filed report
+  // is what actually happened, which outranks a tracked cell or a forecaster's
+  // watch area.
+  topPriority: 30,
 };

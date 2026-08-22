@@ -1,22 +1,42 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, Loader2, Wind, X } from "lucide-react";
+import { AlertTriangle, Loader2, Maximize2, Minimize2, Wind, X } from "lucide-react";
 
-import { hodoBandColor, hodoX, hodoY, uvOf, windBarb, type HodoGeom } from "../lib/skewt";
+import { windBarb } from "../lib/skewt";
 import type { VwpLevel } from "../lib/nexrad";
 import { useNexradStore } from "../store/useNexradStore";
 import { useVwpStore, VWP_COLUMN_CHOICES } from "../store/useVwpStore";
 
 const M_PER_FT = 0.3048;
-const COL_W = 44;
-const PLOT_H = 300;
-const LEFT = 44;
-const TOP = 22;
-const BOTTOM = 26;
+
+/**
+ * The altitude ladder the NEXRAD VWP product reports on: every 1000 ft to
+ * 20 kft, then coarser as the returns thin out. Fixed, not derived from the
+ * data -- a row the radar found nothing for is information ("ND"), and a plot
+ * whose axis quietly shrinks to whatever came back hides exactly that.
+ */
+const LADDER = [
+  50, 45, 40, 35, 30, 28, 26, 24, 22, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11,
+  10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
+];
+
+const LABEL_W = 36;
+const COL_W = 32;
+const ROW_H = 14;
+const HEAD_H = 17;
+const TIME_H = 26;
+const BARB_LEN = 17;
 
 function fmtHHMM(unix: number | null): string {
   if (!unix) return "--";
   const d = new Date(unix * 1000);
   return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}Z`;
+}
+
+/** 1638 — the four-digit UTC stamp the display's time axis uses. */
+function fmtHHMMc(unix: number | null): string {
+  if (!unix) return "----";
+  const d = new Date(unix * 1000);
+  return `${String(d.getUTCHours()).padStart(2, "0")}${String(d.getUTCMinutes()).padStart(2, "0")}`;
 }
 
 /** Speed colour ramp, the same one a VWP display uses: green -> yellow -> red. */
@@ -29,9 +49,45 @@ function speedColor(kt: number): string {
 }
 
 /**
- * VAD Wind Profile — the radar's own wind profile, drawn as the classic
- * time-height display: one column per volume scan, height up the side, a barb
- * at every level the algorithm resolved.
+ * Bin one volume's levels onto the ladder.
+ *
+ * The VAD resolves winds at whatever heights its elevation cuts happened to
+ * intersect -- 1700 ft, 3100 ft, 5900 ft -- so each level goes to its NEAREST
+ * ladder row rather than into a fixed window. A window drops anything that
+ * falls between two rows; nearest-row keeps every level and only ever has to
+ * choose between two that describe the same layer, where the lower RMS wins.
+ */
+function binToLadder(levels: VwpLevel[]): Map<number, VwpLevel> {
+  const out = new Map<number, VwpLevel>();
+  for (const lv of levels) {
+    let row = LADDER[0];
+    let bestGap = Infinity;
+    for (const kft of LADDER) {
+      const gap = Math.abs(kft * 1000 - lv.altFt);
+      if (gap < bestGap) {
+        bestGap = gap;
+        row = kft;
+      }
+    }
+    const held = out.get(row);
+    if (!held) {
+      out.set(row, lv);
+      continue;
+    }
+    const heldGap = Math.abs(row * 1000 - held.altFt);
+    const better =
+      bestGap < heldGap ||
+      (bestGap === heldGap && (lv.rmsKt ?? 99) < (held.rmsKt ?? 99));
+    if (better) out.set(row, lv);
+  }
+  return out;
+}
+
+/**
+ * VAD Wind Profile — the radar's own wind profile as the classic time-height
+ * display: altitude up the side in thousands of feet, one column per volume
+ * scan, a barb wherever the algorithm resolved a wind and ND wherever it did
+ * not.
  */
 export function VwpPanel() {
   const open = useVwpStore((s) => s.open);
@@ -44,30 +100,23 @@ export function VwpPanel() {
   const site = useNexradStore((s) => s.site);
 
   const [hover, setHover] = useState<{ col: number; level: VwpLevel } | null>(null);
-
-  const maxFt = useMemo(() => {
-    const hs = data?.meta.heightsFt ?? [];
-    return hs.length ? Math.max(10000, Math.ceil(Math.max(...hs) / 5000) * 5000) : 20000;
-  }, [data]);
+  // Opens full screen, the way a sounding does. 29 rows of barbs across a dozen
+  // volumes is a reading surface, not a status corner: at the docked size the
+  // cells were ~12 px and the whole point of the display -- watching the profile
+  // change column to column -- needed squinting. The toggle still docks it.
+  const [expanded, setExpanded] = useState(true);
 
   const cols = data?.columns ?? [];
-  const width = LEFT + Math.max(cols.length, 1) * COL_W + 12;
-  const height = TOP + PLOT_H + BOTTOM;
+  const binned = useMemo(() => cols.map((c) => binToLadder(c.levels)), [cols]);
 
-  const yOf = (ft: number) => TOP + PLOT_H - (ft / maxFt) * PLOT_H;
-
-  // Hodograph of the newest column.
-  const latest = cols[cols.length - 1];
-  const hg: HodoGeom = useMemo(() => {
-    let m = 40;
-    for (const l of latest?.levels ?? []) m = Math.max(m, l.spdKt);
-    return { size: 150, maxKt: Math.ceil((m + 8) / 10) * 10 };
-  }, [latest]);
+  const width = LABEL_W + Math.max(cols.length, 1) * COL_W;
+  const timeY = HEAD_H + LADDER.length * ROW_H;
+  const height = timeY + TIME_H;
 
   if (!open) return null;
 
   return (
-    <div className="vwp" role="dialog" aria-label="VAD Wind Profile">
+    <div className={`vwp${expanded ? " is-expanded" : ""}`} role="dialog" aria-label="VAD Wind Profile">
       <header className="vwp__head">
         <div className="vwp__title">
           <Wind size={15} />
@@ -92,6 +141,14 @@ export function VwpPanel() {
             ))}
           </select>
           {busy && <Loader2 size={14} className="spin" />}
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            title={expanded ? "Restore" : "Full screen"}
+            aria-pressed={expanded}
+          >
+            {expanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+          </button>
           <button type="button" onClick={() => setOpen(false)} title="Close">
             <X size={15} />
           </button>
@@ -124,71 +181,98 @@ export function VwpPanel() {
             <svg
               className="vwp__svg"
               viewBox={`0 0 ${width} ${height}`}
-              style={{ minWidth: width }}
+              preserveAspectRatio="xMidYMin meet"
               onMouseLeave={() => setHover(null)}
+              role="img"
+              aria-label="VAD wind profile time-height display"
             >
-              {/* height gridlines */}
-              {Array.from({ length: Math.floor(maxFt / 5000) + 1 }, (_, i) => i * 5000).map((ft) => (
-                <g key={ft}>
-                  <line
-                    x1={LEFT}
-                    x2={width - 6}
-                    y1={yOf(ft)}
-                    y2={yOf(ft)}
-                    className="vwp__grid"
-                  />
-                  <text x={LEFT - 6} y={yOf(ft) + 3.5} className="vwp__ytext">
-                    {ft === 0 ? "0" : `${ft / 1000}k`}
-                  </text>
-                </g>
-              ))}
-              <text x={12} y={TOP - 8} className="vwp__axlabel">
-                ft
-              </text>
+              <rect x={0} y={0} width={width} height={height} className="vwpc__bg" />
 
-              {cols.map((c, ci) => {
-                const cx = LEFT + ci * COL_W + COL_W / 2;
+              <text x={4} y={12} className="vwpc__corner">
+                ALT KFT
+              </text>
+              <line x1={0} y1={HEAD_H} x2={width} y2={HEAD_H} className="vwpc__rule" />
+
+              {LADDER.map((kft, ri) => {
+                const top = HEAD_H + ri * ROW_H;
+                const mid = top + ROW_H / 2;
                 return (
-                  <g key={c.key}>
-                    <rect
-                      x={LEFT + ci * COL_W}
-                      y={TOP}
-                      width={COL_W}
-                      height={PLOT_H}
-                      className={`vwp__colbg${ci === cols.length - 1 ? " is-latest" : ""}`}
+                  <g key={kft}>
+                    <line
+                      x1={0}
+                      x2={width}
+                      y1={top + ROW_H}
+                      y2={top + ROW_H}
+                      className="vwpc__grid"
                     />
-                    <text x={cx} y={height - 9} className="vwp__xtext">
-                      {fmtHHMM(c.unix)}
+                    <text x={LABEL_W - 7} y={mid + 3.2} className="vwpc__alt">
+                      {kft}
                     </text>
-                    {c.levels.map((l) => {
-                      if (l.altFt > maxFt) return null;
-                      const y = yOf(l.altFt);
-                      const b = windBarb(l.spdKt, 17);
+                    {cols.map((c, ci) => {
+                      const lv = binned[ci]?.get(kft);
+                      const cx = LABEL_W + ci * COL_W + COL_W / 2;
+                      if (!lv) {
+                        return (
+                          <text key={c.key} x={cx} y={mid + 3.2} className="vwpc__nd">
+                            ND
+                          </text>
+                        );
+                      }
+                      const b = windBarb(lv.spdKt, BARB_LEN);
+                      const hot = hover?.col === ci && hover.level.altFt === lv.altFt;
                       return (
                         <g
-                          key={`${c.key}-${l.altFt}`}
-                          transform={`translate(${cx} ${y})`}
-                          onMouseEnter={() => setHover({ col: ci, level: l })}
+                          key={c.key}
+                          transform={`translate(${cx} ${mid})`}
+                          onMouseEnter={() => setHover({ col: ci, level: lv })}
                         >
-                          <circle r={7} fill="transparent" />
-                          <g transform={`rotate(${l.dirDeg})`}>
+                          <rect
+                            x={-COL_W / 2}
+                            y={-ROW_H / 2}
+                            width={COL_W}
+                            height={ROW_H}
+                            fill="transparent"
+                          />
+                          <g transform={`rotate(${lv.dirDeg})`}>
                             <path
                               d={b.d}
-                              fill={b.calm ? "none" : speedColor(l.spdKt)}
-                              stroke={speedColor(l.spdKt)}
-                              strokeWidth={1.5}
+                              fill={b.calm ? "none" : speedColor(lv.spdKt)}
+                              stroke={speedColor(lv.spdKt)}
+                              strokeWidth={1.2}
                               strokeLinecap="round"
                             />
                           </g>
-                          {hover?.col === ci && hover.level.altFt === l.altFt && (
-                            <circle r={8} className="vwp__hoverdot" />
-                          )}
+                          {hot && <circle r={6} className="vwp__hoverdot" />}
                         </g>
                       );
                     })}
                   </g>
                 );
               })}
+
+              <line x1={0} y1={timeY} x2={width} y2={timeY} className="vwpc__rule" />
+              <text x={4} y={timeY + 17} className="vwpc__corner">
+                TIME
+              </text>
+              {cols.map((c, ci) => {
+                const cx = LABEL_W + ci * COL_W + COL_W / 2;
+                return (
+                  <g key={c.key}>
+                    <line x1={cx} x2={cx} y1={timeY} y2={timeY + 5} className="vwpc__tick" />
+                    <text x={cx} y={timeY + 17} className="vwpc__time">
+                      {fmtHHMMc(c.unix)}
+                    </text>
+                  </g>
+                );
+              })}
+
+              <rect
+                x={0.5}
+                y={0.5}
+                width={width - 1}
+                height={height - 1}
+                className="vwpc__frame"
+              />
             </svg>
           </div>
 
@@ -225,46 +309,6 @@ export function VwpPanel() {
                   <dd>{data.meta.maxDirDeg != null ? `${data.meta.maxDirDeg}°` : "--"}</dd>
                 </dl>
               )}
-            </div>
-
-            <div className="vwp__hodo">
-              <span className="vwp__rohead">HODOGRAPH · latest</span>
-              <svg viewBox={`0 0 ${hg.size} ${hg.size}`} aria-label="VAD hodograph">
-                {[10, 20, 30, 40, 50, 60, 70, 80]
-                  .filter((r) => r <= hg.maxKt)
-                  .map((r) => (
-                    <circle
-                      key={r}
-                      cx={hg.size / 2}
-                      cy={hg.size / 2}
-                      r={(r / hg.maxKt) * (hg.size / 2)}
-                      className="vwp__hodoring"
-                    />
-                  ))}
-                <line x1={0} x2={hg.size} y1={hg.size / 2} y2={hg.size / 2} className="vwp__hodoaxis" />
-                <line x1={hg.size / 2} x2={hg.size / 2} y1={0} y2={hg.size} className="vwp__hodoaxis" />
-                {(latest?.levels ?? []).slice(1).map((l, i) => {
-                  const a = latest!.levels[i];
-                  const [au, av] = uvOf(a.dirDeg, a.spdKt);
-                  const [bu, bv] = uvOf(l.dirDeg, l.spdKt);
-                  return (
-                    <path
-                      key={l.altFt}
-                      d={`M${hodoX(hg, au)} ${hodoY(hg, av)}L${hodoX(hg, bu)} ${hodoY(hg, bv)}`}
-                      stroke={hodoBandColor(a.altFt * M_PER_FT)}
-                      className="vwp__hodoseg"
-                    />
-                  );
-                })}
-                {hover && (
-                  <circle
-                    cx={hodoX(hg, uvOf(hover.level.dirDeg, hover.level.spdKt)[0])}
-                    cy={hodoY(hg, uvOf(hover.level.dirDeg, hover.level.spdKt)[1])}
-                    r={3.5}
-                    className="vwp__hodocur"
-                  />
-                )}
-              </svg>
             </div>
 
             <div className="vwp__key">

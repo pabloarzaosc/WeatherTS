@@ -5,6 +5,31 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   base: './',
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        /**
+         * Split the vendor libraries out of the app chunk.
+         *
+         * Everything shipped as one 1.85 MB file, so any change to app code
+         * invalidated the whole download -- including MapLibre, which is the
+         * bulk of it and changes only when the dependency does. Separate
+         * chunks let the browser keep the big, stable ones across releases.
+         */
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          if (id.includes("maplibre-gl")) return "maplibre";
+          if (id.includes("@supabase")) return "supabase";
+          if (id.includes("lucide-react")) return "icons";
+          if (id.includes("mp4-muxer") || id.includes("gifenc")) return "export";
+          if (id.includes("react-dom") || id.includes("/react/") || id.includes("scheduler")) {
+            return "react";
+          }
+          return "vendor";
+        },
+      },
+    },
+  },
   server: {
     // 0.0.0.0 so the phone can reach it over Tailscale. The box is only exposed
     // on the tailnet (and localhost), not the public internet -- Tailscale is

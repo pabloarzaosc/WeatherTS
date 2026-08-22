@@ -1,27 +1,25 @@
 import { useState, type ReactNode } from "react";
 import {
   Lock,
-  Layers as LayersIcon,
   Radar,
-  Satellite,
+  Thermometer,
   AlertTriangle,
-  Grid3x3,
-  Zap,
+
   Activity,
   Sparkles,
   Megaphone,
   Waves,
-  Plane,
 } from "lucide-react";
 
 import { useAppStore } from "../../store/useAppStore";
 import type { CatalogTab } from "../../store/useAppStore";
-import { ModelsView } from "./ModelsView";
 import { SurfaceObsView } from "./SurfaceObsView";
-import { LightningView } from "./LightningView";
 import { RadarView } from "./RadarView";
 import { LsrView } from "./LsrView";
 import { FrontsView } from "./FrontsView";
+import { AdvancedTab, FavoritesTab, MineTab } from "./CatalogTabs";
+import { ActiveLayers } from "./ActiveLayers";
+import { SoundingsContent } from "./SoundingsContent";
 
 const CAT_TABS: { id: CatalogTab; label: string }[] = [
   { id: "default", label: "Default" },
@@ -40,22 +38,19 @@ const CATEGORIES: {
   icon: ReactNode;
   ready: boolean;
   layerId?: string;
-  panel?: "models" | "surface" | "radar" | "lightning" | "lsr" | "fronts";
+  panel?: "surface" | "radar" | "lsr" | "fronts" | "sounding";
 }[] = [
   { id: "surface", label: "Surface", icon: <Activity size={15} />, ready: true, panel: "surface" },
-  { id: "models", label: "Models", icon: <Grid3x3 size={15} />, ready: false, panel: "models" },
   { id: "radar", label: "Radar", icon: <Radar size={15} />, ready: true, panel: "radar" },
-  { id: "sat", label: "Satellite", icon: <Satellite size={15} />, ready: false },
+  { id: "sounding", label: "Sounding", icon: <Thermometer size={15} />, ready: true, panel: "sounding" },
   { id: "alerts", label: "Alerts", icon: <AlertTriangle size={15} />, ready: true, layerId: ALERT_LAYER_ID },
-  { id: "lightning", label: "Lightning", icon: <Zap size={15} />, ready: true, panel: "lightning" },
   { id: "lsr", label: "Storm Reports", icon: <Megaphone size={15} />, ready: true, panel: "lsr" },
   { id: "fronts", label: "Fronts", icon: <Waves size={15} />, ready: true, panel: "fronts" },
-  { id: "acars", label: "Aircraft", icon: <Plane size={15} />, ready: true, layerId: "acars" },
   { id: "more", label: "Others in development...", icon: <Sparkles size={15} />, ready: false },
 ];
 
 /** The Catalog tab — a quick category launcher. Clicking a category with an
- *  inline panel (Models) expands its options right below the grid. */
+ *  inline panel expands its options right below the grid. */
 export function CatalogView() {
   const catalogTab = useAppStore((s) => s.catalogTab);
   const setCatalogTab = useAppStore((s) => s.setCatalogTab);
@@ -64,7 +59,7 @@ export function CatalogView() {
 
   // Which category's inline panel is open.
   const [openPanel, setOpenPanel] = useState<
-    "models" | "surface" | "radar" | "lightning" | "lsr" | "fronts" | null
+    "surface" | "radar" | "lsr" | "fronts" | "sounding" | null
   >(null);
 
   return (
@@ -82,12 +77,12 @@ export function CatalogView() {
         ))}
       </div>
 
-      {catalogTab !== "default" ? (
-        <div className="empty">
-          <LayersIcon size={22} />
-          <p>Nothing here yet.</p>
-          <span>“Mine”, “Favorites” and “Advanced” arrive in future phases.</span>
-        </div>
+      {catalogTab === "my" ? (
+        <MineTab />
+      ) : catalogTab === "favorite" ? (
+        <FavoritesTab />
+      ) : catalogTab === "advanced" ? (
+        <AdvancedTab />
       ) : (
         <>
           <div className="catgrid">
@@ -119,11 +114,8 @@ export function CatalogView() {
             })}
           </div>
 
-          {openPanel === "models" && (
-            <div className="catalog__panel">
-              <ModelsView />
-            </div>
-          )}
+          <ActiveLayers />
+
           {openPanel === "surface" && (
             <div className="catalog__panel">
               <SurfaceObsView />
@@ -134,11 +126,6 @@ export function CatalogView() {
               <RadarView />
             </div>
           )}
-          {openPanel === "lightning" && (
-            <div className="catalog__panel">
-              <LightningView />
-            </div>
-          )}
           {openPanel === "lsr" && (
             <div className="catalog__panel">
               <LsrView />
@@ -147,6 +134,11 @@ export function CatalogView() {
           {openPanel === "fronts" && (
             <div className="catalog__panel">
               <FrontsView />
+            </div>
+          )}
+          {openPanel === "sounding" && (
+            <div className="catalog__panel">
+              <SoundingsContent />
             </div>
           )}
         </>

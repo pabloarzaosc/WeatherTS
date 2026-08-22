@@ -15,6 +15,11 @@ import warnings
 from typing import Any, Optional
 
 import numpy as np
+
+
+class _SkipRender(Exception):
+    """Not an error: the caller asked for parameters without the plot."""
+
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -910,11 +915,19 @@ def compute(levels: list[dict], lat: float = 35.0) -> dict:
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
-def build_sounding(lat: float, lon: float, model: str, hour: int) -> dict:
+def build_sounding(lat: float, lon: float, model: str, hour: int,
+                   view: Optional[dict] = None, render: bool = True) -> dict:
     if model not in MODELS:
         model = DEFAULT_MODEL
     requested_hour = max(0, int(hour))
-    cache_key = (round(lat, 3), round(lon, 3), model, requested_hour)
+    view = view or {}
+    # The plot options are part of the identity of the rendered image, so they
+    # belong in the key: without them, switching parcel returned the cached
+    # picture of the previous one.
+    # See build_raob: a parameters-only response must not be served to a caller
+    # that asked for the plot.
+    cache_key = (round(lat, 3), round(lon, 3), model, requested_hour, bool(render),
+                 tuple(sorted(view.items())))
     hit = _RESULT_CACHE.get(cache_key)
     now = time.time()
     if hit and now - hit[0] < _TTL:
@@ -970,8 +983,17 @@ def build_sounding(lat: float, lon: float, model: str, hour: int) -> dict:
 
     image = None
     image_error = None
+    # Skipping the plot is what makes a multi-station scan possible at all:
+    # the parameters are already computed above, while the SHARPpy render is
+    # seconds of Qt work per profile.
     try:
+        if not render:
+            raise _SkipRender()
         from sharppy_renderer import render_spc_widget_png
+
+        # The panel's parcel / storm-motion choices ride in the same meta the
+        # renderer already receives, so nothing else in the path changes.
+        meta.update(view or {})
 
         image = base64.b64encode(render_spc_widget_png(render_levels, meta)).decode("ascii")
     except Exception as exc:  # noqa: BLE001 - return renderer failures to the UI

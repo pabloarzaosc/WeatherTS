@@ -2,9 +2,11 @@ import type { ExpressionSpecification, GeoJSONSource, MapLayerMouseEvent } from 
 import type { LayerModule } from "../types";
 import { useAlertStore } from "../../store/useAlertStore";
 import { alertsToFeatureCollection } from "../../lib/nwsAlerts";
+import { markerUnderPoint } from "../clickPriority";
 
 const SRC = "alerts-src";
 const FILL = "alerts-fill";
+const CASING = "alerts-casing";
 const OUTLINE = "alerts-outline";
 const DEFAULT_ALERT_OPACITY = 0.86;
 
@@ -48,62 +50,92 @@ function visibilityExpr(): ExpressionSpecification | null {
   return clauses.length > 0 ? (["all", ...clauses] as ExpressionSpecification) : null;
 }
 
+/**
+ * Tiers drawn as colour only.
+ *
+ * A watch and an advisory both cover wide areas for hours around something
+ * that has not happened yet. An outline gives that a hard, warning-shaped edge
+ * and the map fills with boundaries that mean much less than they look like
+ * they mean, so the line work is kept for the alerts that really do have one.
+ */
+const NO_LINE_KINDS = ["watch", "advisory"];
+const kindOf: ExpressionSpecification = ["coalesce", ["get", "kind"], "other"];
+
+/** True for a tier that gets an outline. */
+const HAS_OUTLINE: ExpressionSpecification = ["match", kindOf, NO_LINE_KINDS, false, true];
+/** True for a tier drawn as colour only. */
+const NO_OUTLINE: ExpressionSpecification = ["match", kindOf, NO_LINE_KINDS, true, false];
+
 function pushFilter(map: import("maplibre-gl").Map) {
   const expr = visibilityExpr();
-  for (const id of [FILL, OUTLINE]) {
-    if (map.getLayer(id)) map.setFilter(id, expr);
+  if (map.getLayer(FILL)) map.setFilter(FILL, expr);
+  // The casing is half of the same stroke, so it lives by the same rule -- one
+  // left showing under a hidden outline would just be a black border.
+  for (const id of [CASING, OUTLINE]) {
+    if (!map.getLayer(id)) continue;
+    map.setFilter(id, expr ? (["all", expr, HAS_OUTLINE] as ExpressionSpecification) : HAS_OUTLINE);
   }
 }
 
 const priority: ExpressionSpecification = ["coalesce", ["get", "priority"], 0];
 const sortKey: ExpressionSpecification = ["to-number", ["get", "priority"], 0];
 
+// One weight for every alert on the map, whatever it is.
+//
+// Fill and line used to ramp with alertPriority(), so two Severe Thunderstorm
+// Warnings could draw at visibly different strengths depending on the hail size
+// and wind quoted in them. Nothing here ever read the expiry time, but on
+// screen the complaint is the same either way: an alert that is in force is in
+// force, and a polygon that looks half-lit reads as one that is half-over.
+// Colour already says which product it is; opacity now only says "here".
+const ALERT_FILL = 0.1;
+// Bright enough to read over reflectivity, which is the background this line
+// actually has to survive. Dimming it was what kept it from shouting before,
+// but that only worked over a pale basemap -- over a red core the line simply
+// vanished. The casing below does that job properly, so the line itself can go
+// back to being a line.
+const ALERT_LINE = 0.85;
+
+// A dark stroke under the coloured one.
+//
+// Radar is the worst possible background for a thin coloured line: somewhere on
+// any storm there is a pixel of the same hue and brightness as the warning
+// colour, and right there the border disappears. A casing gives every edge its
+// own contrast instead of borrowing it from whatever happens to be underneath
+// -- the same trick a road gets on a printed map.
+const CASING_COLOR = "rgba(6,10,16,0.75)";
+const CASING_EXTRA_PX = 1.6;
+
+// The one exception, and it is about tier rather than strength: the tiers above
+// draw no outline at all, so their fill has to carry the whole shape alone.
+const NO_LINE_FILL = 0.14;
+
 const fillOpacity = (opacity: number): ExpressionSpecification => [
-  "interpolate",
-  ["linear"],
-  priority,
-  0,
-  0.025 * opacity,
-  350,
-  0.04 * opacity,
-  650,
-  0.065 * opacity,
-  900,
-  0.09 * opacity,
-  1200,
-  0.12 * opacity,
+  "case",
+  NO_OUTLINE,
+  NO_LINE_FILL * opacity,
+  ALERT_FILL * opacity,
 ];
 
-const lineOpacity = (opacity: number): ExpressionSpecification => [
-  "interpolate",
-  ["linear"],
-  priority,
-  0,
-  0.28 * opacity,
-  350,
-  0.42 * opacity,
-  650,
-  0.58 * opacity,
-  900,
-  0.76 * opacity,
-  1200,
-  0.9 * opacity,
-];
+const lineOpacity = (opacity: number): number => ALERT_LINE * opacity;
 
+// Thinner across the board, keeping the same ranking. A warning polygon is
+// often only a few counties wide on screen; at the old top of 2.35 px the
+// border was eating the shape it was supposed to outline.
 const lineWidth: ExpressionSpecification = [
   "interpolate",
   ["linear"],
   priority,
   0,
-  0.65,
+  0.5,
   350,
-  0.9,
+  0.65,
   650,
-  1.25,
+  0.85,
   900,
-  1.75,
+  1.1,
   1200,
-  2.35,
+  1.4,
 ];
 
 /** NWS active alerts as colored polygons; click one to open its detail panel.
@@ -118,6 +150,11 @@ export const alertsLayer: LayerModule = {
   defaultOpacity: DEFAULT_ALERT_OPACITY,
 
   addTo(map) {
+    // A style reload (basemap or theme) wipes the layers and the manager calls
+    // addTo again for the same, still-live map. Without dropping the previous
+    // listeners first they stack up, one more copy per switch.
+    state.get(map)?.unsubTime();
+
     if (!map.getSource(SRC)) {
       map.addSource(SRC, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     }
@@ -130,16 +167,47 @@ export const alertsLayer: LayerModule = {
         paint: { "fill-color": ["get", "color"], "fill-opacity": fillOpacity(DEFAULT_ALERT_OPACITY) },
       });
     }
+    // Severe thunderstorm and tornado warnings carry a touch more weight than
+    // the rest. They are the two a chaser is scanning for, and on a busy map
+    // the difference between "a warning" and "the warning" should be visible
+    // before the label is read.
+    const convectiveWidthMult: ExpressionSpecification = [
+      "case",
+      ["coalesce", ["get", "convective"], false],
+      1.3,
+      1,
+    ];
+    // multiplier increases outline weight for emergencies / PDS
+    const specialWidthMult: ExpressionSpecification = [
+      "case",
+      ["get", "isEmergency"],
+      1.8,
+      ["get", "isPDS"],
+      1.3,
+      1,
+    ];
+    const strokeWidth: ExpressionSpecification = [
+      "*",
+      specialWidthMult,
+      convectiveWidthMult,
+      lineWidth,
+    ];
+
+    // Added before the outline, so it is drawn under it.
+    if (!map.getLayer(CASING)) {
+      map.addLayer({
+        id: CASING,
+        type: "line",
+        source: SRC,
+        layout: { "line-sort-key": sortKey },
+        paint: {
+          "line-color": CASING_COLOR,
+          "line-width": ["+", strokeWidth, CASING_EXTRA_PX] as never,
+          "line-opacity": lineOpacity(DEFAULT_ALERT_OPACITY),
+        },
+      });
+    }
     if (!map.getLayer(OUTLINE)) {
-      // multiplier increases outline weight for emergencies / PDS
-      const specialWidthMult: ExpressionSpecification = [
-        "case",
-        ["get", "isEmergency"],
-        1.8,
-        ["get", "isPDS"],
-        1.3,
-        1,
-      ];
       map.addLayer({
         id: OUTLINE,
         type: "line",
@@ -147,7 +215,7 @@ export const alertsLayer: LayerModule = {
         layout: { "line-sort-key": sortKey },
         paint: {
           "line-color": ["case", ["get", "isEmergency"], "#ff1d48", ["get", "color"]],
-          "line-width": ["*", specialWidthMult, lineWidth],
+          "line-width": strokeWidth as never,
           "line-opacity": lineOpacity(DEFAULT_ALERT_OPACITY),
         },
       });
@@ -171,6 +239,9 @@ export const alertsLayer: LayerModule = {
     pushFilter(map);
 
     const onClick = (e: MapLayerMouseEvent) => {
+      // A sounding dot drawn on top of this polygon is what the user aimed at;
+      // opening the alert as well turns one click into two unrelated panels.
+      if (markerUnderPoint(map, e.point)) return;
       const rendered = map.queryRenderedFeatures(e.point, { layers: [FILL] });
       const ids = Array.from(
         new Set(
@@ -207,6 +278,7 @@ export const alertsLayer: LayerModule = {
       state.delete(map);
     }
     if (map.getLayer(OUTLINE)) map.removeLayer(OUTLINE);
+    if (map.getLayer(CASING)) map.removeLayer(CASING);
     if (map.getLayer(FILL)) map.removeLayer(FILL);
     if (map.getSource(SRC)) map.removeSource(SRC);
     const s = useAlertStore.getState();
@@ -216,11 +288,12 @@ export const alertsLayer: LayerModule = {
 
   setOpacity(map, opacity) {
     if (map.getLayer(FILL)) map.setPaintProperty(FILL, "fill-opacity", fillOpacity(opacity));
+    if (map.getLayer(CASING)) map.setPaintProperty(CASING, "line-opacity", lineOpacity(opacity));
     if (map.getLayer(OUTLINE)) map.setPaintProperty(OUTLINE, "line-opacity", lineOpacity(opacity));
   },
 
   getLayerIds() {
-    return [FILL, OUTLINE];
+    return [FILL, CASING, OUTLINE];
   },
 
   // The polygon border has to stay readable over whatever product is drawn on
@@ -231,6 +304,7 @@ export const alertsLayer: LayerModule = {
     // shading above the radar mesh too, and the scan is the thing you want to
     // read -- so the fill stays where the normal order puts it (under radar,
     // which is registered later) while the border still marks the warning.
-    return [OUTLINE];
+    // Casing first: it has to stay directly under the line it belongs to.
+    return [CASING, OUTLINE];
   },
 };

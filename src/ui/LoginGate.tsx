@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Loader2, Lock, WifiOff } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Loader2, WifiOff } from "lucide-react";
 
-import { GRACE_DAYS, graceRemaining, resumeSession, signIn } from "../lib/auth";
-
-type Phase = "checking" | "locked" | "open";
+import { completeOAuth, graceRemaining, isElectron } from "../lib/auth";
+import { useAuthStore } from "../store/useAuthStore";
+import { AuthScreen } from "./auth/AuthScreen";
 
 function graceLabel(ms: number): string {
   const days = Math.floor(ms / (24 * 60 * 60 * 1000));
@@ -13,61 +13,36 @@ function graceLabel(ms: number): string {
 }
 
 /**
- * Gates the app behind a username and password while the build is closed.
- * Renders nothing of the app until a session is accepted, or until a recent
- * one is still inside its offline grace window.
+ * The boundary between "who are you" and the app.
+ *
+ * The app stays behind an account because half of what it does is tied to one
+ * -- the handle other chasers see, saved workspaces, the position you share.
+ * Anyone can create one now; the closed build's issued-account list is gone.
  */
 export function LoginGate({ children }: { children: ReactNode }) {
-  const [phase, setPhase] = useState<Phase>("checking");
-  const [offline, setOffline] = useState(false);
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const userRef = useRef<HTMLInputElement>(null);
+  const status = useAuthStore((s) => s.status);
+  const recovering = useAuthStore((s) => s.recovering);
+  const init = useAuthStore((s) => s.init);
+  const [linkError, setLinkError] = useState<string | null>(null);
 
+  useEffect(() => init(), [init]);
+
+  // The desktop build gets its OAuth answer as a deep link on the protocol it
+  // registered, forwarded here by the main process. A browser completes the
+  // same flow on its own, from the URL it was redirected to.
   useEffect(() => {
-    let cancelled = false;
-    void resumeSession().then((r) => {
-      if (cancelled) return;
-      setOffline(r.offline);
-      setPhase(r.ok ? "open" : "locked");
-      if (!r.ok && r.username) setUsername(r.username);
+    if (!isElectron) return;
+    const api = (window as unknown as {
+      electronAPI?: { onAuthCallback?: (cb: (url: string) => void) => void };
+    }).electronAPI;
+    api?.onAuthCallback?.((url) => {
+      void completeOAuth(url).catch((e: { message?: string }) =>
+        setLinkError(e?.message ?? "That sign-in link could not be completed."),
+      );
     });
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
-  useEffect(() => {
-    if (phase === "locked") userRef.current?.focus();
-  }, [phase]);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    const res = await signIn(username, password);
-    if (res.ok) {
-      setPassword("");
-      setOffline(false);
-      setPhase("open");
-    } else {
-      // Falling back to grace here matters: if the server is unreachable the
-      // password may well be right, and a dev who signed in last week should
-      // not be locked out by an idle project or a dropped connection.
-      if (res.reason === "offline" && graceRemaining() > 0) {
-        setOffline(true);
-        setPhase("open");
-      } else {
-        setError(res.message);
-      }
-    }
-    setBusy(false);
-  }
-
-  if (phase === "checking") {
+  if (status === "checking") {
     return (
       <div className="gate gate--quiet">
         <div className="gate__mark">
@@ -78,76 +53,30 @@ export function LoginGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (phase === "open") {
+  // A recovery link signs you in, but the only thing that session is for is
+  // choosing a new password -- so the app waits behind that form.
+  if (status === "signedOut" || recovering) {
     return (
       <>
-        {offline && (
-          <div className="gate__offline" role="status">
-            <WifiOff size={12} />
-            <span>Offline session · {graceLabel(graceRemaining())}</span>
+        {linkError && (
+          <div className="gate__linkerr" role="alert">
+            {linkError}
           </div>
         )}
-        {children}
+        <AuthScreen />
       </>
     );
   }
 
   return (
-    <div className="gate">
-      <form className="gate__card" onSubmit={submit}>
-        <div className="gate__mark">
-          WEATHER<span>TS</span>
+    <>
+      {status === "offline" && (
+        <div className="gate__offline" role="status">
+          <WifiOff size={12} />
+          <span>Offline session · {graceLabel(graceRemaining())}</span>
         </div>
-        <div className="gate__kicker">
-          <Lock size={11} /> Closed development build
-        </div>
-
-        <label className="gate__field">
-          <span>Username</span>
-          <input
-            ref={userRef}
-            type="text"
-            value={username}
-            placeholder="yourname"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            onChange={(e) => setUsername(e.target.value)}
-            disabled={busy}
-          />
-        </label>
-
-        <label className="gate__field">
-          <span>Password</span>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={busy}
-          />
-        </label>
-
-        {error && (
-          <div className="gate__error" role="alert">
-            {error}
-          </div>
-        )}
-
-        <button type="submit" className="gate__submit" disabled={busy}>
-          {busy ? (
-            <>
-              <Loader2 size={14} className="gate__spin" /> Signing in…
-            </>
-          ) : (
-            "Sign in"
-          )}
-        </button>
-
-        <p className="gate__note">
-          Accounts are issued by the team — there is no sign-up. A successful sign-in keeps the app
-          open offline for {GRACE_DAYS} days.
-        </p>
-      </form>
-    </div>
+      )}
+      {children}
+    </>
   );
 }

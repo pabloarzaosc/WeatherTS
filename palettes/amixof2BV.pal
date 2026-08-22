@@ -1,0 +1,32 @@
+; amixof2BV -- base velocity, supplied by Pablo 2026-08-21.
+;
+; AUTHORED IN MPH (the original header said `units: MPH`, `scale: 2.237`,
+; which is the m/s -> mph factor GRLevelX applies to the product's internal
+; units). This decoder hands velocity over already in KNOTS and the parser
+; ignores `Scale:` on purpose, so the stops are converted here instead --
+; left in mph they would each be read as a knot value and every colour would
+; land about 15% off. The original mph number is kept beside each stop.
+;
+Product: BV
+Units: KTS
+step: 10
+
+color: -104.2771  255 0 128       ; -120 mph
+color:  -78.6423  0 0 160         ; -90.5 mph
+color:  -60.8283  0 224 255       ; -70 mph
+color:  -52.1386  0 255 225       ; -60 mph
+color:  -43.4488  160 255 208     ; -50 mph
+color:  -34.7590  0 255 0         ; -40 mph
+color:   -8.6898  16 96 16        ; -10 mph
+color:   -8.6811  16 96 16        ; -9.99 mph
+color:   -0.0087  112 128 112     ; -0.01 mph
+color:    0.0000  144 128 144     ; 0 mph
+color:    8.6898  135 69 88       ; 10 mph
+color:   17.3795  119 0 0         ; 20 mph
+color:   39.1039  255 0 0         ; 45 mph
+color:   47.7937  255 128 0       ; 55 mph
+color:   56.4835  255 255 0       ; 65 mph
+color:   86.8976  190 190 0       ; 100 mph
+color:  104.2771  0 0 0           ; 120 mph
+
+RF: 128 0 208

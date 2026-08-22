@@ -317,9 +317,13 @@ function applyStyle(map: MapLibreMap) {
     ? (["interpolate", ["linear"], ["coalesce", ["get", "ageMin"], 0], ref * 0.5, 1, ref, 0.38] as never)
     : (1 as never);
   for (const id of TEXT_LAYERS) if (map.getLayer(id)) map.setPaintProperty(id, "text-opacity", fade);
-  for (const id of [L_BARB, L_SKY, L_CALM]) {
+  // Barb and sky are symbols; calm is a CIRCLE, and asking MapLibre for a
+  // symbol's icon-opacity on a circle layer throws inside getPaintProperty --
+  // it was firing on every restyle of this layer.
+  for (const id of [L_BARB, L_SKY]) {
     if (map.getLayer(id)) map.setPaintProperty(id, "icon-opacity", fade);
   }
+  if (map.getLayer(L_CALM)) map.setPaintProperty(L_CALM, "circle-opacity", fade);
 
   // size scaling
   const ts = 11 * size;

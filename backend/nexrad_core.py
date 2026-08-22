@@ -198,7 +198,18 @@ def pal_to_cmap(name: str, pal: str) -> tuple[LinearSegmentedColormap, float, fl
     vmin, vmax = stops[0][0], stops[-1][0]
     span = (vmax - vmin) or 1.0
     colors = [(max(0.0, min(1.0, (v - vmin) / span)), rgba) for v, rgba in stops]
-    return LinearSegmentedColormap.from_list(name, colors), vmin, vmax
+    # Two stops at the same value is how a .pal author writes a HARD BREAK: the
+    # segment ends on one colour and the next starts on another with no ramp
+    # between. Matplotlib rejects that outright ("must increase monotonically"),
+    # which took out the published CC and ZDR tables entirely. Nudging the
+    # second one up by the smallest representable step keeps the break sharp and
+    # keeps the table usable.
+    fixed: list[tuple[float, tuple[float, float, float, float]]] = []
+    for pos, rgba in colors:
+        if fixed and pos <= fixed[-1][0]:
+            pos = math.nextafter(fixed[-1][0], 1.0)
+        fixed.append((pos, rgba))
+    return LinearSegmentedColormap.from_list(name, fixed), vmin, vmax
 
 
 def _cmap(name: str, colors: list[tuple[float, str]]) -> LinearSegmentedColormap:
@@ -210,29 +221,77 @@ from pal_tables import PAL_TABLES
 
 # palette id -> label + the .pal table it renders from.
 PALETTES: dict[str, dict[str, Any]] = {
-    "REF": {"label": "Reflectivity (Viper HD)", "pal": PAL_TABLES["REF"]},
-    "VEL": {"label": "Velocity", "pal": PAL_TABLES["VEL"]},
+    # Files in <repo>/palettes: the NEXRAD Level-3 tables from NOAA's Weather
+    # and Climate Toolkit. Defaults for almost everything, because they are the
+    # published palettes for these product codes -- a value reads the same
+    # colour here as in any other display built on them.
+    "FILE_DR": {"label": "Reflectivity", "pal": PAL_TABLES["FILE_DR"]},
+    "FILE_DV": {"label": "Velocity (WCT)", "pal": PAL_TABLES["FILE_DV"]},
+    # Pablo's own base-velocity table, and the default for velocity. Converted
+    # from its authored mph to knots on the way into palettes/ -- see the header
+    # in the file; the parser ignores `Scale:`, so an unconverted mph table
+    # would place every colour about 15% off.
+    "FILE_amixof2BV": {"label": "Velocity", "pal": PAL_TABLES["FILE_amixof2BV"]},
+    "FILE_SRV": {"label": "Storm Relative Velocity", "pal": PAL_TABLES["FILE_SRV"]},
+    "FILE_ET": {"label": "Echo Tops (WCT)", "pal": PAL_TABLES["FILE_ET"]},
+    "FILE_ET_steep": {"label": "Echo Tops", "pal": PAL_TABLES["FILE_ET_steep"]},
+    "FILE_VIL": {"label": "Vertically Integrated Liquid", "pal": PAL_TABLES["FILE_VIL"]},
+    "FILE_HC": {"label": "Hydrometeor Classification", "pal": PAL_TABLES["FILE_HC"]},
+    "FILE_ZDR": {"label": "Differential Reflectivity", "pal": PAL_TABLES["FILE_ZDR"]},
+    "FILE_KDP": {"label": "Specific Differential Phase", "pal": PAL_TABLES["FILE_KDP"]},
+    "FILE_KDP2": {"label": "Differential Phase (WCT)", "pal": PAL_TABLES["FILE_KDP2"]},
+    "FILE_SW": {"label": "Spectrum Width", "pal": PAL_TABLES["FILE_SW"]},
+    "FILE_OHP": {"label": "One Hour Precip", "pal": PAL_TABLES["FILE_OHP"]},
+    "FILE_STP": {"label": "Storm Total Precip", "pal": PAL_TABLES["FILE_STP"]},
+    "FILE_CC": {"label": "Correlation Coefficient (WCT, x100)", "pal": PAL_TABLES["FILE_CC"]},
+
+    # The hand-tuned tables, still selectable. CC and PHI stay the DEFAULTS:
+    # the WCT correlation table is authored in rho x100 (stops 20-105) while our
+    # decoder hands over rho itself (0-1.05), and WCT's differential phase table
+    # stops at 180 deg where the field runs to 360. Both would clamp almost
+    # everything to one colour.
+    # The alternates below stay in the table but are hidden from the picker;
+    # see the note under _KIND_DEFAULT_PALETTE.
+    "REF": {"label": "Reflectivity (alternate)", "pal": PAL_TABLES["REF"]},
+    "VEL": {"label": "Velocity (Viper HD)", "pal": PAL_TABLES["VEL"]},
     "SRV": {"label": "Storm Relative Velocity", "pal": PAL_TABLES["SRV"]},
     "CC": {"label": "Correlation Coefficient", "pal": PAL_TABLES["CC"]},
     "ZDR": {"label": "Differential Reflectivity", "pal": PAL_TABLES["ZDR"]},
     "KDP": {"label": "Specific Differential Phase", "pal": PAL_TABLES["KDP"]},
-    "DHC": {"label": "Hydrometeor Classification", "pal": PAL_TABLES["DHC"]},
+    "DHC": {"label": "Hydrometeor Classification (legacy)", "pal": PAL_TABLES["DHC"]},
     "SW": {"label": "Spectrum Width", "pal": PAL_TABLES["SW"]},
     "PHI": {"label": "Differential Phase", "pal": PAL_TABLES["PHI"]},
     "CFP": {"label": "Clutter Filter Power", "pal": PAL_TABLES["CFP"]},
-    "EET": {"label": "Echo Tops", "pal": PAL_TABLES["EET"]},
-    "VIL": {"label": "Vertically Integrated Liquid", "pal": PAL_TABLES["VIL"]},
-    "DAA": {"label": "1-hr Precip Accum", "pal": PAL_TABLES["DAA"]},
-    "DTA": {"label": "Storm Total Accum", "pal": PAL_TABLES["DTA"]},
+    "EET": {"label": "Echo Tops (legacy)", "pal": PAL_TABLES["EET"]},
+    "DAA": {"label": "1-hr Precip Accum (legacy)", "pal": PAL_TABLES["DAA"]},
+    "DTA": {"label": "Storm Total Accum (legacy)", "pal": PAL_TABLES["DTA"]},
 }
 
 # Table a product kind uses. VIL used to borrow the storm-total table, which
 # capped at 10 while VIL runs to ~80 -- the whole field clamped to one colour.
 _KIND_DEFAULT_PALETTE = {
-    "ref": "REF", "vel": "VEL", "srv": "SRV", "cc": "CC", "zdr": "ZDR",
-    "kdp": "KDP", "hca": "DHC", "sw": "SW", "tops": "EET", "vil": "VIL",
-    "precip": "DAA", "storm_precip": "DTA", "phi": "PHI", "cfp": "CFP",
+    "ref": "FILE_DR", "vel": "FILE_amixof2BV", "srv": "FILE_SRV", "cc": "CC", "zdr": "FILE_ZDR",
+    "kdp": "FILE_KDP", "hca": "FILE_HC", "sw": "FILE_SW", "tops": "FILE_ET_steep", "vil": "FILE_VIL",
+    "precip": "FILE_OHP", "storm_precip": "FILE_STP", "phi": "PHI", "cfp": "CFP",
 }
+
+# One palette per product in the picker: the one that product actually uses.
+#
+# The alternates are kept in PALETTES -- ids like "REF" and "VEL" are what half
+# the codebase falls back to, and usePaletteStore maps an imported file's
+# `Product:` header (BR/BREF/REF/R/Z, BV/SRM, ...) onto them -- but they no
+# longer appear as things to choose between. Offering two tables for the same
+# moment was worse than noise: pointing an imported palette at the one that is
+# NOT the product's default replaced a table nothing was drawing, so the import
+# looked broken through no fault of its own.
+for _pid, _entry in PALETTES.items():
+    _entry["hidden"] = _pid not in set(_KIND_DEFAULT_PALETTE.values())
+
+# A default that names a palette nobody defined renders as a KeyError deep in
+# get_cmap, at the moment someone opens that product. Fail here instead.
+for _kind, _pid in _KIND_DEFAULT_PALETTE.items():
+    if _pid not in PALETTES:
+        raise RuntimeError(f"default palette {_pid!r} for {_kind!r} is not in PALETTES")
 
 _CMAPS: dict[str, tuple[LinearSegmentedColormap, float, float]] = {}
 
@@ -249,7 +308,12 @@ def list_products() -> list[dict[str, str]]:
 
 
 def list_palettes() -> list[dict[str, str]]:
-    return [{"id": k, "label": v["label"]} for k, v in PALETTES.items()]
+    """The palettes a user can pick between. Hidden ones still resolve by id."""
+    return [
+        {"id": k, "label": v["label"]}
+        for k, v in PALETTES.items()
+        if not v.get("hidden")
+    ]
 
 
 # ---------------------------------------------------------------------------

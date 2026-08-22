@@ -1,6 +1,5 @@
 import maplibregl, { type GeoJSONSource, type Map as MapLibreMap, type MapLayerMouseEvent } from "maplibre-gl";
 
-import { useAppStore } from "../store/useAppStore";
 import { useNexradStore } from "../store/useNexradStore";
 
 /**
@@ -10,13 +9,102 @@ import { useNexradStore } from "../store/useNexradStore";
  */
 
 const SRC = "nexrad-storms-src";
+export const TRACK_CONE = "nexrad-storm-cone";
+export const TRACK_CONE_EDGE = "nexrad-storm-cone-edge";
 export const TRACK_PAST = "nexrad-storm-past";
 export const TRACK_FCST = "nexrad-storm-fcst";
+export const TRACK_TICK = "nexrad-storm-tick";
 export const CELL_DOT = "nexrad-storm-dot";
 export const CELL_LABEL = "nexrad-storm-label";
-export const STORM_LAYERS = [TRACK_PAST, TRACK_FCST, CELL_DOT, CELL_LABEL];
+// Bottom to top: the swath is the ground the storm covers, so everything that
+// describes the storm itself is drawn over it. Ticks sit under the cell dot but
+// over the track line.
+export const STORM_LAYERS = [
+  TRACK_CONE,
+  TRACK_CONE_EDGE,
+  TRACK_PAST,
+  TRACK_FCST,
+  TRACK_TICK,
+  CELL_DOT,
+  CELL_LABEL,
+];
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
+
+const KM_PER_DEG_LAT = 111.32;
+/** Half-length of a forecast tick, on the ground. Fixed in kilometres rather
+ *  than pixels because a GeoJSON line has no screen-space length -- at chase
+ *  zooms this reads like the crosshatch on a printed storm track. */
+const TICK_HALF_KM = 3.5;
+
+/** Half-width of the swath at the cell, and an hour out.
+ *
+ *  It starts at the tick width so the two agree where they meet, and opens up
+ *  with lead time. That spread is the honest part: the SCIT vector is one
+ *  extrapolation of the last few volumes, and an hour of it is a direction
+ *  rather than a place. A parallel-sided corridor would claim a precision the
+ *  forecast does not have. */
+const CONE_START_HALF_KM = TICK_HALF_KM;
+const CONE_END_HALF_KM = 11;
+
+type Pt = [number, number];
+
+/**
+ * The segment across the track at `pt`, square to the direction of travel.
+ *
+ * Perpendicularity is computed in kilometres, not degrees: a degree of
+ * longitude is shorter than a degree of latitude everywhere but the equator,
+ * so rotating the raw lon/lat delta would lean every tick towards the pole --
+ * and would skew the swath the same way, one edge riding wider than the other.
+ */
+function across(pt: Pt, prev: Pt | undefined, next: Pt | undefined, halfKm: number): Pt[] | null {
+  const kmPerDegLon = KM_PER_DEG_LAT * Math.cos((pt[1] * Math.PI) / 180);
+  if (!Number.isFinite(kmPerDegLon) || kmPerDegLon <= 0) return null;
+
+  // Straddle the point where possible so a bend in the track splits the angle.
+  const a = prev ?? pt;
+  const b = next ?? pt;
+  const dx = (b[0] - a[0]) * kmPerDegLon;
+  const dy = (b[1] - a[1]) * KM_PER_DEG_LAT;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return null;
+
+  const halfLon = ((-dy / len) * halfKm) / kmPerDegLon;
+  const halfLat = ((dx / len) * halfKm) / KM_PER_DEG_LAT;
+  return [
+    [pt[0] - halfLon, pt[1] - halfLat],
+    [pt[0] + halfLon, pt[1] + halfLat],
+  ];
+}
+
+const tickAcross = (pt: Pt, prev: Pt | undefined, next: Pt | undefined) =>
+  across(pt, prev, next, TICK_HALF_KM);
+
+/**
+ * The ground the cell is forecast to cross, as one polygon.
+ *
+ * Walk the forecast track, step out to both sides at each point, and close the
+ * two edges into a ring. Because the offset follows the track's own heading,
+ * the shape leans with the storm instead of sitting square to the map -- which
+ * is the whole point: a storm running northeast should show a swath running
+ * northeast, not a box that happens to contain it.
+ */
+function trackSwath(track: Pt[]): Pt[] | null {
+  if (track.length < 2) return null;
+  const last = track.length - 1;
+  const left: Pt[] = [];
+  const right: Pt[] = [];
+  for (let i = 0; i <= last; i++) {
+    const half = CONE_START_HALF_KM + (CONE_END_HALF_KM - CONE_START_HALF_KM) * (i / last);
+    const seg = across(track[i], track[i - 1], track[i + 1], half);
+    if (!seg) return null;
+    left.push(seg[0]);
+    right.push(seg[1]);
+  }
+  const ring = [...left, ...right.reverse()];
+  ring.push(ring[0]);
+  return ring;
+}
 
 interface PaneState {
   unsub: () => void;
@@ -40,11 +128,30 @@ function buildFC(): GeoJSON.FeatureCollection {
       });
     }
     if (c.forecast.length >= 2) {
+      const swath = trackSwath(c.forecast as Pt[]);
+      if (swath) {
+        features.push({
+          type: "Feature",
+          geometry: { type: "Polygon", coordinates: [swath] },
+          properties: { kind: "cone", id: c.id, selected: c.id === st.selectedCellId },
+        });
+      }
       features.push({
         type: "Feature",
         geometry: { type: "LineString", coordinates: c.forecast },
         properties: { kind: "forecast", id: c.id },
       });
+      // forecast[0] is the cell's current position, which already carries the
+      // dot -- ticks mark the 15/30/45/60-minute positions after it.
+      for (let i = 1; i < c.forecast.length; i++) {
+        const seg = tickAcross(c.forecast[i], c.forecast[i - 1], c.forecast[i + 1]);
+        if (!seg) continue;
+        features.push({
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: seg },
+          properties: { kind: "tick", id: c.id, minutes: i * 15 },
+        });
+      }
     }
     features.push({
       type: "Feature",
@@ -61,9 +168,16 @@ function buildFC(): GeoJSON.FeatureCollection {
   return { type: "FeatureCollection", features };
 }
 
-/** Mesocyclones are DOM markers, not GL symbols: the icon has to spin, and a GL
- *  symbol cannot animate continuously without driving a rAF loop. There are
- *  never many of them, so the DOM cost is negligible. */
+/**
+ * TVS markers. DOM markers rather than GL symbols so the shape needs no sprite
+ * sheet; there are only ever a handful on screen.
+ *
+ * Only tornado vortex signatures get a mark. A plain mesocyclone is common
+ * enough in any organised storm that marking them all buries the one detection
+ * that matters -- the cell's popup still reports it in words. The shape is the
+ * inverted triangle every radar display uses for a TVS (a circle would mean
+ * mesocyclone), so it reads without a legend.
+ */
 function syncMesos(map: MapLibreMap) {
   const st = state.get(map);
   if (!st) return;
@@ -72,21 +186,18 @@ function syncMesos(map: MapLibreMap) {
 
   const s = useNexradStore.getState();
   if (!s.showTracks || !s.storms) return;
-  const reduceMotion = useAppStore.getState().reduceMotion;
 
   for (const meso of s.storms.mesos) {
+    if (!meso.tvs) continue;
     const el = document.createElement("div");
-    el.className = `mesomark${meso.tvs ? " is-tvs" : ""}${reduceMotion ? " is-still" : ""}`;
-    el.title = meso.tvs
-      ? `TVS — tornado vortex signature${meso.stormId ? ` (cell ${meso.stormId})` : ""}`
-      : `Mesocyclone${meso.stormId ? ` (cell ${meso.stormId})` : ""}`;
+    el.className = "tvsmark";
+    el.title = `TVS — tornado vortex signature${meso.stormId ? ` (cell ${meso.stormId})` : ""}`;
+    // Drawn as a polygon rather than a border trick so the outline follows the
+    // triangle instead of boxing it.
     el.innerHTML =
-      '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">' +
-      '<path fill="currentColor" d="M12 11.2a2 2 0 1 0 0 1.6a2 2 0 0 0 0-1.6Z"/>' +
-      '<path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" ' +
-      'd="M12 10.2C12 6 15.5 3.4 19 4.6c2.6.9 2.4 4.4-.4 4.9-2 .4-4.2.3-6.6.7"/>' +
-      '<path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" ' +
-      'd="M12 13.8c0 4.2-3.5 6.8-7 5.6-2.6-.9-2.4-4.4.4-4.9 2-.4 4.2-.3 6.6-.7"/>' +
+      '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">' +
+      '<polygon points="12,20.5 1.8,3.5 22.2,3.5" ' +
+      'fill="currentColor" stroke="#0b0f15" stroke-width="1.6" stroke-linejoin="round"/>' +
       "</svg>";
     st.markers.push(
       new maplibregl.Marker({ element: el }).setLngLat([meso.lon, meso.lat]).addTo(map),
@@ -102,6 +213,33 @@ export function pushStorms(map: MapLibreMap): void {
 export function addStorms(map: MapLibreMap): void {
   if (!map.getSource(SRC)) map.addSource(SRC, { type: "geojson", data: EMPTY });
 
+  if (!map.getLayer(TRACK_CONE)) {
+    map.addLayer({
+      id: TRACK_CONE,
+      type: "fill",
+      source: SRC,
+      filter: ["==", ["get", "kind"], "cone"],
+      paint: {
+        // Barely there on purpose: this sits over reflectivity, and the colour
+        // under it is what the swath is about.
+        "fill-color": "#e2ecf7",
+        "fill-opacity": ["case", ["get", "selected"], 0.14, 0.07],
+      },
+    });
+  }
+  if (!map.getLayer(TRACK_CONE_EDGE)) {
+    map.addLayer({
+      id: TRACK_CONE_EDGE,
+      type: "line",
+      source: SRC,
+      filter: ["==", ["get", "kind"], "cone"],
+      layout: { "line-join": "round" },
+      paint: {
+        "line-color": ["case", ["get", "selected"], "#facc15", "rgba(198,232,255,0.8)"],
+        "line-width": ["case", ["get", "selected"], 1.4, 1],
+      },
+    });
+  }
   if (!map.getLayer(TRACK_PAST)) {
     map.addLayer({
       id: TRACK_PAST,
@@ -125,7 +263,21 @@ export function addStorms(map: MapLibreMap): void {
       paint: {
         "line-color": "rgba(255,255,255,0.92)",
         "line-width": 1.6,
-        "line-dasharray": [2, 2],
+      },
+    });
+  }
+  if (!map.getLayer(TRACK_TICK)) {
+    map.addLayer({
+      id: TRACK_TICK,
+      type: "line",
+      source: SRC,
+      filter: ["==", ["get", "kind"], "tick"],
+      layout: { "line-cap": "butt" },
+      paint: {
+        "line-color": "rgba(255,255,255,0.92)",
+        // The hour mark is the one read at a glance, so it carries weight the
+        // quarter-hour ticks don't.
+        "line-width": ["case", [">=", ["get", "minutes"], 60], 2.2, 1.5],
       },
     });
   }

@@ -179,8 +179,72 @@ export async function fetchActiveAlerts(
   });
   if (!res.ok) throw new Error(`NWS API ${res.status}: ${await readNwsProblem(res)}`);
   const data = (await res.json()) as { features?: RawFeature[] };
+  return dedupeById(parseAlertFeatures(data.features));
+}
 
-  const parsed = (data.features ?? []).map((f) => {
+/**
+ * Alerts that were in force at a past instant, for scrubbing the radar loop
+ * back through weather that has since expired.
+ *
+ * /alerts/active can only ever answer "now", so replaying an old frame with it
+ * makes warnings fade out and never appear -- the expired ones simply are not
+ * in the response. This uses the archive query instead.
+ *
+ * The catch, found by probing: `start`/`end` filter on when an alert was
+ * ISSUED, not on when it was in force. A one-minute window at the midpoint of a
+ * warning's own validity does not return it. So the request has to reach back
+ * far enough to cover the issue time of anything still running at `unix`, and
+ * the validity test is done here afterwards.
+ */
+export async function fetchAlertsAt(
+  unix: number,
+  signal?: AbortSignal,
+): Promise<AlertFeature[]> {
+  const end = new Date(unix * 1000);
+  const start = new Date((unix - ISSUE_LOOKBACK_S) * 1000);
+
+  const url = new URL(NWS_ALERTS_URL);
+  url.searchParams.set("start", start.toISOString());
+  url.searchParams.set("end", end.toISOString());
+  url.searchParams.set("status", "actual");
+  url.searchParams.set("message_type", "alert");
+  url.searchParams.set("limit", "500");
+
+  const collected: AlertFeature[] = [];
+  let next: string | null = url.toString();
+  for (let page = 0; next && page < MAX_ARCHIVE_PAGES; page++) {
+    const res: Response = await fetch(next, {
+      signal,
+      headers: { Accept: "application/geo+json" },
+    });
+    if (!res.ok) throw new Error(`NWS API ${res.status}: ${await readNwsProblem(res)}`);
+    const data = (await res.json()) as {
+      features?: RawFeature[];
+      pagination?: { next?: string };
+    };
+    collected.push(...parseAlertFeatures(data.features));
+    next = data.pagination?.next ?? null;
+  }
+
+  // Issued within the window is not the same as running at `unix`; most of what
+  // came back had already expired by then.
+  return dedupeById(collected).filter((f) => alertInForceAt(f.alert, unix));
+}
+
+/** How far back to look for the ISSUE time of something still running at the
+ *  scrubbed-to instant.
+ *
+ *  Six hours covered every warning but cut watches and advisories in half: a
+ *  Flood Watch or a Severe Thunderstorm Watch runs six to eight hours and is
+ *  issued before it starts, so replaying a frame from last night showed the
+ *  warnings and none of the watches around them. Measured against the live API
+ *  at twenty hours back, widening this to twelve found 151 alerts in force
+ *  instead of 86, for one extra page of results. */
+const ISSUE_LOOKBACK_S = 12 * 3600;
+const MAX_ARCHIVE_PAGES = 6;
+
+function parseAlertFeatures(features: RawFeature[] | undefined): AlertFeature[] {
+  return (features ?? []).map((f) => {
     const p = (f.properties ?? {}) as Record<string, unknown>;
     const alert: NwsAlert = {
       id: str(p.id) || str(f.id) || `${str(p.event)}-${str(p.sent)}`,
@@ -207,8 +271,6 @@ export async function fetchActiveAlerts(
     };
     return { alert, geometry: f.geometry ?? null };
   });
-
-  return dedupeById(parsed);
 }
 
 /**
@@ -599,7 +661,16 @@ async function mapLimit<T>(
   await Promise.all(runners);
 }
 
-function applyCachedZoneGeometries(features: AlertFeature[]): AlertFeature[] {
+/**
+ * Zone shapes the cache can already answer, with no request at all.
+ *
+ * Exported so a scrub can paint a complete frame immediately: 86% of active
+ * alerts carry no polygon of their own and are drawn from their zones, so
+ * painting the raw response first made nearly every alert vanish for the few
+ * seconds the zone lookup took, then reappear. After the first load the zones
+ * are in memory (and in IndexedDB for a month), so this fills them in for free.
+ */
+export function applyCachedZoneGeometries(features: AlertFeature[]): AlertFeature[] {
   return features.map((feature) => {
     if (feature.geometry || feature.alert.affectedZones.length === 0) return feature;
     const geometries = feature.alert.affectedZones.map((url) => zoneGeometryCache.get(url) ?? null);
@@ -706,6 +777,23 @@ export function alertCategoryFlags(a: NwsAlert): {
   };
 }
 
+/** Which tier of product this is, from its event name.
+ *
+ *  Order matters: "Severe Thunderstorm Warning" contains neither "watch" nor
+ *  "advisory", but testing warning first keeps any future compound name from
+ *  falling into the softer bucket. The map and the side list both read this,
+ *  so a watch can never be one thing in the panel and another on the map.
+ */
+export type AlertKind = "warning" | "watch" | "advisory" | "statement" | "other";
+
+export function alertKind(event: string): AlertKind {
+  if (/warning/i.test(event)) return "warning";
+  if (/watch/i.test(event)) return "watch";
+  if (/advisory/i.test(event)) return "advisory";
+  if (/statement|message/i.test(event)) return "statement";
+  return "other";
+}
+
 export function alertsToFeatureCollection(features: AlertFeature[]): GeoJSON.FeatureCollection {
   return {
     type: "FeatureCollection",
@@ -732,6 +820,17 @@ export function alertsToFeatureCollection(features: AlertFeature[]): GeoJSON.Fea
               catTornado: cat.tornado,
               catSpecial: cat.special,
               catSevere: cat.severe,
+              // The map draws some tiers as colour with no outline, so it
+              // needs the tier itself rather than one flag per case.
+              kind: alertKind(a.event || ""),
+              // The two products a chaser is actually watching for. Not
+              // catSevere, which is true of every warning there is -- this is
+              // specifically the convective pair, so the map can weight them.
+              // Tornado Emergency and PDS are Tornado Warnings underneath, so
+              // matching the event name catches them too.
+              convective:
+                alertKind(a.event || "") === "warning" &&
+                /tornado|severe thunderstorm/i.test(a.event || ""),
               // flag emergency / PDS so the map layer can style them specially
               isEmergency:
                 (a.event || "").toUpperCase().includes("TORNADO EMERGENCY") ||

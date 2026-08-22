@@ -7,6 +7,7 @@ passes as floats, then grabs the widget as an offscreen image.
 """
 from __future__ import annotations
 
+import base64
 import os
 import json
 import struct
@@ -29,6 +30,13 @@ _PNG_QUALITY = 80
 _RENDER_TIMEOUT = 60.0  # seconds; a hung worker falls back to a one-shot render
 _QT_LOCK = threading.Lock()
 _PATCHED_QT = False
+# SHARPpy sizes some marker labels with hard-coded pixel rectangles (the RM/LM
+# and Corfidi text on the hodograph are 55x12) and draws them WITHOUT
+# TextDontClip. Those numbers assume the widget is about the size SHARPpy's own
+# window gives it; enlarge the widget and its own fonts grow past the rects, so
+# "335/18 RM" renders as "5/18 RM". Enabled only while rendering a standalone
+# widget at panel size, where a clipped label is never what SHARPpy meant.
+_NO_CLIP_TEXT = False
 _INPROCESS_RENDERER = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sharppy-qt")
 
 
@@ -95,6 +103,13 @@ def _patch_qt() -> None:
         def drawText(self, *args):  # noqa: N802 - Qt API name
             if len(args) == 3 and all(_is_number(v) for v in args[:2]):
                 return super().drawText(_to_int(args[0]), _to_int(args[1]), args[2])
+            if _NO_CLIP_TEXT and len(args) == 3 and hasattr(args[0], "width"):
+                rect, flags, text = args
+                metrics = self.fontMetrics()
+                advance = getattr(metrics, "horizontalAdvance", None) or metrics.width
+                if advance(str(text)) > rect.width():
+                    flags = int(flags) | int(QtCore.Qt.TextDontClip)
+                return super().drawText(rect, flags, text)
             if len(args) >= 6 and all(_is_number(v) for v in args[:4]):
                 converted = [_to_int(v) for v in args[:4]]
                 return super().drawText(*converted, *args[4:])
@@ -191,15 +206,17 @@ def _render_spc_widget_png_oneshot(levels: list[dict[str, float]], meta: dict[st
     not a Python interpreter, so subprocess spawning fails. Fall back to
     in-process rendering when this happens.
     """
-    import shutil
-
     # Check if we're in a bundled context (PyInstaller)
-    is_frozen = getattr(sys, "frozen", False)
-    python_exe = None if is_frozen else (shutil.which("python") or shutil.which("python3"))
-
-    # If frozen or python not available, fall back to in-process rendering
-    if is_frozen or python_exe is None or python_exe == sys.executable:
+    if getattr(sys, "frozen", False):
         return _render_spc_widget_png_serialized(levels, meta)
+
+    # The child has to be THIS interpreter. Looking "python" up on PATH finds
+    # whichever one happens to be installed system-wide -- on Windows that is
+    # usually the Microsoft Store alias -- and that is a different environment
+    # with no numpy, sharppy or PyQt in it, so every render died with
+    # ModuleNotFoundError. sys.executable is by definition the environment the
+    # backend's dependencies were installed into.
+    python_exe = sys.executable
 
     payload = json.dumps({"levels": levels, "meta": meta}, separators=(",", ":")).encode("utf-8")
     env = os.environ.copy()
@@ -261,14 +278,11 @@ class _RenderWorker:
         self._lock = threading.Lock()
 
     def _spawn(self) -> None:
-        import shutil
-        is_frozen = getattr(sys, "frozen", False)
-        if is_frozen:
+        if getattr(sys, "frozen", False):
             # Bundled context: fall back to in-process rendering by raising _WorkerBroken
             raise _WorkerBroken("bundled context - use in-process fallback")
-        python_exe = shutil.which("python") or shutil.which("python3")
-        if python_exe is None:
-            python_exe = sys.executable
+        # This interpreter, not PATH's -- see the note in the one-shot path.
+        python_exe = sys.executable
         env = os.environ.copy()
         env["SHARPPY_RENDER_WORKER"] = "1"
         env.setdefault("PYTHONWARNINGS", "ignore")
@@ -326,12 +340,42 @@ class _RenderWorker:
 
     def render(self, levels: list[dict[str, float]], meta: dict[str, Any]) -> bytes:
         payload = json.dumps({"levels": levels, "meta": meta}, separators=(",", ":")).encode("utf-8")
+        body = self.request(payload)
+        if body is not None:
+            return body
+        # Warm worker could not deliver: fall back to a fresh one-shot process
+        # so the caller still gets a frame.
+        return _render_spc_widget_png_oneshot(levels, meta)
+
+    def widgets(
+        self,
+        levels: list[dict[str, float]],
+        meta: dict[str, Any],
+        specs: dict[str, tuple[int, int]],
+    ) -> dict[str, bytes]:
+        """Ask the worker for a set of individual SHARPpy widgets."""
+        payload = json.dumps(
+            {"levels": levels, "meta": meta, "widgets": {k: list(v) for k, v in specs.items()}},
+            separators=(",", ":"),
+        ).encode("utf-8")
+        body = self.request(payload)
+        if body is None:
+            body = _render_vwp_widgets_oneshot(levels, meta, specs)
+        return {k: base64.b64decode(v) for k, v in json.loads(body.decode("utf-8")).items()}
+
+    def request(self, payload: bytes) -> Optional[bytes]:
+        """One framed round-trip, with a respawn retry. None = worker gave up.
+
+        A render error raised by the child (status 1) is re-raised: that is the
+        data being wrong, and retrying or falling back would only produce the
+        same failure more slowly.
+        """
         with self._lock:
             box: dict[str, Any] = {}
 
             def _do() -> None:
                 try:
-                    box["png"] = self._roundtrip(payload)
+                    box["body"] = self._roundtrip(payload)
                 except Exception as exc:  # noqa: BLE001
                     box["err"] = exc
 
@@ -346,8 +390,8 @@ class _RenderWorker:
                     self._kill()
                     worker.join(5)
                     break
-                if "png" in box:
-                    return box["png"]
+                if "body" in box:
+                    return box["body"]
                 err = box.get("err")
                 if isinstance(err, _WorkerBroken):
                     self._kill()
@@ -355,12 +399,92 @@ class _RenderWorker:
                 # A genuine render error (status 1) -- surface it as-is.
                 raise err if isinstance(err, Exception) else RuntimeError("unknown render error")
 
-        # Warm worker could not deliver: fall back to a fresh one-shot process
-        # so the caller still gets a frame.
-        return _render_spc_widget_png_oneshot(levels, meta)
+        return None
 
 
 _WORKER = _RenderWorker()
+
+
+# What the panel can ask for. SHARPpy names its parcels SFC/ML/FCST/MU/EFF and
+# USER, and its storm-motion "deviant" is right/left only -- everything else is
+# a vector the profile already computed, pushed in through modifyVector.
+PARCELS = {"SFC", "ML", "FCST", "MU", "EFF", "USER"}
+STORM_MOTIONS = {"right", "left", "mean", "corfidi-up", "corfidi-down", "custom"}
+
+
+def _motion_vector(prof, kind: str, meta: dict[str, Any]):
+    """(u, v) in knots for a storm motion the widget cannot select on its own."""
+    from sharppy.sharptab import interp, utils as sutils, winds
+
+    if kind == "custom":
+        d = meta.get("stormMotionDir")
+        spd = meta.get("stormMotionSpd")
+        if not _is_number(d) or not _is_number(spd):
+            return None
+        return sutils.vec2comp(float(d), float(spd))
+
+    if kind == "mean":
+        # The 0-6 km mean wind, which is what a hodograph labels "MEAN" --
+        # not SHARPpy's 850-250 default, which is a different layer entirely.
+        ptop = interp.pres(prof, interp.to_msl(prof, 6000.0))
+        return winds.mean_wind(prof, pbot=prof.pres[prof.sfc], ptop=ptop)
+
+    if kind in ("corfidi-up", "corfidi-down"):
+        vec = getattr(prof, "upshear_downshear", None)
+        if vec is None or len(vec) < 4:
+            return None
+        up_u, up_v, dn_u, dn_v = vec[0], vec[1], vec[2], vec[3]
+        return (up_u, up_v) if kind == "corfidi-up" else (dn_u, dn_v)
+
+    return None
+
+
+def _apply_view(widget, meta: dict[str, Any]) -> None:
+    """Apply the panel's parcel and storm-motion choices to a built widget.
+
+    Runs AFTER addProfileCollection: that call ends in updateProfs(), which
+    resets the parcel to the widget's default and picks the deviant from the
+    hemisphere. Applying any of this earlier would simply be overwritten.
+    """
+    prof = getattr(widget, "default_prof", None)
+    if prof is None:
+        return
+
+    parcel = str(meta.get("parcel") or "").upper()
+    if parcel == "USER" and _is_number(meta.get("parcelPressure")):
+        # A user parcel has to be computed and handed to the collection; the
+        # widget only knows how to *select* parcels the profile already has.
+        try:
+            from sharppy.sharptab import params
+
+            pcl = params.parcelx(prof, pres=float(meta["parcelPressure"]), flag=5)
+            widget.defineUserParcel(pcl)
+        except Exception:  # noqa: BLE001 - fall through to the default parcel
+            parcel = ""
+    if parcel in PARCELS:
+        try:
+            widget.parcel_type = parcel
+            pcl = widget.getParcelObj(widget.default_prof, parcel)
+            if pcl is not None:
+                widget.sound.setParcel(pcl)
+                widget.storm_slinky.setParcel(pcl)
+        except Exception:  # noqa: BLE001 - a bad parcel must not lose the plot
+            pass
+
+    motion = str(meta.get("stormMotion") or "").lower()
+    if motion not in STORM_MOTIONS:
+        return
+    # right/left pick which Bunkers vector every SR calculation reads from;
+    # the others REPLACE that vector, so they still need a side to sit on.
+    side = "left" if motion == "left" else "right"
+    try:
+        if motion not in ("right", "left"):
+            vec = _motion_vector(widget.default_prof, motion, meta)
+            if vec is not None and all(_is_number(c) for c in vec):
+                widget.modifyVector(side, float(vec[0]), float(vec[1]))
+        widget.toggleVector(side)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _render_spc_widget_png_inprocess(levels: list[dict[str, float]], meta: dict[str, Any]) -> bytes:
@@ -405,6 +529,8 @@ def _render_spc_widget_png_inprocess(levels: list[dict[str, float]], meta: dict[
         app.processEvents()
         widget.addProfileCollection(prof_col, f"{loc}-{model}", focus=True)
         app.processEvents()
+        _apply_view(widget, meta)
+        app.processEvents()
         widget.repaint()
         app.processEvents()
 
@@ -423,9 +549,208 @@ def _render_spc_widget_png_inprocess(levels: list[dict[str, float]], meta: dict[
         return bytes(data.data())
 
 
+# ---------------------------------------------------------------------------
+# Individual SHARPpy widgets, for panels assembled outside the SPCWidget
+# ---------------------------------------------------------------------------
+# The VWP panel is laid out differently from SHARPpy's own window -- one large
+# hodograph, the kinematics beside it -- but every plot on it is SHARPpy's own
+# widget, rendered by SHARPpy's own paint code. Only the arrangement is ours.
+VWP_WIDGET_KINDS = ("hodo", "kinematics", "speed", "srwinds")
+
+
+def render_vwp_widgets(
+    levels: list[dict[str, float]],
+    meta: dict[str, Any],
+    specs: dict[str, tuple[int, int]],
+) -> dict[str, bytes]:
+    """Render the named SHARPpy widgets offscreen: one PNG each, at the given size."""
+    specs = {k: (int(w), int(h)) for k, (w, h) in specs.items() if k in VWP_WIDGET_KINDS}
+    if not specs:
+        return {}
+    if os.environ.get("SHARPPY_RENDER_CHILD") == "1" or os.environ.get("SHARPPY_RENDER_WORKER") == "1":
+        return _render_vwp_widgets_inprocess(levels, meta, specs)
+    if getattr(sys, "frozen", False):
+        future = _INPROCESS_RENDERER.submit(_render_vwp_widgets_inprocess, levels, meta, specs)
+        return future.result(timeout=_RENDER_TIMEOUT)
+    return _WORKER.widgets(levels, meta, specs)
+
+
+def _render_vwp_widgets_oneshot(
+    levels: list[dict[str, float]],
+    meta: dict[str, Any],
+    specs: dict[str, tuple[int, int]],
+) -> bytes:
+    """Throwaway child process, returning the JSON body the worker would have."""
+    if getattr(sys, "frozen", False):
+        future = _INPROCESS_RENDERER.submit(_render_vwp_widgets_inprocess, levels, meta, specs)
+        return _encode_widget_pngs(future.result(timeout=_RENDER_TIMEOUT))
+
+    payload = json.dumps(
+        {"levels": levels, "meta": meta, "widgets": {k: list(v) for k, v in specs.items()}},
+        separators=(",", ":"),
+    ).encode("utf-8")
+    env = os.environ.copy()
+    env["SHARPPY_RENDER_CHILD"] = "1"
+    env.setdefault("PYTHONWARNINGS", "ignore")
+    if os.name == "nt":
+        env.pop("QT_QPA_PLATFORM", None)
+
+    try:
+        completed = subprocess.run(
+            [sys.executable, __file__],
+            input=payload,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=os.path.dirname(__file__),
+            env=env,
+            timeout=_RENDER_TIMEOUT,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            check=False,
+        )
+    except Exception:  # noqa: BLE001 - no child available; do it here instead
+        return _encode_widget_pngs(_render_vwp_widgets_inprocess(levels, meta, specs))
+
+    if completed.returncode != 0 or not completed.stdout:
+        err = completed.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(err or "SHARPpy widget renderer produced nothing")
+    return completed.stdout
+
+
+def _encode_widget_pngs(pngs: dict[str, bytes]) -> bytes:
+    return json.dumps(
+        {k: base64.b64encode(v).decode("ascii") for k, v in pngs.items()},
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def _pixmap_to_png(pixmap) -> bytes:
+    from qtpy.QtCore import QByteArray, QBuffer, QIODevice
+
+    data = QByteArray()
+    buffer = QBuffer(data)
+    buffer.open(QIODevice.WriteOnly)
+    try:
+        pixmap.save(buffer, "PNG", _PNG_QUALITY)
+    finally:
+        buffer.close()
+    return bytes(data.data())
+
+
+def _render_vwp_widgets_inprocess(
+    levels: list[dict[str, float]],
+    meta: dict[str, Any],
+    specs: dict[str, tuple[int, int]],
+) -> dict[str, bytes]:
+    with _QT_LOCK:
+        _patch_qt()
+
+        from qtpy.QtCore import Qt
+        from qtpy.QtWidgets import QApplication, QWidget
+        from sharppy.sharptab import prof_collection
+        import sharppy.sharptab.profile as profile
+        from sharppy.viz import plotHodo, plotKinematics, plotSpeed, plotWinds
+        from sharppy.viz.preferences import PrefDialog
+        from sutils.config import Config
+
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication([])
+
+        cfg = Config(os.devnull)
+        PrefDialog.initConfig(cfg)
+        prefs = dict((field, value) for (section, field), value in cfg if section == "preferences")
+
+        valid_dt = _valid_dt(meta)
+        prof = _make_profile(levels, meta)
+        observed = bool(meta.get("observed", False))
+        prof_col = prof_collection.ProfCollection(
+            {"": [prof]},
+            [valid_dt],
+            target_type=profile.ConvectiveProfile,
+            observed=observed,
+            loc=f"{meta.get('lat', 0):.2f},{meta.get('lon', 0):.2f}",
+            run=valid_dt,
+            model=str(meta.get("modelLabel") or meta.get("model") or "VWP"),
+            base_time=valid_dt,
+        )
+
+        # The storm motion every storm-relative number is measured against.
+        # right/left choose which Bunkers vector to read; the others replace
+        # that vector on the profile, exactly as the SPCWidget does it.
+        motion = str(meta.get("stormMotion") or "right").lower()
+        side = "left" if motion == "left" else "right"
+        if motion not in ("right", "left"):
+            vec = _motion_vector(prof, motion, meta)
+            if vec is not None and all(_is_number(c) for c in vec):
+                prof_col.modifyStormMotion(side, float(vec[0]), float(vec[1]))
+        active = prof_col.getHighlightedProf()
+
+        # A parent keeps every widget in one window: SHARPpy's hodograph calls
+        # parentWidget().setFocus() when the storm-motion side changes, and a
+        # top-level widget has no parent to call it on.
+        host = QWidget()
+        host.setAttribute(Qt.WA_DontShowOnScreen, True)
+        host.resize(1, 1)
+        host.show()
+
+        builders = {
+            "hodo": plotHodo,
+            "kinematics": plotKinematics,
+            "speed": plotSpeed,
+            "srwinds": plotWinds,
+        }
+
+        global _NO_CLIP_TEXT
+        out: dict[str, bytes] = {}
+        _NO_CLIP_TEXT = True
+        try:
+            for name, (width, height) in specs.items():
+                widget = builders[name]()
+                widget.setParent(host)
+                widget.resize(max(int(width), 40), max(int(height), 40))
+                widget.setAttribute(Qt.WA_DontShowOnScreen, True)
+                widget.show()
+                app.processEvents()
+
+                widget.setPreferences(update_gui=False, **prefs)
+                if name == "hodo":
+                    widget.addProfileCollection(prof_col)
+                    if not observed:
+                        widget.setAllObserved(False, update_gui=False)
+                    widget.setActiveCollection(0)
+                else:
+                    widget.setProf(active)
+                app.processEvents()
+                # Wind speed vs height is the one widget with no storm-relative
+                # half, so SHARPpy never gives it a side to sit on.
+                if hasattr(widget, "setDeviant"):
+                    widget.setDeviant(side)
+                app.processEvents()
+                widget.repaint()
+                app.processEvents()
+
+                out[name] = _pixmap_to_png(widget.grab())
+                widget.close()
+                widget.deleteLater()
+        finally:
+            _NO_CLIP_TEXT = False
+            host.close()
+            host.deleteLater()
+            app.processEvents()
+
+        return out
+
+
 def _main() -> None:
     payload = json.loads(sys.stdin.buffer.read().decode("utf-8"))
-    sys.stdout.buffer.write(_render_spc_widget_png_inprocess(payload["levels"], payload["meta"]))
+    if payload.get("widgets"):
+        specs = {k: tuple(v) for k, v in payload["widgets"].items()}
+        body = _encode_widget_pngs(
+            _render_vwp_widgets_inprocess(payload["levels"], payload["meta"], specs)
+        )
+    else:
+        body = _render_spc_widget_png_inprocess(payload["levels"], payload["meta"])
+    sys.stdout.buffer.write(body)
 
 
 def _worker_loop() -> None:
@@ -459,8 +784,14 @@ def _worker_loop() -> None:
             break
         try:
             req = json.loads(payload.decode("utf-8"))
-            png = _render_spc_widget_png_inprocess(req["levels"], req["meta"])
-            _send(0, png)
+            if req.get("widgets"):
+                specs = {k: tuple(v) for k, v in req["widgets"].items()}
+                body = _encode_widget_pngs(
+                    _render_vwp_widgets_inprocess(req["levels"], req["meta"], specs)
+                )
+            else:
+                body = _render_spc_widget_png_inprocess(req["levels"], req["meta"])
+            _send(0, body)
         except Exception as exc:  # noqa: BLE001 - report render errors to the parent
             _send(1, str(exc).encode("utf-8"))
 

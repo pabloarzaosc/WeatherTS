@@ -2,7 +2,9 @@ import maplibregl, { type GeoJSONSource, type MapLayerMouseEvent } from "maplibr
 
 import type { LayerModule } from "../types";
 import { fetchAcarsProfiles, type AcarsAirport } from "../../lib/soundingViewer";
-import { useSoundingViewerStore, ACARS_WINDOW_H } from "../../store/useSoundingViewerStore";
+import { useSoundingViewerStore } from "../../store/useSoundingViewerStore";
+import { useAcarsStore } from "../../store/useAcarsStore";
+import { registerMarkerLayers, unregisterMarkerLayers } from "../clickPriority";
 
 const SRC = "acars-src";
 const DOTS = "acars-dots";
@@ -19,6 +21,10 @@ interface PaneState {
   popup: maplibregl.Popup;
   timer: number | null;
   controller: AbortController | null;
+  unsub: () => void;
+  /** The airports in the last response, kept so a filter change can recount
+   *  what is on screen without waiting for the next fetch. */
+  airports: AcarsAirport[];
 }
 const state = new WeakMap<import("maplibre-gl").Map, PaneState>();
 
@@ -50,7 +56,40 @@ function toFC(airports: AcarsAirport[]): GeoJSON.FeatureCollection {
   };
 }
 
-// Age-graded like the lightning layer: a two-hour-old ascent is still useful but
+/**
+ * What the map draws, from the panel's settings.
+ *
+ * Filtered on the map rather than at fetch time so moving a slider is instant
+ * and does not spend a request: the feed is hourly, and re-asking MADIS to
+ * answer "hide the thin ones" would be the same data with fewer rows.
+ */
+function visibilityFilter(): unknown[] | null {
+  const { maxAgeMin, minLevels } = useAcarsStore.getState();
+  const clauses: unknown[] = [];
+  if (maxAgeMin !== null) clauses.push(["<=", ["get", "ageMin"], maxAgeMin]);
+  if (minLevels > 0) clauses.push([">=", ["get", "nLevels"], minLevels]);
+  return clauses.length ? ["all", ...clauses] : null;
+}
+
+function applySettings(map: import("maplibre-gl").Map) {
+  const { showLabels } = useAcarsStore.getState();
+  const f = visibilityFilter() as never;
+  for (const id of [DOTS, LABEL]) if (map.getLayer(id)) map.setFilter(id, f);
+  if (map.getLayer(LABEL)) {
+    map.setLayoutProperty(LABEL, "visibility", showLabels ? "visible" : "none");
+  }
+  // Count against the same rules the map uses, so "12 of 40" is never a
+  // different answer from what is drawn.
+  const st = state.get(map);
+  const { maxAgeMin, minLevels } = useAcarsStore.getState();
+  const list = st?.airports ?? [];
+  const shown = list.filter(
+    (a) => (maxAgeMin === null || ageMin(a.latestUnix) <= maxAgeMin) && a.nLevels >= minLevels,
+  ).length;
+  useAcarsStore.getState().setStatus({ total: list.length, shown });
+}
+
+// Age-graded: a two-hour-old ascent is still useful but
 // must not read as current.
 const dotColor = (o: number) =>
   [
@@ -65,7 +104,7 @@ const dotColor = (o: number) =>
 /** Airports with a recent aircraft (ACARS/AMDAR) ascent or descent. */
 export const acarsLayer: LayerModule = {
   id: "acars",
-  name: "Aircraft Soundings (ACARS)",
+  name: "ACARS Aircraft Soundings",
   description:
     "Airports with a recent aircraft ascent or descent profile. Click one for its sounding.",
   category: "weather",
@@ -115,13 +154,29 @@ export const acarsLayer: LayerModule = {
       st?.controller?.abort();
       const controller = new AbortController();
       if (st) st.controller = controller;
-      fetchAcarsProfiles(ACARS_WINDOW_H, controller.signal)
+      useAcarsStore.getState().setStatus({ busy: true, error: null });
+      fetchAcarsProfiles(useAcarsStore.getState().windowH, controller.signal)
         .then((res) => {
           if (controller.signal.aborted) return;
+          const cur = state.get(map);
+          if (cur) cur.airports = res.airports;
           (map.getSource(SRC) as GeoJSONSource | undefined)?.setData(toFC(res.airports));
+          useAcarsStore.getState().setStatus({
+            busy: false,
+            error: null,
+            lastUpdatedAt: Date.now(),
+          });
+          applySettings(map);
         })
-        .catch(() => {
-          /* the layer simply shows nothing if MADIS is unreachable */
+        .catch((err: unknown) => {
+          if (controller.signal.aborted) return;
+          // Named rather than swallowed: an empty aircraft layer and an
+          // unreachable MADIS look identical on the map, and only one of them
+          // is worth waiting out.
+          useAcarsStore.getState().setStatus({
+            busy: false,
+            error: err instanceof Error ? err.message : "MADIS unreachable",
+          });
         });
     };
 
@@ -162,12 +217,33 @@ export const acarsLayer: LayerModule = {
       useSoundingViewerStore.getState().openAcars({ airport: String(p.airport), lat, lon });
     };
 
+    registerMarkerLayers([DOTS]);
     map.on("click", DOTS, onClick);
     map.on("mouseenter", DOTS, onEnter);
     map.on("mouseleave", DOTS, onLeave);
 
     const timer = window.setInterval(load, REFRESH_MS);
-    state.set(map, { onClick, onEnter, onLeave, popup, timer, controller: null });
+    // A window change needs the feed again; the rest are map-side filters, so
+    // they must NOT trigger a fetch.
+    const unsubWindow = useAcarsStore.subscribe((st) => st.windowH, () => load());
+    const unsubView = useAcarsStore.subscribe(
+      (st) => `${st.maxAgeMin}|${st.minLevels}|${st.showLabels}`,
+      () => applySettings(map),
+    );
+    state.set(map, {
+      onClick,
+      onEnter,
+      onLeave,
+      popup,
+      timer,
+      controller: null,
+      airports: [],
+      unsub: () => {
+        unsubWindow();
+        unsubView();
+      },
+    });
+    applySettings(map);
     load();
   },
 
@@ -180,8 +256,10 @@ export const acarsLayer: LayerModule = {
       st.popup.remove();
       if (st.timer !== null) window.clearInterval(st.timer);
       st.controller?.abort();
+      st.unsub();
       state.delete(map);
     }
+    unregisterMarkerLayers([DOTS]);
     for (const id of [LABEL, DOTS]) if (map.getLayer(id)) map.removeLayer(id);
     if (map.getSource(SRC)) map.removeSource(SRC);
   },
@@ -194,4 +272,13 @@ export const acarsLayer: LayerModule = {
   getLayerIds() {
     return [DOTS, LABEL];
   },
+
+  // Small point markers you click to open a sounding: they must not end up
+  // under a radar sweep or an alert fill, the way a tracked storm cell must
+  // not. Above LSR too, because the aircraft dots are the smaller target of
+  // the two and they rarely land on the same spot.
+  topLayerIds() {
+    return [DOTS, LABEL];
+  },
+  topPriority: 40,
 };

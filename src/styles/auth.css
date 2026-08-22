@@ -1,0 +1,608 @@
+/* Accounts: the sign-in card's extra pieces, and the account panel.
+   The card itself (.gate__*) lives in app.css; everything here sits inside it
+   or replaces it. Tokens come from theme.css. */
+
+.auth {
+  width: min(380px, 100%);
+  gap: 11px;
+}
+
+.auth__tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 3px;
+  margin-top: -4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+.auth__tab {
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 600;
+  transition: background-color var(--t) var(--ease), color var(--t) var(--ease);
+}
+.auth__tab.is-on {
+  background: var(--panel-solid);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+.auth__providers {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.auth__provider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 500;
+  transition: border-color var(--t) var(--ease), background-color var(--t) var(--ease);
+}
+.auth__provider:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--panel-solid);
+}
+.auth__provider:disabled { opacity: 0.55; }
+
+/* A rule with the word sitting in the gap, rather than a bare line: the two
+   halves are alternatives, and a plain divider reads as a section break. */
+.auth__or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-faint);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.auth__or::before,
+.auth__or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.auth__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
+}
+.auth__lead {
+  margin: -4px 0 2px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  text-align: center;
+}
+.auth__lead b { color: var(--text); font-weight: 600; }
+
+.auth__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  margin: 2px auto -2px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  color: var(--accent);
+}
+
+.auth__link {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 11.5px;
+  text-align: center;
+}
+.auth__link:hover { text-decoration: underline; }
+.auth__forgot { margin-top: -4px; text-align: right; }
+.auth__back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  color: var(--text-faint);
+}
+
+.auth__note-live {
+  padding: 8px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-2);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.gate__note--grace {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.gate__linkerr {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 210;
+  padding: 8px 13px;
+  border: 1px solid var(--danger-border);
+  border-radius: 9px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 11.5px;
+}
+
+/* ============================================================
+   Account panel
+   ============================================================ */
+
+/* Above everything, including the alert rail and the sounding viewer: while
+   this is open it is the only thing being read. */
+.acct__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(16px, 4vh, 48px);
+  background: rgba(2, 5, 10, 0.72);
+  backdrop-filter: blur(10px) saturate(0.9);
+  -webkit-backdrop-filter: blur(10px) saturate(0.9);
+  animation: fade-up var(--t) var(--ease-out) both;
+}
+.acct {
+  display: flex;
+  flex-direction: column;
+  width: min(900px, 94vw);
+  height: min(860px, 90vh);
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--panel-solid);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+/* The dialog is wide; the form inside it is not. Fields stretched to 900 px
+   would be a worse thing to read, not a better one, so the content keeps a
+   normal measure and sits in the middle of the sheet. */
+.acct__col {
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.acct__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 15px;
+  border-bottom: 1px solid var(--border);
+}
+.acct__head > button {
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+}
+.acct__head > button:hover { color: var(--text); }
+.acct__who {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+.acct__who strong { display: block; font-size: 13.5px; }
+.acct__who span {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.acct__avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+}
+.acct__avatar--blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-2);
+  color: var(--text-faint);
+}
+
+.acct__body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 22px 18px 26px;
+}
+
+.acct__section {
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.acct__section:first-child { margin-top: 0; }
+
+.acct__hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin: -3px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+.acct__hint svg { flex: none; margin-top: 2px; }
+
+.acct__ok { color: var(--ok, #22c55e); font-weight: 600; }
+.acct__bad { color: var(--danger); font-weight: 600; }
+
+.acct__methods { display: flex; flex-wrap: wrap; gap: 6px; }
+.acct__method {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-2);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.acct__method svg { color: var(--ok, #22c55e); }
+
+.acct__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 4px 10px;
+  border: 1px solid var(--accent-border, var(--border-strong));
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.acct__minor {
+  align-self: flex-start;
+  padding: 6px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+.acct__minor:hover:not(:disabled) { color: var(--text); border-color: var(--border-strong); }
+.acct__minor:disabled { opacity: 0.45; }
+
+.acct__foot {
+  flex: none;
+  padding: 11px 15px;
+  border-top: 1px solid var(--border);
+}
+.acct__signout {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 1px solid var(--danger-border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 500;
+}
+.acct__signout:hover { background: var(--danger-soft); }
+
+/* The avatar in the top bar. Sized to the other tool buttons so the row keeps
+   one rhythm, round so it reads as a person rather than another control. */
+.topbar__acct {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin-left: 6px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--panel-2);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color var(--t) var(--ease), color var(--t) var(--ease);
+}
+.topbar__acct:hover { border-color: var(--border-strong); color: var(--text); }
+.topbar__acct img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* ============================================================
+   The sign-in page's left half
+   ============================================================ */
+
+/* Two columns that become one on a narrow window. The card keeps its own
+   width; the text takes what is left, up to a comfortable measure. */
+.gate__split {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 54px;
+  width: 100%;
+  max-width: 900px;
+}
+.gate__intro {
+  flex: 1 1 380px;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.gate__introhead {
+  margin: 0;
+  font-size: 25px;
+  line-height: 1.22;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--text);
+}
+.gate__introlead {
+  margin: -4px 0 2px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+.gate__introlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.gate__introlist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+.gate__introlist b {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.gate__introlist span:not(.gate__introicon) {
+  display: block;
+  margin-top: 1px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+.gate__introicon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--accent);
+}
+.gate__introfoot {
+  margin: 4px 0 0;
+  padding-top: 13px;
+  border-top: 1px solid var(--border);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+/* Under a laptop width the two columns stop fitting side by side; the card
+   goes first, because on a small window the person is there to sign in. */
+@media (max-width: 880px) {
+  .gate__split {
+    flex-direction: column-reverse;
+    gap: 26px;
+  }
+  .gate__intro { max-width: min(380px, 100%); }
+  .gate__introhead { font-size: 20px; text-align: center; }
+  .gate__introlead { text-align: center; }
+}
+@media (max-height: 700px) {
+  .gate__introlist,
+  .gate__introfoot { display: none; }
+}
+
+/* --- profile picture row --- */
+.acct__picrow { display: flex; align-items: flex-start; gap: 14px; }
+.acct__pic {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+.acct__pic--blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-2);
+  color: var(--text-faint);
+}
+.acct__picbtns { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.acct__picbtns .acct__hint { flex-basis: 100%; margin: 0; }
+.acct__minor { display: inline-flex; align-items: center; gap: 6px; }
+
+/* --- a sign-in method you can take off again --- */
+.acct__unlink {
+  display: inline-flex;
+  margin-left: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+}
+.acct__unlink:hover:not(:disabled) { color: var(--danger); }
+
+/* --- the plain facts about the account --- */
+.acct__facts {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+.acct__facts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11.5px;
+}
+.acct__facts span { color: var(--text-faint); flex: none; }
+.acct__facts b { color: var(--text-dim); font-weight: 500; text-align: right; }
+.acct__id {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  word-break: break-all;
+}
+.acct__id button {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  padding: 0;
+}
+.acct__id button:hover { color: var(--text); }
+
+/* --- the part that cannot be undone, made to look like it --- */
+.acct__section--danger { color: var(--danger); }
+.acct__danger {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px 13px;
+  border: 1px solid var(--danger-border);
+  border-radius: 10px;
+  background: var(--danger-soft);
+}
+.acct__danger p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.acct__danger p b { color: var(--text); font-family: var(--mono); }
+.acct__danger input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-solid);
+  color: var(--text);
+  font-size: 12.5px;
+}
+.acct__dangerbtns { display: flex; gap: 8px; }
+.acct__dangerbtns .acct__signout:disabled { opacity: 0.45; }
+
+/* The chaser card's face, matching the marker on the map. */
+.chpop__face {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+  border: 1px solid var(--border);
+}
+
+/* --- where you are based --- */
+.acct__section { display: flex; align-items: center; gap: 6px; }
+.acct__homerow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.acct__coords {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.acct__switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+  cursor: pointer;
+}
+.acct__switch input { margin-top: 2px; flex: none; }
+.acct__switch > span { font-size: 12px; color: var(--text); }
+.acct__switch small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* --- the plain list of what is public --- */
+.acct__public {
+  list-style: none;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.acct__public li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11.5px;
+}
+.acct__public span { color: var(--text-faint); flex: none; }
+.acct__public b { color: var(--text-dim); font-weight: 500; text-align: right; }

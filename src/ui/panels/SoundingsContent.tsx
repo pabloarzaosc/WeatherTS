@@ -6,12 +6,9 @@ import {
   CloudUpload,
   GitCompare,
   History,
-  Layers,
   Loader2,
   Radio,
-  RefreshCw,
   Search,
-  Settings,
   Star,
   Table2,
   TrendingUp,
@@ -20,25 +17,11 @@ import {
 } from "lucide-react";
 
 import {
-  fetchCompare,
-  fetchComposite,
-  fetchCustomSounding,
-  fetchEnsemblePlume,
-  fetchForecastRiskScan,
-  fetchMergeProfiles,
-  fetchRiskScan,
-  fetchSounding,
-  fetchStations,
-  fetchTimeSeries,
-  fetchVwpDisplay,
-  getSoundingApiBaseUrl,
-  setSoundingApiBaseUrl,
   type RiskScanResult,
   type RiskStation,
   type SoundingResult,
   type SoundingSource,
   type SoundingStation,
-  type TimeSeriesPoint,
   type TimeSeriesResult,
   type VwpResult,
 } from "../../lib/soundingApi";
@@ -47,21 +30,24 @@ import {
   getSoundingFavorites,
   getSoundingHistory,
   loadSoundingHistory,
-  saveCompareHistory,
-  saveSoundingHistory,
   toggleSoundingFavorite,
   type SoundingHistoryEntry,
 } from "../../lib/soundingStorage";
 import { generateSoundingSummary } from "../../lib/soundingSummary";
+import { SoundingPlotOptions } from "./SoundingPlotOptions";
+import { AcarsView } from "./AcarsView";
+import {
+  CompareTab,
+  RiskTab,
+  TrendsTab,
+  UploadTab,
+  VwpTab,
+  type Station as ToolStation,
+} from "./SoundingToolTabs";
+import { useSoundingViewerStore } from "../../store/useSoundingViewerStore";
 
-type Mode = "analysis" | "risk" | "compare" | "timeseries" | "vwp" | "upload" | "ensemble" | "settings";
+type Mode = "analysis" | "risk" | "compare" | "timeseries" | "vwp" | "upload";
 
-interface CompareSlot {
-  station: string;
-  source: SoundingSource;
-  model: string;
-  fhour: number;
-}
 
 interface CompositeResult {
   image: string;
@@ -84,8 +70,6 @@ const MODES: Array<{ id: Mode; label: string; icon: ReactNode }> = [
   { id: "timeseries", label: "Trends", icon: <TrendingUp size={14} /> },
   { id: "vwp", label: "VWP", icon: <Radio size={14} /> },
   { id: "upload", label: "Upload", icon: <CloudUpload size={14} /> },
-  { id: "ensemble", label: "Plume", icon: <Layers size={14} /> },
-  { id: "settings", label: "API", icon: <Settings size={14} /> },
 ];
 
 const MODELS = ["rap", "hrrr", "nam", "namnest", "gfs"];
@@ -155,23 +139,7 @@ const PARAMETER_GROUPS: Array<{
   },
 ];
 
-const TIME_PARAMS = [
-  { key: "stp", label: "STP", color: "#60a5fa" },
-  { key: "scp", label: "SCP", color: "#f59e0b" },
-  { key: "ship", label: "SHIP", color: "#22c55e" },
-  { key: "dcp", label: "DCP", color: "#a78bfa" },
-  { key: "muCape", label: "MUCAPE", color: "#ef4444" },
-  { key: "bwd6km", label: "0-6 BWD", color: "#eab308" },
-] as const;
 
-function emptyCompareSlots(): CompareSlot[] {
-  return [
-    { station: "OUN", source: "obs", model: "rap", fhour: 0 },
-    { station: "ILX", source: "obs", model: "rap", fhour: 0 },
-    { station: "", source: "obs", model: "rap", fhour: 0 },
-    { station: "", source: "obs", model: "rap", fhour: 0 },
-  ];
-}
 
 function asImageSrc(image?: string | null) {
   if (!image) return "";
@@ -203,15 +171,6 @@ function memberCount(value: number | unknown[] | undefined, fallback: number) {
   return fallback;
 }
 
-function asRequestSlot(slot: CompareSlot) {
-  return {
-    station: slot.station.toUpperCase(),
-    source: slot.source,
-    model: slot.model,
-    fhour: slot.fhour,
-    theme: "dark",
-  };
-}
 
 function SummaryBlock({ result }: { result: SoundingResult }) {
   const summary = generateSoundingSummary(result.params, result.meta);
@@ -310,82 +269,6 @@ function RiskTable({
   );
 }
 
-function SimpleLineChart({
-  points,
-  keys,
-}: {
-  points: TimeSeriesPoint[];
-  keys: Array<(typeof TIME_PARAMS)[number]["key"]>;
-}) {
-  const width = 760;
-  const height = 260;
-  const pad = { left: 48, right: 16, top: 16, bottom: 44 };
-  const configs = TIME_PARAMS.filter((item) => keys.includes(item.key));
-  const values = points.flatMap((point) =>
-    configs
-      .map((cfg) => point.params[cfg.key])
-      .filter((value): value is number => typeof value === "number" && Number.isFinite(value)),
-  );
-  if (!points.length || !values.length) {
-    return <div className="snd-emptyline">No numeric time-series values returned.</div>;
-  }
-
-  const min = Math.min(0, ...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  const xFor = (index: number) =>
-    pad.left + (index / Math.max(points.length - 1, 1)) * (width - pad.left - pad.right);
-  const yFor = (value: number) => pad.top + (1 - (value - min) / span) * (height - pad.top - pad.bottom);
-
-  return (
-    <div className="snd-chart">
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Sounding parameter time series">
-        <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} />
-        <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} />
-        {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-          const y = pad.top + ratio * (height - pad.top - pad.bottom);
-          const value = max - ratio * span;
-          return (
-            <g key={ratio}>
-              <line className="snd-chart__grid" x1={pad.left} y1={y} x2={width - pad.right} y2={y} />
-              <text x={8} y={y + 4}>
-                {value.toFixed(value < 10 ? 1 : 0)}
-              </text>
-            </g>
-          );
-        })}
-        {configs.map((cfg) => {
-          const coords = points
-            .map((point, index) => {
-              const value = point.params[cfg.key];
-              return typeof value === "number" && Number.isFinite(value)
-                ? `${xFor(index)},${yFor(value)}`
-                : "";
-            })
-            .filter(Boolean)
-            .join(" ");
-          return <polyline key={cfg.key} points={coords} stroke={cfg.color} />;
-        })}
-        {points.map((point, index) => {
-          if (index !== 0 && index !== points.length - 1 && index % Math.ceil(points.length / 4) !== 0) return null;
-          return (
-            <text key={point.ts} className="snd-chart__date" x={xFor(index)} y={height - 18}>
-              {point.date.replace("2026-", "").replace("2025-", "")}
-            </text>
-          );
-        })}
-      </svg>
-      <div className="snd-chart__legend">
-        {configs.map((cfg) => (
-          <span key={cfg.key}>
-            <i style={{ background: cfg.color }} />
-            {cfg.label}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 export function SoundingsContent() {
   const [mode, setMode] = useState<Mode>("analysis");
@@ -406,14 +289,6 @@ export function SoundingsContent() {
   const [surfaceDewpoint, setSurfaceDewpoint] = useState("");
   const [surfaceWindSpeed, setSurfaceWindSpeed] = useState("");
   const [surfaceWindDir, setSurfaceWindDir] = useState("");
-  const [radar, setRadar] = useState("KTLX");
-  const [vwpHours, setVwpHours] = useState(12);
-  const [trendDays, setTrendDays] = useState(7);
-  const [trendKeys, setTrendKeys] = useState<Array<(typeof TIME_PARAMS)[number]["key"]>>(["stp", "scp", "ship"]);
-  const [uploadText, setUploadText] = useState("");
-  const [hourPreset, setHourPreset] = useState("0-12 h");
-  const [compareSlots, setCompareSlots] = useState<CompareSlot[]>(emptyCompareSlots);
-  const [apiBase, setApiBase] = useState(getSoundingApiBaseUrl());
   const [favorites, setFavorites] = useState<string[]>(() => getSoundingFavorites());
   const [history, setHistory] = useState<SoundingHistoryEntry[]>(() => getSoundingHistory());
 
@@ -428,11 +303,24 @@ export function SoundingsContent() {
   const [ensemble, setEnsemble] = useState<EnsembleResult | null>(null);
   const [vwp, setVwp] = useState<VwpResult | null>(null);
 
+  // The station list comes from the file the map layer already draws from, not
+  // from the external service: that host is down, so the search box sat empty
+  // and every station id read as unknown.
   useEffect(() => {
     let cancelled = false;
-    void fetchStations()
-      .then((items) => {
-        if (!cancelled) setStations(items);
+    void fetch(`${import.meta.env.BASE_URL}data/raob-stations.geojson`)
+      .then((r) => r.json())
+      .then((fc: { features?: Array<{ geometry: { coordinates: [number, number] }; properties: Record<string, string> }> }) => {
+        if (cancelled) return;
+        setStations(
+          (fc.features ?? []).map((f) => ({
+            id: String(f.properties.id),
+            name: String(f.properties.name ?? f.properties.id),
+            lon: f.geometry.coordinates[0],
+            lat: f.geometry.coordinates[1],
+            wmo: f.properties.wmo,
+          })),
+        );
       })
       .catch(() => {
         if (!cancelled) setStations([]);
@@ -464,7 +352,7 @@ export function SoundingsContent() {
     [station, stations],
   );
 
-  const selectedHours = HOUR_PRESETS[hourPreset] ?? HOUR_PRESETS["0-12 h"];
+  const selectedHours = HOUR_PRESETS["0-12 h"];
 
   const resetOutputs = () => {
     setError(null);
@@ -477,33 +365,6 @@ export function SoundingsContent() {
     setVwp(null);
   };
 
-  const buildSoundingRequest = (stationOverride?: string) => {
-    const body: Record<string, unknown> = {
-      source: usePoint ? source === "obs" ? "bufkit" : source : source,
-      model,
-      fhour,
-      theme: "dark",
-      colorblind: false,
-    };
-    if (date.trim()) body.date = date.trim();
-    if (usePoint) {
-      body.lat = Number(lat);
-      body.lon = Number(lon);
-    } else {
-      body.station = (stationOverride ?? station).toUpperCase();
-    }
-    if (smoothing > 0) body.smoothing = smoothing;
-    if (stormDir.trim() && stormSpeed.trim()) {
-      body.stormMotion = { direction: Number(stormDir), speed: Number(stormSpeed) };
-    }
-    const surfaceMod: Record<string, number> = {};
-    if (surfaceTemp.trim()) surfaceMod.temperature = Number(surfaceTemp);
-    if (surfaceDewpoint.trim()) surfaceMod.dewpoint = Number(surfaceDewpoint);
-    if (surfaceWindSpeed.trim()) surfaceMod.wind_speed = Number(surfaceWindSpeed);
-    if (surfaceWindDir.trim()) surfaceMod.wind_direction = Number(surfaceWindDir);
-    if (Object.keys(surfaceMod).length) body.surfaceMod = surfaceMod;
-    return body;
-  };
 
   const runWithState = async (label: string, fn: () => Promise<void>) => {
     setLoading(label);
@@ -518,85 +379,66 @@ export function SoundingsContent() {
     }
   };
 
+  /**
+   * Open the sounding in the app's own viewer.
+   *
+   * This panel was written against an external analysis service that is no
+   * longer up -- every request to it answers 503, and the panel then tried to
+   * parse the HTML error page as JSON ("Unexpected token '<'"). The app already
+   * renders soundings itself, through SHARPpy on our backend, with the parcel
+   * and storm-motion controls above; so the button now drives that instead of
+   * a dead host.
+   */
+  /**
+   * Find a station by whatever the user typed.
+   *
+   * The panel's ids came from the old service, which used bare three-letter
+   * ids (OUN); our own list carries ICAO for the US sites (KOUN). Matching
+   * exactly meant the default station reported itself as unknown.
+   */
+  const findStation = (raw: string) => {
+    const id = raw.trim().toUpperCase();
+    if (!id) return undefined;
+    return (
+      stations.find((s) => s.id.toUpperCase() === id) ??
+      stations.find((s) => s.id.toUpperCase() === `K${id}`) ??
+      stations.find((s) => id.startsWith("K") && s.id.toUpperCase() === id.slice(1)) ??
+      stations.find((s) => (s.wmo ?? "").toUpperCase() === id)
+    );
+  };
+
   const runSounding = (stationOverride?: string) =>
-    runWithState("Loading sounding", async () => {
+    runWithState("Opening sounding", async () => {
       resetOutputs();
-      const request = buildSoundingRequest(stationOverride);
-      const data = await fetchSounding(request);
-      setResult(data);
-      await saveSoundingHistory(request, data);
-      setHistory(getSoundingHistory());
+      const viewer = useSoundingViewerStore.getState();
+      const id = (stationOverride ?? station).toUpperCase();
+
+      if (source === "obs") {
+        const hit = findStation(id);
+        if (!hit) throw new Error(`Unknown station ${id}. Pick one from the search above.`);
+        viewer.openRaob({ id: hit.id, name: hit.name, lat: hit.lat, lon: hit.lon, wmo: hit.wmo });
+        return;
+      }
+
+      // Model sources are a point forecast: the station is just a location.
+      const hit = findStation(id);
+      const plat = usePoint ? Number(lat) : hit?.lat;
+      const plon = usePoint ? Number(lon) : hit?.lon;
+      if (!Number.isFinite(plat) || !Number.isFinite(plon)) {
+        throw new Error("No coordinates for that station — switch on Point sounding and enter lat/lon.");
+      }
+      viewer.setModel(model);
+      viewer.openAt(plat as number, plon as number);
+      if (fhour > 0) viewer.setHour(fhour);
     });
 
-  const runRiskScan = (forecast = false) =>
-    runWithState(forecast ? "Scanning forecast risk" : "Scanning observed risk", async () => {
-      resetOutputs();
-      const data = forecast ? await fetchForecastRiskScan({ model, fhour }) : await fetchRiskScan(date || undefined);
-      setRiskResult(data);
-    });
 
-  const runTimeSeries = () =>
-    runWithState("Loading time series", async () => {
-      resetOutputs();
-      const data = await fetchTimeSeries({
-        station: station.toUpperCase(),
-        source,
-        model,
-        fhour,
-        days: trendDays,
-      });
-      setTimeSeries(data);
-    });
 
-  const runCompare = () =>
-    runWithState("Comparing soundings", async () => {
-      resetOutputs();
-      const slots = compareSlots.filter((slot) => slot.station.trim()).map(asRequestSlot);
-      const data = await fetchCompare(slots);
-      setCompareResults(data.soundings);
-      await saveCompareHistory(slots, data.soundings);
-    });
 
-  const runComposite = () =>
-    runWithState("Building composite", async () => {
-      const slots = compareSlots.filter((slot) => slot.station.trim()).map(asRequestSlot);
-      const data = await fetchComposite(slots);
-      setComposite(data);
-    });
 
-  const runMerge = () =>
-    runWithState("Merging first two profiles", async () => {
-      const slots = compareSlots.filter((slot) => slot.station.trim()).slice(0, 2).map(asRequestSlot);
-      const data = await fetchMergeProfiles({ soundings: slots, weight: 0.5, theme: "dark" });
-      setResult(data);
-    });
 
-  const runUpload = () =>
-    runWithState("Analyzing custom text", async () => {
-      resetOutputs();
-      const data = await fetchCustomSounding({ text: uploadText, format: "auto", theme: "dark" });
-      setResult(data);
-    });
 
-  const runEnsemble = () =>
-    runWithState("Building forecast plume", async () => {
-      resetOutputs();
-      const data = await fetchEnsemblePlume({
-        station: station.toUpperCase(),
-        model,
-        source: source === "obs" ? "psu" : source,
-        hours: selectedHours,
-        theme: "dark",
-      });
-      setEnsemble(data);
-    });
 
-  const runVwp = () =>
-    runWithState("Loading VWP", async () => {
-      resetOutputs();
-      const data = await fetchVwpDisplay(radar.toUpperCase(), vwpHours);
-      setVwp(data);
-    });
 
   const loadRiskStation = (item: RiskStation) => {
     setStation(item.id);
@@ -628,14 +470,6 @@ export function SoundingsContent() {
     setFavorites(toggleSoundingFavorite(station));
   };
 
-  const saveApiBase = () => {
-    setSoundingApiBaseUrl(apiBase);
-    setError(null);
-  };
-
-  const updateCompareSlot = (index: number, patch: Partial<CompareSlot>) => {
-    setCompareSlots((slots) => slots.map((slot, i) => (i === index ? { ...slot, ...patch } : slot)));
-  };
 
   return (
     <div className="soundings">
@@ -653,8 +487,10 @@ export function SoundingsContent() {
         ))}
       </div>
 
-      {mode !== "settings" && (
-        <section className="snd-section">
+      <SoundingPlotOptions />
+      <AcarsView />
+
+      <section className="snd-section">
           <div className="snd-labelrow">
             <span>Station</span>
             <button
@@ -697,10 +533,9 @@ export function SoundingsContent() {
             Station ID
             <input value={station} onChange={(event) => setStation(event.target.value.toUpperCase())} />
           </label>
-        </section>
-      )}
+      </section>
 
-      {(mode === "analysis" || mode === "timeseries" || mode === "ensemble") && (
+      {(mode === "analysis" || mode === "timeseries") && (
         <section className="snd-section">
           <div className="snd-row2">
             <label className="snd-inputlabel">
@@ -807,172 +642,12 @@ export function SoundingsContent() {
         </>
       )}
 
-      {mode === "risk" && (
-        <section className="snd-section">
-          <div className="snd-row2">
-            <label className="snd-inputlabel">
-              Date UTC
-              <input value={date} placeholder="Latest if blank" onChange={(event) => setDate(event.target.value)} />
-            </label>
-            <label className="snd-inputlabel">
-              Forecast hour
-              <input type="number" min={0} max={84} value={fhour} onChange={(event) => setFhour(Number(event.target.value))} />
-            </label>
-          </div>
-          <label className="snd-inputlabel">
-            Forecast model
-            <select value={model} onChange={(event) => setModel(event.target.value)}>
-              {MODELS.map((item) => (
-                <option key={item} value={item}>
-                  {item.toUpperCase()}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button type="button" className="snd-primary" onClick={() => void runRiskScan(false)} disabled={!!loading}>
-            <Zap size={14} />
-            Observed risk scan
-          </button>
-          <button type="button" className="snd-secondary" onClick={() => void runRiskScan(true)} disabled={!!loading}>
-            <RefreshCw size={14} />
-            Forecast risk scan
-          </button>
-        </section>
-      )}
+      {mode === "risk" && <RiskTab stations={stations as ToolStation[]} />}
+      {mode === "compare" && <CompareTab findStation={findStation} />}
+      {mode === "timeseries" && <TrendsTab station={station} findStation={findStation} />}
+      {mode === "vwp" && <VwpTab />}
+      {mode === "upload" && <UploadTab />}
 
-      {mode === "compare" && (
-        <section className="snd-section">
-          {compareSlots.map((slot, index) => (
-            <div key={index} className="snd-compareslot">
-              <span>#{index + 1}</span>
-              <input
-                value={slot.station}
-                placeholder="Station"
-                onChange={(event) => updateCompareSlot(index, { station: event.target.value.toUpperCase() })}
-              />
-              <select value={slot.source} onChange={(event) => updateCompareSlot(index, { source: event.target.value as SoundingSource })}>
-                <option value="obs">OBS</option>
-                <option value="psu">PSU</option>
-                <option value="bufkit">BUFKIT</option>
-              </select>
-            </div>
-          ))}
-          <button type="button" className="snd-primary" onClick={() => void runCompare()} disabled={!!loading}>
-            <GitCompare size={14} />
-            Compare profiles
-          </button>
-          <div className="snd-row2">
-            <button type="button" className="snd-secondary" onClick={() => void runComposite()} disabled={!!loading}>
-              Composite
-            </button>
-            <button type="button" className="snd-secondary" onClick={() => void runMerge()} disabled={!!loading}>
-              Merge first two
-            </button>
-          </div>
-        </section>
-      )}
-
-      {mode === "timeseries" && (
-        <section className="snd-section">
-          <label className="snd-inputlabel">
-            Days
-            <input type="number" min={1} max={14} value={trendDays} onChange={(event) => setTrendDays(Number(event.target.value))} />
-          </label>
-          <div className="snd-chipgrid">
-            {TIME_PARAMS.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                className={trendKeys.includes(item.key) ? "is-active" : ""}
-                onClick={() =>
-                  setTrendKeys((keys) => (keys.includes(item.key) ? keys.filter((key) => key !== item.key) : [...keys, item.key]))
-                }
-              >
-                <i style={{ background: item.color }} />
-                {item.label}
-              </button>
-            ))}
-          </div>
-          <button type="button" className="snd-primary" onClick={() => void runTimeSeries()} disabled={!!loading}>
-            <TrendingUp size={14} />
-            Load trends
-          </button>
-        </section>
-      )}
-
-      {mode === "vwp" && (
-        <section className="snd-section">
-          <div className="snd-row2">
-            <label className="snd-inputlabel">
-              Radar
-              <input value={radar} onChange={(event) => setRadar(event.target.value.toUpperCase())} />
-            </label>
-            <label className="snd-inputlabel">
-              Hours
-              <select value={vwpHours} onChange={(event) => setVwpHours(Number(event.target.value))}>
-                <option value={3}>3</option>
-                <option value={6}>6</option>
-                <option value={12}>12</option>
-                <option value={24}>24</option>
-              </select>
-            </label>
-          </div>
-          <button type="button" className="snd-primary" onClick={() => void runVwp()} disabled={!!loading}>
-            <Radio size={14} />
-            Load VWP
-          </button>
-        </section>
-      )}
-
-      {mode === "upload" && (
-        <section className="snd-section">
-          <textarea
-            className="snd-upload"
-            value={uploadText}
-            placeholder="Paste CSV, SHARPpy, CM1, or text sounding rows here..."
-            onChange={(event) => setUploadText(event.target.value)}
-          />
-          <button type="button" className="snd-primary" onClick={() => void runUpload()} disabled={!!loading || !uploadText.trim()}>
-            <CloudUpload size={14} />
-            Analyze upload
-          </button>
-        </section>
-      )}
-
-      {mode === "ensemble" && (
-        <section className="snd-section">
-          <label className="snd-inputlabel">
-            Hours
-            <select value={hourPreset} onChange={(event) => setHourPreset(event.target.value)}>
-              {Object.keys(HOUR_PRESETS).map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button type="button" className="snd-primary" onClick={() => void runEnsemble()} disabled={!!loading}>
-            <Layers size={14} />
-            Generate plume
-          </button>
-        </section>
-      )}
-
-      {mode === "settings" && (
-        <section className="snd-section">
-          <label className="snd-inputlabel">
-            Sounding API
-            <input value={apiBase} onChange={(event) => setApiBase(event.target.value)} />
-          </label>
-          <button type="button" className="snd-primary" onClick={saveApiBase}>
-            <Settings size={14} />
-            Save API base
-          </button>
-          <p className="snd-note">
-            Use the hosted backend or a local Flask backend. Vite proxies /api requests so the app can reach the service.
-          </p>
-        </section>
-      )}
 
       <section className="snd-section">
         <h4 className="snd-sectiontitle">
@@ -1066,16 +741,7 @@ export function SoundingsContent() {
             </>
           )}
 
-          {!loading && timeSeries && (
-            <div className="snd-trends">
-              <div className="snd-meta snd-meta--wide">
-                <span>{timeSeries.station}</span>
-                <span>{timeSeries.resolution}</span>
-                <span>{timeSeries.points.length} points</span>
-              </div>
-              <SimpleLineChart points={timeSeries.points} keys={trendKeys} />
-            </div>
-          )}
+
 
           {!loading && compareResults && (
             <div className="snd-comparegrid">

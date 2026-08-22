@@ -2,6 +2,7 @@
 // proxies /sounding-backend/* to the Python service on :8787.
 
 import { BACKEND_BASE } from './apiConfig';
+import { viewQuery } from "../store/useSoundingViewStore";
 const BASE = BACKEND_BASE;
 
 export interface SoundingLevel {
@@ -88,7 +89,7 @@ export async function fetchViewerSounding(
 ): Promise<SoundingData> {
   const url = `${BASE}/api/sounding?lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}&model=${encodeURIComponent(
     model,
-  )}&hour=${hour}`;
+  )}&hour=${hour}${viewQuery()}`;
   const res = await fetch(url, { signal });
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
@@ -122,7 +123,8 @@ export async function fetchRaobSounding(
     `${BASE}/api/raob?station=${encodeURIComponent(station.id)}` +
     `&name=${encodeURIComponent(station.name)}` +
     (station.wmo ? `&wmo=${encodeURIComponent(station.wmo)}` : "") +
-    `&lat=${station.lat.toFixed(4)}&lon=${station.lon.toFixed(4)}&hour=${hour}`;
+    `&lat=${station.lat.toFixed(4)}&lon=${station.lon.toFixed(4)}&hour=${hour}` +
+    viewQuery();
   const res = await fetch(url, { signal });
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
@@ -167,7 +169,7 @@ export async function fetchAreaSounding(
   const bbox = box.map((v) => v.toFixed(4)).join(",");
   const url =
     `${BASE}/api/sounding/area?bbox=${bbox}` +
-    `&model=${encodeURIComponent(model)}&hour=${hour}&side=${side}`;
+    `&model=${encodeURIComponent(model)}&hour=${hour}&side=${side}${viewQuery()}`;
   return readOr(await fetch(url, { signal }));
 }
 
@@ -198,6 +200,18 @@ export async function fetchAcarsProfiles(
   return res.json();
 }
 
+/** A radar's VAD winds on the model's thermodynamics, rendered by SHARPpy.
+ *
+ *  A VAD carries no temperature, so it cannot make a skew-T alone; this is the
+ *  standard hybrid, and the response says so on its face. */
+export async function fetchVwpSounding(
+  site: string,
+  signal?: AbortSignal,
+): Promise<SoundingData> {
+  const url = `${BASE}/api/nexrad/vwp/sounding?site=${encodeURIComponent(site)}` + viewQuery();
+  return readOr(await fetch(url, { signal }));
+}
+
 /** One aircraft ascent/descent profile, rendered like any other sounding. */
 export async function fetchAcarsSounding(
   airport: string,
@@ -207,7 +221,8 @@ export async function fetchAcarsSounding(
 ): Promise<SoundingData> {
   const url =
     `${BASE}/api/acars/sounding?airport=${encodeURIComponent(airport)}&hours=${hours}` +
-    (unix != null ? `&unix=${Math.round(unix)}` : "");
+    (unix != null ? `&unix=${Math.round(unix)}` : "") +
+    viewQuery();
   return readOr(await fetch(url, { signal }));
 }
 

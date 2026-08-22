@@ -4,7 +4,6 @@ import { AlertTriangle, Loader2, Radio } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { LayerPower } from "../LayerPower";
 import { frameChoicesFor, useNexradStore } from "../../store/useNexradStore";
-import { useVwpStore } from "../../store/useVwpStore";
 import { getMap } from "../../map/mapInstance";
 
 const LAYER = "nexrad";
@@ -65,10 +64,10 @@ export function RadarView() {
   const showTracks = useNexradStore((s) => s.showTracks);
   const setShowTracks = useNexradStore((s) => s.setShowTracks);
   const storms = useNexradStore((s) => s.storms);
-  const vwpOpen = useVwpStore((s) => s.open);
-  const setVwpOpen = useVwpStore((s) => s.setOpen);
   const smooth = useNexradStore((s) => s.smooth);
   const setSmooth = useNexradStore((s) => s.setSmooth);
+  const showReadout = useNexradStore((s) => s.showReadout);
+  const setShowReadout = useNexradStore((s) => s.setShowReadout);
   const threshold = useNexradStore((s) => s.threshold);
   const setThreshold = useNexradStore((s) => s.setThreshold);
   const autoUpdate = useNexradStore((s) => s.autoUpdate);
@@ -192,15 +191,17 @@ export function RadarView() {
         </span>
         <Toggle on={showTracks} onClick={() => setShowTracks(!showTracks)} />
       </div>
-      <div className="sfcobs__toggle-row">
-        <span>VAD wind profile</span>
-        <Toggle
-          on={vwpOpen}
-          onClick={() => (vwpOpen ? setVwpOpen(false) : setVwpOpen(true, site))}
-        />
-      </div>
 
       <div className="sfcobs__section">Display</div>
+      <div className="sfcobs__toggle-row">
+        <span>
+          Value at cursor
+          <small style={{ color: "var(--text-faint)", marginLeft: 6 }}>
+            {scan?.meta.units || "dBZ"} + height
+          </small>
+        </span>
+        <Toggle on={showReadout} onClick={() => setShowReadout(!showReadout)} />
+      </div>
       <div className="sfcobs__toggle-row">
         <span>Smooth radar data</span>
         <Toggle on={smooth} onClick={() => setSmooth(!smooth)} />

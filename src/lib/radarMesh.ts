@@ -64,6 +64,76 @@ export interface RadarMesh {
 
 const KM_PER_DEG_LAT = 111.32;
 
+export interface GateSample {
+  /** Physical value at the gate, in `scan.meta.units`. */
+  value: number;
+  azimuth: number; // degrees from north
+  rangeKm: number;
+  /** Indices into the polar grid, for anything that wants the raw code. */
+  azIndex: number;
+  gateIndex: number;
+}
+
+/**
+ * The value the radar actually measured under a point.
+ *
+ * Read from the polar data, not from the rendered pixel: the mesh bakes colour
+ * into vertices, so sampling the framebuffer would mean inverting a palette --
+ * lossy wherever two values share a colour band, and wrong entirely once
+ * another layer is drawn on top. Inverting the geometry instead gives the exact
+ * gate, which is also what makes the azimuth and range available.
+ *
+ * This is the inverse of the projection buildMesh uses, flat-earth about the
+ * site and all: sampling and drawing have to agree about which gate is under a
+ * point, so they share the same (approximate) geometry rather than each being
+ * right in its own way.
+ */
+export function sampleScan(scan: PolarScan, lat: number, lon: number): GateSample | null {
+  const { az, lut, codes, meta } = scan;
+  const { nAz, nGates, siteLat, siteLon, rangeStartKm, gateWidthKm } = meta;
+
+  const kmPerDegLon = KM_PER_DEG_LAT * Math.cos((siteLat * Math.PI) / 180);
+  const dx = (lon - siteLon) * kmPerDegLon;
+  const dy = (lat - siteLat) * KM_PER_DEG_LAT;
+  const rangeKm = Math.hypot(dx, dy);
+
+  const gateIndex = Math.floor((rangeKm - rangeStartKm) / gateWidthKm);
+  if (gateIndex < 0 || gateIndex >= nGates) return null;
+
+  // atan2(dx, dy), not (dy, dx): azimuth is clockwise from north, not
+  // counter-clockwise from east.
+  let azimuth = (Math.atan2(dx, dy) * 180) / Math.PI;
+  if (azimuth < 0) azimuth += 360;
+
+  const azIndex = findAzBin(az, nAz, azimuth);
+  if (azIndex < 0) return null;
+
+  const value = lut[codes[azIndex * nGates + gateIndex]];
+  if (!Number.isFinite(value)) return null;
+
+  return { value, azimuth, rangeKm, azIndex, gateIndex };
+}
+
+/**
+ * Which azimuth bin contains `deg`.
+ *
+ * The edges are not a uniform grid -- a real scan's rays are unevenly spaced,
+ * and the sweep crosses north somewhere in the middle of the array -- so this
+ * walks the bins and compares each one's span with the wrap folded in, rather
+ * than assuming edges[i] <= edges[i+1].
+ */
+function findAzBin(edges: Float32Array, nAz: number, deg: number): number {
+  for (let a = 0; a < nAz; a++) {
+    const lo = edges[a];
+    let span = edges[a + 1] - lo;
+    if (span < 0) span += 360; // this bin straddles north
+    let off = deg - lo;
+    if (off < 0) off += 360;
+    if (off < span) return a;
+  }
+  return -1;
+}
+
 /**
  * Build the mesh. Gates with no data are skipped entirely, which is what keeps
  * this tractable: a typical scan is ~15% covered, so ~200k quads instead of 1.3M.

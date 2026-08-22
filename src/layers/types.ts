@@ -1,6 +1,12 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
 
-export type LayerCategoryId = "alerts" | "outlooks" | "reference" | "boundaries" | "weather";
+export type LayerCategoryId =
+  | "alerts"
+  | "chasers"
+  | "outlooks"
+  | "reference"
+  | "boundaries"
+  | "weather";
 
 export interface LayerCategoryMeta {
   id: LayerCategoryId;
@@ -10,6 +16,9 @@ export interface LayerCategoryMeta {
 /** Category groups for the layer panel, in display order (top -> bottom). */
 export const LAYER_CATEGORIES: LayerCategoryMeta[] = [
   { id: "alerts", label: "Alerts (NWS)" },
+  // Second only to warnings: on a chase day, where the others are is checked
+  // as often as the radar itself.
+  { id: "chasers", label: "Chasers" },
   { id: "outlooks", label: "Outlooks" },
   { id: "weather", label: "Weather Products" }, // reserved for future phases
   { id: "boundaries", label: "Political Boundaries" },
@@ -47,4 +56,11 @@ export interface LayerModule {
    * fill should be. Applied after the normal ordering pass.
    */
   topLayerIds?(): string[];
+  /**
+   * Which module wins when several claim the top. Higher is nearer the front;
+   * the default 0 keeps the previous behaviour, where the lift pass followed
+   * the layer order and whichever module came last happened to end up above
+   * the rest.
+   */
+  topPriority?: number;
 }

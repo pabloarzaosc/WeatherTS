@@ -10,12 +10,15 @@ import base64
 import json
 import struct
 
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import Body, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 import sounding_core
-import lightning_core
+import sounding_upload
+import vwp_panel
+import vwp_sounding
+import sounding_view
 import model_fields
 import nadocast_core
 import raob_core
@@ -23,9 +26,11 @@ import surface_obs
 import nexrad_core
 import nexrad_level2
 import nexrad_storms
+import storm_attributes
 import nexrad_vwp
 import lsr_core
 import fronts_core
+import spc_md
 import acars_core
 import area_sounding
 
@@ -59,9 +64,20 @@ def sounding(
     lon: float = Query(..., ge=-180, le=180),
     model: str = Query(sounding_core.DEFAULT_MODEL),
     hour: int = Query(0, ge=0, le=384),
+    parcel: str = Query("", description="SFC | ML | MU | EFF | FCST | USER"),
+    parcelPressure: float | None = Query(None, ge=100, le=1100),
+    stormMotion: str = Query("", description="right | left | mean | corfidi-up | corfidi-down | custom"),
+    stormMotionDir: float | None = Query(None),
+    stormMotionSpd: float | None = Query(None, ge=0),
+    render: bool = Query(True, description="false returns parameters without the SHARPpy plot"),
 ):
     try:
-        return sounding_core.build_sounding(lat, lon, model, hour)
+        view = sounding_view.parse_view(parcel, parcelPressure, stormMotion,
+                                        stormMotionDir, stormMotionSpd)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    try:
+        return sounding_core.build_sounding(lat, lon, model, hour, view, render)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
 
@@ -74,9 +90,21 @@ def raob(
     lon: float = Query(..., ge=-180, le=180),
     hour: int = Query(0, ge=0),
     wmo: str = Query(""),
+    parcel: str = Query("", description="SFC | ML | MU | EFF | FCST | USER"),
+    parcelPressure: float | None = Query(None, ge=100, le=1100),
+    stormMotion: str = Query("", description="right | left | mean | corfidi-up | corfidi-down | custom"),
+    stormMotionDir: float | None = Query(None),
+    stormMotionSpd: float | None = Query(None, ge=0),
+    render: bool = Query(True, description="false returns parameters without the SHARPpy plot"),
+    axis: bool = Query(True, description="false skips probing the whole window for the time axis"),
 ):
     try:
-        return raob_core.build_raob(station, name, lat, lon, hour, wmo)
+        view = sounding_view.parse_view(parcel, parcelPressure, stormMotion,
+                                        stormMotionDir, stormMotionSpd)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    try:
+        return raob_core.build_raob(station, name, lat, lon, hour, wmo, view, render, axis)
     except raob_core.NoObservationError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
@@ -90,13 +118,24 @@ def sounding_area(
     hour: int = Query(0, ge=0, le=384),
     side: int = Query(area_sounding.DEFAULT_SIDE, ge=area_sounding.MIN_SIDE,
                       le=area_sounding.MAX_SIDE),
+    parcel: str = Query("", description="SFC | ML | MU | EFF | FCST | USER"),
+    parcelPressure: float | None = Query(None, ge=100, le=1100),
+    stormMotion: str = Query("", description="right | left | mean | corfidi-up | corfidi-down | custom"),
+    stormMotionDir: float | None = Query(None),
+    stormMotionSpd: float | None = Query(None, ge=0),
 ):
     """One sounding averaged over the rectangle the user drew on the map."""
+    try:
+        view = sounding_view.parse_view(parcel, parcelPressure, stormMotion,
+                                        stormMotionDir, stormMotionSpd)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     try:
         parts = [float(x) for x in bbox.split(",")]
         if len(parts) != 4:
             raise ValueError("bbox must be lat0,lon0,lat1,lon1")
-        return area_sounding.build_area_sounding(*parts, model=model, hour=hour, side=side)
+        return area_sounding.build_area_sounding(*parts, model=model, hour=hour, side=side,
+                                                 view=view)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
@@ -120,13 +159,39 @@ def acars_sounding(
     airport: str = Query(..., min_length=2, max_length=6),
     unix: int | None = Query(None, ge=0),
     hours: int = Query(acars_core.DEFAULT_HOURS, ge=1, le=acars_core.MAX_HOURS),
+    parcel: str = Query("", description="SFC | ML | MU | EFF | FCST | USER"),
+    parcelPressure: float | None = Query(None, ge=100, le=1100),
+    stormMotion: str = Query("", description="right | left | mean | corfidi-up | corfidi-down | custom"),
+    stormMotionDir: float | None = Query(None),
+    stormMotionSpd: float | None = Query(None, ge=0),
 ):
     """One aircraft profile, in the same shape as every other sounding."""
     try:
-        return acars_core.build_acars(airport, unix, hours)
+        view = sounding_view.parse_view(parcel, parcelPressure, stormMotion,
+                                        stormMotionDir, stormMotionSpd)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    try:
+        return acars_core.build_acars(airport, unix, hours, view)
     except acars_core.NoProfileError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.post("/api/sounding/upload")
+def sounding_upload_endpoint(payload: dict = Body(...)):
+    """Render a sounding the user pasted, through the same SHARPpy pipeline."""
+    try:
+        return sounding_upload.build_upload(
+            str(payload.get("text") or ""),
+            str(payload.get("title") or ""),
+            float(payload.get("lat") or 35.0),
+            float(payload.get("lon") or -97.0),
+        )
+    except sounding_upload.BadSounding as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
@@ -175,6 +240,19 @@ def fronts(
         raise HTTPException(status_code=502, detail=str(exc))
 
 
+@app.get("/api/spc/mesoscale")
+def spc_mesoscale():
+    """Live SPC Mesoscale Discussions as GeoJSON polygons.
+
+    An empty list is a normal answer: SPC issues these only while a forecaster
+    is actively watching an area, which on a quiet day is nowhere.
+    """
+    try:
+        return spc_md.build_mds()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
 @app.get("/api/nexrad/storms")
 def nexrad_storm_tracks(
     site: str = Query(..., min_length=3, max_length=4),
@@ -193,6 +271,24 @@ def nexrad_storm_tracks(
         raise HTTPException(status_code=502, detail=str(exc))
 
 
+@app.get("/api/nexrad/storms/history")
+def nexrad_storm_history(
+    site: str = Query(..., min_length=3, max_length=4),
+    cell: str = Query(..., min_length=1, max_length=4),
+    volumes: int = Query(storm_attributes.DEFAULT_HISTORY_VOLUMES, ge=2, le=40),
+):
+    """How one tracked cell's hail and structure changed over recent volumes.
+
+    Oldest sample first. Empty is a normal answer -- the live feed only reaches
+    back about a day, and a cell only appears in the scans it was tracked in.
+    """
+    try:
+        return {"site": site.upper(), "cell": cell.upper(),
+                "samples": storm_attributes.fetch_history(site, cell, volumes)}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
 @app.get("/api/nexrad/vwp")
 def nexrad_vwp_profile(
     site: str = Query(..., min_length=3, max_length=4),
@@ -205,6 +301,66 @@ def nexrad_vwp_profile(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/nexrad/vwp/sounding")
+def nexrad_vwp_sounding(
+    site: str = Query(..., min_length=3, max_length=4),
+    model: str = Query(sounding_core.DEFAULT_MODEL),
+    parcel: str = Query(""),
+    parcelPressure: float | None = Query(None, ge=100, le=1100),
+    stormMotion: str = Query(""),
+    stormMotionDir: float | None = Query(None),
+    stormMotionSpd: float | None = Query(None, ge=0),
+    render: bool = Query(True),
+):
+    """The radar's VAD winds on the model's thermodynamics, as a SHARPpy plot."""
+    try:
+        view = sounding_view.parse_view(parcel, parcelPressure, stormMotion,
+                                        stormMotionDir, stormMotionSpd)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    try:
+        return vwp_sounding.build_vwp_sounding(site.strip("Kk ") or site, model, view, render)
+    except vwp_sounding.NoProfileError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/nexrad/vwp/panel")
+def nexrad_vwp_panel(
+    site: str = Query(..., min_length=3, max_length=4),
+    motion: str = Query("right"),
+    motionDir: float | None = Query(None, ge=0, le=360),
+    motionSpd: float | None = Query(None, ge=0, le=200),
+    product: str = Query("N0B"),
+    showMap: bool = Query(True),
+):
+    """The full VWP hodograph panel as one image, parameters computed by SHARPpy."""
+    custom = None
+    if motion == "custom":
+        if motionDir is None or motionSpd is None:
+            raise HTTPException(status_code=400,
+                                detail="A custom storm motion needs both a direction and a speed.")
+        custom = (float(motionDir), float(motionSpd))
+    try:
+        out = vwp_panel.render_vwp_panel(site, motion, custom, product, showMap)
+    except vwp_sounding.NoProfileError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {
+        "image": base64.b64encode(out["png"]).decode("ascii"),
+        "meta": out["meta"],
+        "motions": out["motions"],
+        "rows": out["rows"],
+        "critical": out["critical"],
+    }
 
 
 @app.get("/api/nexrad/sites")
@@ -371,36 +527,6 @@ def model_field_mslp(
         return model_fields.build_mslp(
             model=model, hour=hour, interval=interval, centres=centres, smooth=smooth
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=str(exc))
-
-
-@app.get("/api/lightning")
-def lightning(
-    minutes: int = Query(15, ge=1, le=lightning_core.MAX_MINUTES),
-    sat: str = Query(lightning_core.DEFAULT_SAT),
-    bbox: str = Query(""),
-    end: float | None = Query(None, ge=0),
-):
-    """GOES GLM flashes over a trailing window, optionally ending in the past."""
-    try:
-        # A client that sends milliseconds gets a readable answer instead of the
-        # raw OSError datetime.fromtimestamp raises on Windows for an epoch that
-        # far in the future ("[Errno 22] Invalid argument", which says nothing).
-        if end is not None and end > 4_102_444_800:  # year 2100
-            raise ValueError(
-                f"`end` looks like milliseconds ({end:.0f}); it must be unix seconds"
-            )
-        box = None
-        if bbox:
-            parts = [float(x) for x in bbox.split(",")]
-            if len(parts) != 4:
-                raise ValueError("bbox must be lat0,lon0,lat1,lon1")
-            box = (min(parts[0], parts[2]), min(parts[1], parts[3]),
-                   max(parts[0], parts[2]), max(parts[1], parts[3]))
-        return lightning_core.build_lightning(minutes=minutes, sat=sat, bbox=box, end_unix=end)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001

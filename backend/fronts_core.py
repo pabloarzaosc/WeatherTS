@@ -71,7 +71,11 @@ FRONT_KINDS: dict[str, dict[str, str]] = {
 }
 STRENGTHS = {"WK": "weak", "MDT": "moderate", "STG": "strong"}
 
-_CACHE: tuple[float, dict] | None = None
+# Keyed on the (history, forecast) arguments, because those change which frames
+# are built. This was declared but never read, so every request re-parsed every
+# bulletin from scratch -- the endpoint measured ~15 s. The product TEXT was
+# already cached; the expensive part is decoding the coded fronts into GeoJSON.
+_CACHE: dict[tuple[int, bool], tuple[float, dict]] = {}
 _TTL = 600.0  # the bulletin is 3-hourly; 10 min is plenty fresh
 
 
@@ -410,6 +414,11 @@ def build_fronts(history: int = 0, forecast: bool = True) -> dict:
     let it scrub forward, so the surface analysis rides the same timeline as
     every other product instead of being pinned to "now".
     """
+    ck = (max(0, min(int(history), 24)), bool(forecast))
+    hit = _CACHE.get(ck)
+    if hit and time.time() - hit[0] < _TTL:
+        return hit[1]
+
     frames: list[dict] = []
     errors: list[str] = []
 
@@ -473,9 +482,10 @@ def build_fronts(history: int = 0, forecast: bool = True) -> dict:
         unique.append(f)
 
     if not unique:
+        # Not cached: a failure now should not be replayed for ten minutes.
         raise RuntimeError("No coded surface bulletin could be read")
 
-    return {
+    out = {
         "frames": unique,
         "meta": {
             "count": len(unique),
@@ -485,6 +495,10 @@ def build_fronts(history: int = 0, forecast: bool = True) -> dict:
             "source": "NWS Weather Prediction Center -- Coded Surface Bulletin (CODSUS/CODSRP)",
         },
     }
+    _CACHE[ck] = (time.time(), out)
+    while len(_CACHE) > 32:
+        _CACHE.pop(next(iter(_CACHE)))
+    return out
 
 
 def _iso_unix(iso: Any) -> Optional[int]:

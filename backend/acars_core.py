@@ -311,7 +311,7 @@ def find_profile(airport: str, unix: Optional[int] = None,
 
 
 def build_acars(airport: str, unix: Optional[int] = None,
-                hours: int = DEFAULT_HOURS) -> dict:
+                hours: int = DEFAULT_HOURS, view: Optional[dict] = None) -> dict:
     """An aircraft profile rendered through the same pipeline as every other
     sounding, so the viewer treats it exactly like a model or RAOB sounding."""
     import base64
@@ -366,6 +366,10 @@ def build_acars(airport: str, unix: Optional[int] = None,
     image_error = None
     try:
         from sharppy_renderer import render_spc_widget_png
+
+        # The panel's parcel / storm-motion choices ride in the same meta the
+        # renderer already receives, so nothing else in the path changes.
+        meta.update(view or {})
 
         image = base64.b64encode(render_spc_widget_png(levels, meta)).decode("ascii")
     except Exception as exc:  # noqa: BLE001

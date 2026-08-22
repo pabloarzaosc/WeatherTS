@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { X, Copy, AlertTriangle, ChevronLeft, Clock, MapPin, Radio, Radar } from "lucide-react";
 
+import { MesoscaleList } from "./MesoscaleList";
 import { selectVisibleAlerts, useAlertStore } from "../store/useAlertStore";
 import type { AlertFeature } from "../lib/nwsAlerts";
 import {
   alertBounds,
   alertCentroid,
   alertInForceAt,
+  alertKind,
   alertPriority,
   alertSummaryFacts,
   eventColor,
@@ -91,14 +93,6 @@ function CategoryFilterBar({
       <CategoryToggles counts={counts} />
     </div>
   );
-}
-
-function alertKind(event: string): Exclude<AlertListFilter, "all"> {
-  if (/warning/i.test(event)) return "warning";
-  if (/watch/i.test(event)) return "watch";
-  if (/advisory/i.test(event)) return "advisory";
-  if (/statement|message/i.test(event)) return "statement";
-  return "other";
 }
 
 /** unix seconds -> "16 21:58Z", matching the timeline's chip. */
@@ -467,6 +461,9 @@ function AlertList({
       <CategoryFilterBar counts={categoryCounts} onReset={onResetCategories} />
 
       <div className="alert-list__body">
+        {/* SPC and WPC discussions sit above the warnings: on a chase day the
+            question "is a watch coming" is answered here, not in the list. */}
+        <MesoscaleList />
         {status === "error" && <div className="alert-list__empty">{message ?? "Unable to load alerts."}</div>}
         {status !== "error" && visible.length === 0 && (
           <div className="alert-list__empty">No active alerts in this filter.</div>

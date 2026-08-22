@@ -251,24 +251,39 @@ Color: 10.00 255 255 255""",
     # there: an earlier 0-200 version left three quarters of the ramp unused
     # (that range belongs to the "topped" 150+value encoding, which MetPy's
     # DigitalEETMapper does not apply -- it hands back plain kft).
-    "EET": """Product: EET
+    # Legacy echo tops ramp, kept selectable. The default is now WCT_ET, the
+    # published table for product code 135, read from palettes/ET.pal.
+    # Matched to a reference colour bar: a
+    # continuous spectrum, white at the floor through blue, cyan, green, yellow
+    # and orange to red, then magenta and violet at the ceiling.
+    #
+    # Spans the product's own range, 0-70 kft, which is where NEXRAD EET tops
+    # out -- so the violet end is reached by the tallest tops the product can
+    # report rather than by nothing at all.
+    "EET": """; Full-spectrum echo tops ramp, matched to the reference display.
+Product: EET
 Units: KFT
 Step: 10
-Color4: 0   0   0   0   0
-Color:  5  50  50  90
-Color: 10   0 100 255
-Color: 15   0   0 220
-Color: 20   0 200 200
-Color: 25   0 200   0
-Color: 30   0 255   0
-Color: 35 200 255   0
-Color: 40 255 255   0
-Color: 45 255 180   0
-Color: 50 255 100   0
-Color: 55 255   0   0
-Color: 60 200   0 100
-Color: 65 255   0 255
-Color: 70 255 255 255""",
+Color4: 0 255 255 255   0
+Color:  3 255 255 255
+Color:  7 205 225 250
+Color: 11 150 200 250
+Color: 15  85 190 250
+Color: 19   0 205 240
+Color: 23   0 215 175
+Color: 27   0 200  85
+Color: 31   0 178   0
+Color: 35   0 150   0
+Color: 39 105 200   0
+Color: 43 190 225   0
+Color: 47 240 235   0
+Color: 51 255 190   0
+Color: 55 255 120   0
+Color: 59 255  45   0
+Color: 63 235   0   0
+Color: 66 225   0  95
+Color: 68 215   0 200
+Color: 70 150   0 210""",
     # --- Vertically integrated liquid, kg/m^2. Previously this product borrowed
     # the storm-total-accumulation table (0-10), so everything above 10 clamped
     # to one colour and the field was unreadable.
@@ -292,3 +307,70 @@ Color: 60  255   0 255
 Color: 70  180   0 255
 Color: 80  255 255 255""",
 }
+
+
+# ---------------------------------------------------------------------------
+# Tables shipped as files in <repo>/palettes.
+#
+# These are the NEXRAD Level-3 palettes from NOAA's Weather and Climate
+# Toolkit. They are read from disk rather than pasted in here so the folder
+# stays the source of truth: drop a .pal in, restart, and it is live. A file
+# whose stem matches a built-in id replaces it.
+#
+# The parser ignores `Scale:` on purpose. WCT applies it to convert the
+# product's internal units (km, mm) into the display units; our decoder already
+# hands over kft and inches, so honouring it here would scale the stops twice.
+# ---------------------------------------------------------------------------
+import os as _os
+import sys as _sys
+
+
+def _pal_dirs() -> list[str]:
+    """Folders to read .pal files from, in the order a later one overrides.
+
+    A source checkout has exactly one: <repo>/palettes. The packaged backend
+    has none by that route -- PyInstaller unpacks the modules into a temp tree
+    and __file__ points inside it, so walking up one level lands outside the
+    bundle. That is not a cosmetic loss: nexrad_core subscripts the FILE_* ids
+    directly at import, so an empty folder is a KeyError before the server
+    binds a port. The bundled copy under sys._MEIPASS is the one that exists
+    there, and the spec puts it there.
+
+    The folder beside the executable comes last so the promise above survives
+    packaging: drop a .pal in next to the exe, restart, and it is live.
+    """
+    here = _os.path.dirname(_os.path.abspath(__file__))
+    dirs = [_os.path.join(_os.path.dirname(here), "palettes")]
+    meipass = getattr(_sys, "_MEIPASS", None)
+    if meipass:
+        dirs.append(_os.path.join(meipass, "palettes"))
+        dirs.append(_os.path.join(_os.path.dirname(_sys.executable), "palettes"))
+    return dirs
+
+
+def _load_pal_dir(path: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    if not _os.path.isdir(path):
+        return out
+    for name in sorted(_os.listdir(path)):
+        if not name.lower().endswith(".pal"):
+            continue
+        try:
+            with open(_os.path.join(path, name), encoding="utf-8", errors="replace") as fh:
+                out[_os.path.splitext(name)[0]] = fh.read()
+        except OSError:
+            # A palette that will not read is not worth failing the server over;
+            # the built-in table for that id stays in place.
+            continue
+    return out
+
+
+# Namespaced, so a file never silently replaces a built-in of the same stem --
+# CC, ZDR, KDP, SRV, SW and VIL all collide, and the built-ins are still wanted
+# as alternatives (and, for CC, as the default: see below).
+_FILE_TABLES: dict[str, str] = {}
+for _d in _pal_dirs():
+    _FILE_TABLES.update(_load_pal_dir(_d))
+
+PAL_FILES: dict[str, str] = {f"FILE_{k}": v for k, v in _FILE_TABLES.items()}
+PAL_TABLES.update(PAL_FILES)

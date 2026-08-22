@@ -157,14 +157,7 @@
 .lsrcard__head button:hover {
   color: var(--text);
 }
-.lsrcard__where {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-  font-size: 12px;
-  color: var(--text-dim);
-}
+
 .lsrcard__cat {
   display: inline-block;
   margin-left: 8px;
@@ -267,7 +260,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 7px;
+  margin-bottom: 8px;
 }
 .stormpop__head b {
   font-size: 12.5px;
@@ -281,111 +274,19 @@
 .stormpop__head button:hover {
   color: var(--text);
 }
-.stormpop__motion {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 8px;
-  margin-bottom: 8px;
-  border-radius: 7px;
-  background: var(--panel-2);
-  font-size: 12px;
-  font-weight: 600;
-}
-.stormpop__rows {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 2px 10px;
-  margin: 0 0 8px;
-  font-size: 11px;
-}
-.stormpop__rows dt {
-  color: var(--text-faint);
-}
-.stormpop__rows dd {
-  margin: 0;
-  text-align: right;
-  font-family: var(--mono);
-}
-.stormpop__meso {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  margin-bottom: 8px;
-  border: 1px solid rgba(250, 204, 21, 0.4);
-  border-radius: 7px;
-  background: rgba(250, 204, 21, 0.12);
-  color: #facc15;
-  font-size: 11px;
-  font-weight: 600;
-}
-.stormpop__meso.is-tvs {
-  border-color: var(--danger-border);
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-.stormpop__alerts {
-  list-style: none;
-  margin: 0 0 7px;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.stormpop__alerts li {
-  font-size: 11px;
-  color: var(--text-dim);
-}
-.stormpop__impacts {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  width: 100%;
-  justify-content: center;
-  padding: 6px 10px;
-  border: 1px solid var(--accent-ring);
-  border-radius: 7px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 11.5px;
-  font-weight: 700;
-}
-.stormpop__none {
-  margin: 0;
-  font-size: 10.5px;
-  color: var(--text-faint);
-}
 
-/* Mesocyclones are DOM markers so the icon can spin continuously. */
-.mesomark {
-  color: #facc15;
+/* Tornado vortex signature: the inverted triangle radar displays reserve for
+   it. Magenta rather than the app's --danger red so it stays distinct from the
+   warning polygons it usually sits inside, and fixed rather than themed --
+   it reads against reflectivity, not against the app chrome. */
+.tvsmark {
+  color: #f0179e;
   display: block;
   line-height: 0;
   cursor: help;
 }
-.mesomark svg {
-  animation: meso-spin 2.4s linear infinite;
-  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.8));
-}
-.mesomark.is-tvs {
-  color: var(--danger);
-}
-.mesomark.is-tvs svg {
-  animation-duration: 1.3s;
-}
-.mesomark.is-still svg {
-  animation: none;
-}
-@keyframes meso-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .mesomark svg {
-    animation: none;
-  }
+.tvsmark svg {
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.85));
 }
 
 /* ============================================================
@@ -396,8 +297,11 @@
   position: absolute;
   right: calc(18px + var(--alert-w, 0px));
   bottom: calc(var(--dock-h) + 14px);
-  width: min(660px, calc(100vw - var(--map-left) - 40px));
-  max-height: 62vh;
+  /* Wide enough for the time-height grid at full size next to the readout,
+     and no wider: the display is a fixed square of small type, so extra width
+     would only stretch empty space around it. */
+  width: min(660px, calc(100vw - var(--alert-w, 0px) - 36px));
+  max-height: 82vh;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
@@ -409,6 +313,36 @@
   z-index: 26;
   animation: fade-up 0.16s var(--ease-out) both;
   overflow: hidden;
+}
+
+/* Full screen: the whole window between the top bars and the dock, the way
+   the sounding viewer expands. Worth having because every extra pixel here
+   goes into cell size -- 29 rows of barbs at 12 px are legible, at 30 px they
+   are readable across the room. */
+.vwp.is-expanded {
+  position: fixed;
+  top: calc(var(--topbar-h) + var(--tabsbar-h) + 2px);
+  left: 2px;
+  right: 2px;
+  bottom: calc(var(--dock-h) + 2px);
+  width: auto;
+  max-height: none;
+  z-index: 46;
+}
+.vwp.is-expanded .vwp__body {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.vwp.is-expanded .vwp__plotwrap {
+  justify-content: center;
+}
+.vwp.is-expanded .vwp__svg {
+  /* Fill the height it has been given; the viewBox keeps the aspect, so the
+     grid grows in both directions together. */
+  width: auto;
+  height: 100%;
+  max-height: none;
+  max-width: 100%;
 }
 .vwp__head {
   display: flex;
@@ -490,38 +424,65 @@
 .vwp__plotwrap {
   flex: 1 1 auto;
   min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
+  display: flex;
+  align-items: flex-start;
 }
 .vwp__svg {
-  height: 348px;
+  /* Scales to the space it is given rather than scrolling: the altitude
+     ladder down the left edge is the axis, and an axis that scrolls out of
+     view leaves a grid of barbs at no particular height. */
   display: block;
+  width: 100%;
+  height: auto;
+  max-height: 560px;
 }
-.vwp__grid {
-  stroke: rgba(150, 166, 184, 0.16);
-  stroke-width: 0.8;
+/* The time-height display is a console readout, not a chart in the app's
+   chrome: it stays black on white ink in either theme, the way the radar
+   product it mirrors is always read. */
+.vwpc__bg {
+  fill: #000;
 }
-.vwp__ytext {
-  fill: var(--text-faint);
+.vwpc__frame {
+  fill: none;
+  stroke: rgba(230, 238, 248, 0.75);
+  stroke-width: 1;
+}
+.vwpc__rule {
+  stroke: rgba(230, 238, 248, 0.75);
+  stroke-width: 1;
+}
+.vwpc__grid {
+  stroke: rgba(210, 224, 240, 0.24);
+  stroke-width: 0.7;
+}
+.vwpc__tick {
+  stroke: rgba(230, 238, 248, 0.75);
+  stroke-width: 1;
+}
+.vwpc__corner {
+  fill: #e8eef7;
+  font-size: 9.5px;
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.vwpc__alt {
+  fill: #e8eef7;
   font-size: 9.5px;
   font-family: var(--mono);
   text-anchor: end;
 }
-.vwp__xtext {
-  fill: var(--text-faint);
+.vwpc__time {
+  fill: #e8eef7;
   font-size: 9px;
   font-family: var(--mono);
   text-anchor: middle;
 }
-.vwp__axlabel {
-  fill: var(--text-faint);
-  font-size: 9px;
-}
-.vwp__colbg {
-  fill: transparent;
-}
-.vwp__colbg.is-latest {
-  fill: rgba(59, 130, 246, 0.07);
+.vwpc__nd {
+  fill: rgba(190, 203, 219, 0.62);
+  font-size: 8.5px;
+  font-family: var(--mono);
+  text-anchor: middle;
 }
 .vwp__hoverdot {
   fill: none;
@@ -889,3 +850,878 @@
 .vwp__hodoaxis { stroke: rgba(150, 166, 184, 0.3); stroke-width: 0.7; }
 .vwp__hodoseg { fill: none; stroke-width: 2; stroke-linecap: round; }
 .vwp__hodocur { fill: #ffffff; stroke: #0b0f15; stroke-width: 1; }
+
+/* ============================================================
+   Storm cell full report — opened from the cell card, same
+   modal treatment as the METAR station report.
+   ============================================================ */
+
+.scp__back {
+  position: fixed;
+  inset: 0;
+  /* Same tier as the METAR station report (.stp), which this mirrors. It was
+     90, which tied with the map context menu -- a tie is broken by DOM order,
+     so the two could render over each other. */
+  z-index: 125;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(6, 8, 11, 0.7);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+.scp {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(420px, 100%);
+  max-height: 86vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+  animation: fade-up var(--t) var(--ease-out) both;
+}
+.scp__head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 11px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-solid);
+}
+.scp__head b {
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.scp__site {
+  margin-left: 8px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.scp__head button {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+}
+.scp__head button:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.scp__gone {
+  margin: 0;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.scp__motion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 16px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.scp__tvs {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(240, 23, 158, 0.14);
+  border: 1px solid rgba(240, 23, 158, 0.45);
+  color: #f0179e;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.scp__sec {
+  padding: 14px 16px 0;
+}
+.scp__sec:last-child {
+  padding-bottom: 16px;
+}
+.scp__sechead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.scp__count {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  letter-spacing: 0;
+  text-transform: none;
+}
+/* how many scans of history to request -- same look as the METAR report's
+   hour-range picker (.stp__range), separate class so its plain small-button
+   look doesn't collide with the pill-shaped .scp__metric chips below it */
+.scp__ranges {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.scp__rangebtn {
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.scp__rangebtn:hover {
+  color: var(--text-dim);
+}
+.scp__rangebtn.is-on {
+  border-color: transparent;
+  background: var(--accent);
+  color: #fff;
+}
+/* auto-fit rather than a fixed count: the hail row has three tiles and the
+   structure row five, and both should fill the width without their own rule */
+.scp__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 7px;
+}
+.scp__tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(var(--wash-rgb), 0.03);
+}
+.scp__tile span {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+.scp__tile b {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+}
+.scp__metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+.scp__metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11px;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.scp__metric:hover {
+  color: var(--text);
+}
+.scp__metric.is-on {
+  border-color: transparent;
+  background: var(--accent);
+  color: #fff;
+}
+/* Trend arrows keep meaning on the selected chip, so they are tinted by
+   direction rather than inheriting the chip's own colour. */
+.scp__metric i {
+  font-style: normal;
+  font-size: 8px;
+}
+.scp__metric i.is-up {
+  color: #ff6b5e;
+}
+.scp__metric i.is-down {
+  color: #4ade80;
+}
+.scp__metric.is-on i.is-up,
+.scp__metric.is-on i.is-down {
+  color: #fff;
+}
+.scp__chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.scp__grid {
+  stroke: rgba(var(--wash-rgb), 0.1);
+  stroke-width: 1;
+}
+.scp__ylab {
+  fill: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  text-anchor: end;
+}
+.scp__xlab {
+  fill: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+.scp__unit {
+  margin: 2px 0 0;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+.scp__chart-empty,
+.scp__busy {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 14px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 9px;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.scp__spin {
+  animation: spin 1s linear infinite;
+  flex: none;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+html[data-reduce-motion="true"] .scp__spin {
+  animation: none;
+}
+
+/* the way into the full report, on the map card */
+.stormpop__full {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--accent-ring);
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 11.5px;
+  font-weight: 700;
+  transition: background var(--t-fast);
+}
+.stormpop__full:hover {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+/* --- sections moved off the map card into the report --- */
+.scp__rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 12px;
+  margin: 0;
+  font-size: 11.5px;
+}
+.scp__rows dt {
+  color: var(--text-faint);
+}
+.scp__rows dd {
+  margin: 0;
+  text-align: right;
+  font-family: var(--mono);
+}
+.scp__meso {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 16px 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+/* Town, distance along the track, and lead time. Fixed columns so the arrival
+   times line up as a scannable column rather than ragged. */
+.scp__impacts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.scp__impacts li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 9px;
+  border-radius: 7px;
+  background: var(--panel-2);
+  font-size: 11.5px;
+}
+.scp__town {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.scp__towndist {
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+.scp__towneta {
+  min-width: 3.4em;
+  text-align: right;
+  color: var(--accent-text);
+  font-family: var(--mono);
+  font-weight: 700;
+}
+.scp__alerts {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.scp__alerts li {
+  padding: 6px 9px;
+  border-left: 3px solid var(--danger);
+  border-radius: 6px;
+  background: var(--panel-2);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.scp__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border: 1px solid var(--accent-ring);
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.scp__link:hover {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+.scp__none {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+/* ============================================================
+   Chasers — the card for a clicked live position
+   ============================================================ */
+
+.chpop {
+  position: fixed;
+  z-index: 62;
+  padding: 9px 11px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  box-shadow: var(--shadow);
+  animation: fade-up 0.12s var(--ease-out) both;
+}
+/* Officials carry their amber through to the card, so the badge is the same
+   colour here as the ring around them on the map. */
+.chpop.is-official {
+  border-color: rgba(245, 165, 36, 0.5);
+}
+.chpop__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.chpop__head b {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+.chpop.is-official .chpop__head b {
+  color: #f5a524;
+}
+.chpop__head button {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+}
+.chpop__head button:hover {
+  color: var(--text);
+}
+.chpop__badge {
+  margin-bottom: 7px;
+  padding: 2px 7px;
+  border: 1px solid rgba(245, 165, 36, 0.45);
+  border-radius: 999px;
+  background: rgba(245, 165, 36, 0.14);
+  color: #f5a524;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.chpop__motion {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  margin-bottom: 7px;
+  border-radius: 7px;
+  background: var(--panel-2);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.chpop__rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 0 0 9px;
+  font-size: 11px;
+}
+.chpop__rows dt {
+  color: var(--text-faint);
+}
+.chpop__rows dd {
+  margin: 0;
+  text-align: right;
+  font-family: var(--mono);
+}
+/* A stale reading is still shown, but never as though it were current. */
+.chpop__rows dd.is-stale {
+  color: var(--danger);
+}
+.chpop__acts {
+  display: flex;
+  gap: 6px;
+}
+.chpop__act {
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.chpop__act:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.chpop__act--live {
+  border-color: rgba(245, 165, 36, 0.5);
+  background: rgba(245, 165, 36, 0.14);
+  color: #f5a524;
+}
+.chpop__act--live:hover {
+  color: #f5a524;
+  background: rgba(245, 165, 36, 0.24);
+}
+
+/* ============================================================
+   SPC Mesoscale Discussions — map card and full product
+   ============================================================ */
+
+/* One accent per hazard, matching the polygon on the map. Severe and flood are
+   different jobs, so the card says which before you read a word of it. */
+.mdpop,
+.mdrep,
+.mdlist__row {
+  --md-accent: #f5a524;
+}
+.mdpop--severe,
+.mdrep--severe,
+.mdlist__row--severe {
+  --md-accent: #ef4444;
+}
+.mdpop--flood,
+.mdrep--flood,
+.mdlist__row--flood {
+  --md-accent: #3b82f6;
+}
+
+.mdpop {
+  position: fixed;
+  z-index: 62;
+  padding: 9px 11px 10px;
+  border: 1px solid var(--md-accent);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  box-shadow: var(--shadow);
+  animation: fade-up 0.12s var(--ease-out) both;
+}
+.mdpop__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+}
+.mdpop__head b {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--md-accent);
+}
+.mdpop__tag {
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--md-accent);
+  color: var(--md-accent);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.mdpop__head button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+}
+.mdpop__head button:hover {
+  color: var(--text);
+}
+.mdpop__areas {
+  margin: 0 0 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.mdpop__rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 9px;
+  margin: 0 0 9px;
+  font-size: 11px;
+}
+.mdpop__rows dt {
+  color: var(--text-faint);
+}
+.mdpop__rows dd {
+  margin: 0;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mdpop__full {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--md-accent);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--md-accent);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.mdpop__full:hover {
+  background: color-mix(in srgb, var(--md-accent) 16%, transparent);
+}
+
+/* --- the full product --- */
+.mdrep__back {
+  position: fixed;
+  inset: 0;
+  z-index: 125;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(6, 8, 11, 0.7);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+.mdrep {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  max-height: 86vh;
+  overflow-y: auto;
+  padding: 0 0 16px;
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--md-accent);
+  border-radius: 14px;
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+  animation: fade-up var(--t) var(--ease-out) both;
+}
+.mdrep__head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 11px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-solid);
+}
+.mdrep__head b {
+  font-size: 15px;
+  font-weight: 700;
+}
+.mdrep__tag {
+  margin-left: 9px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--md-accent);
+  color: var(--md-accent);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mdrep__head button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+}
+.mdrep__head button:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.mdrep__rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 13px 16px 0;
+  font-size: 12px;
+}
+.mdrep__rows dt {
+  color: var(--text-faint);
+}
+.mdrep__rows dd {
+  margin: 0;
+  line-height: 1.4;
+}
+.mdrep__sec {
+  padding: 14px 16px 0;
+}
+.mdrep__sec h4 {
+  margin: 0 0 5px;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.mdrep__sec p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+/* SPC writes to a fixed width and the line breaks carry meaning, so the raw
+   product keeps its own wrapping instead of being reflowed. */
+.mdrep__raw {
+  margin: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+.mdrep__acts {
+  display: flex;
+  gap: 7px;
+  padding: 14px 16px 0;
+}
+.mdrep__act {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.mdrep__act:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+/* ============================================================
+   Mesoscale discussion list, in the alert rail. The map draws
+   only what is in force; the whole day is reachable here.
+   ============================================================ */
+.mdlist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.mdlist__count {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.mdlist .alert-list__group-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.mdlist__row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 4px 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-left: 3px solid var(--md-accent);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+.mdlist__row:hover {
+  background: rgba(var(--wash-rgb), 0.09);
+}
+.mdlist__row.is-past {
+  opacity: 0.62;
+}
+.mdlist__id {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--md-accent);
+}
+.mdlist__concerning {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mdlist__time {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.mdlist__past {
+  margin-top: 2px;
+}
+.mdlist__past > summary {
+  padding: 4px 2px;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.mdlist__past[open] > summary {
+  margin-bottom: 4px;
+}
+.mdlist__past .mdlist__row + .mdlist__row {
+  margin-top: 4px;
+}
+
+/* ============================================================
+   Gate readout pinned to the pointer. Rounded, high-contrast
+   and click-through: it rides over the scan without ever
+   being a thing you can hit.
+   ============================================================ */
+.rdxy {
+  position: fixed;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  box-shadow: var(--shadow);
+  /* Never intercept a click meant for the map underneath. */
+  pointer-events: none;
+  font-family: var(--mono);
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.rdxy__value {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.rdxy__height {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
