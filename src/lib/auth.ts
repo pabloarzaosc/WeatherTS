@@ -66,10 +66,10 @@ export const isLegacyEmail = (email: string | null | undefined) =>
  *  nothing a client sends can change its own. That is the whole reason the
  *  mark means anything: a badge a peer could award itself would be decoration.
  */
-export type AccountRole = "member" | "chaser" | "developer";
+export type AccountRole = "member" | "chaser" | "developer" | "tester";
 
 export const isRole = (v: unknown): AccountRole =>
-  v === "chaser" || v === "developer" ? v : "member";
+  v === "chaser" || v === "developer" || v === "tester" ? v : "member";
 
 /** The letter drawn on the map. Members carry none -- most accounts are
  *  members, and a mark everyone has marks nobody. */
@@ -77,18 +77,24 @@ export const ROLE_LETTER: Record<AccountRole, string> = {
   member: "",
   chaser: "C",
   developer: "D",
+  tester: "T",
 };
 
+/** Far enough apart to tell at a glance on a map that is mostly greens and
+ *  reds already: green for a chaser, yellow for a developer, violet for a
+ *  tester -- the one hue radar reflectivity never reaches. */
 export const ROLE_COLOR: Record<AccountRole, string> = {
   member: "#7dd3fc",
   chaser: "#22c55e",
   developer: "#facc15",
+  tester: "#a78bfa",
 };
 
 export const ROLE_LABEL: Record<AccountRole, string> = {
   member: "Member",
   chaser: "WeatherTS chaser",
   developer: "Developer",
+  tester: "Tester",
 };
 
 /* ----------------------------------------------------------------- profile */

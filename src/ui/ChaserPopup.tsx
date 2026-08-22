@@ -85,6 +85,10 @@ export function ChaserPopup() {
   const top = Math.max(8, Math.min(pos.y - H / 2, window.innerHeight - H - 8));
   const stale = isStale(chaser);
 
+  // Anything worse than a kilometre did not come from a GPS. The threshold is
+  // deliberately generous: a poor device fix in a city is still a device fix.
+  const coarse = chaser.accuracyM != null && chaser.accuracyM > 1000;
+
   return (
     <div className={`chpop${chaser.official ? " is-official" : ""}`} style={{ left, top, width: W }}>
       <header className="chpop__head">
@@ -120,7 +124,17 @@ export function ChaserPopup() {
       <dl className="chpop__rows">
         <dt>Position</dt>
         <dd>
-          {chaser.lat.toFixed(3)}, {chaser.lon.toFixed(3)}
+          {/* Three decimals is about a hundred metres, which is the right
+              precision for a GPS fix and the wrong precision for the IP
+              fallback a device without one falls back to. Printing a city as
+              though it were a street corner is the kind of wrong that looks
+              exactly like being right, so a coarse fix is rounded to match
+              what it actually knows and says how far off it may be. */}
+          {coarse
+            ? `${chaser.lat.toFixed(1)}, ${chaser.lon.toFixed(1)} ±${Math.round(
+                (chaser.accuracyM ?? 0) / 1000,
+              )} km`
+            : `${chaser.lat.toFixed(3)}, ${chaser.lon.toFixed(3)}`}
         </dd>
         <dt>Updated</dt>
         <dd className={stale ? "is-stale" : undefined}>{ago(chaser.at)}</dd>

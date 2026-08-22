@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { currentFix } from "../../lib/geolocate";
 import { createPortal } from "react-dom";
 import {
   AtSign,
@@ -445,20 +446,21 @@ export function AccountPanel({ onClose }: { onClose: () => void }) {
                 disabled={!!busy}
                 onClick={() =>
                   run("home", async () => {
-                    const fix = await new Promise<GeolocationPosition>((res, rej) =>
-                      navigator.geolocation.getCurrentPosition(res, rej, {
-                        enableHighAccuracy: false,
-                        timeout: 15000,
-                      }),
-                    ).catch(() => {
+                    // A home pin is stored to about a kilometre either way, so
+                    // a city-level network fix is no worse here than a precise
+                    // one -- this is the one place the fallback costs nothing.
+                    const fix = await currentFix({
+                      enableHighAccuracy: false,
+                      timeout: 15000,
+                    }).catch(() => {
                       throw new Error("Could not read your location.");
                     });
                     // Rounded before it is stored, not before it is shown: what
                     // is written down is already the coarse version, so there is
                     // no precise copy sitting in the database to leak later.
                     await updateProfile({
-                      homeLat: blurHome(fix.coords.latitude),
-                      homeLon: blurHome(fix.coords.longitude),
+                      homeLat: blurHome(fix.lat),
+                      homeLon: blurHome(fix.lon),
                       homeLabel,
                     });
                     return "Pin set to about a kilometre of where you are.";

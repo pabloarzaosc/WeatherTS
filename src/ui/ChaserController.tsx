@@ -93,7 +93,13 @@ export function ChaserController() {
           useChaserStore.getState().setShareError(
             err.code === err.PERMISSION_DENIED
               ? "Location permission refused."
-              : err.message || "Could not read this device's location.",
+              : // Not err.message. What the browser puts there for this case is
+                // "Failed to query location from network service. Check the API
+                // key and network connection" -- a message about a key the user
+                // does not have and cannot set, on a service they never chose.
+                // By the time this fires the IP fallback has failed too, so the
+                // only true thing left to say is that neither route worked.
+                "Could not read this device's location, and the network lookup failed too.",
           );
         },
       );

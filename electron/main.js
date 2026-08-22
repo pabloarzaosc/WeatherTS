@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path from 'path';
 import { spawn, execFile, exec } from 'child_process';
 import fs from 'fs';
@@ -165,6 +165,25 @@ function showErrorPage(title, detail) {
   `));
 }
 
+// Protocol of a URL, or '' when it will not parse. openExternal on a
+// javascript: or file: URL is a way to run something the user did not ask for,
+// so the handlers above check this before passing anything to the shell.
+function safeProtocol(url) {
+  try {
+    return new URL(url).protocol;
+  } catch {
+    return '';
+  }
+}
+
+function sameOrigin(a, b) {
+  try {
+    return Boolean(b) && new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -178,6 +197,34 @@ function createWindow() {
   });
 
   mainWindow.removeMenu();
+
+  // Anything the app asks to open in a new window goes to the real browser.
+  //
+  // Sign-in is the case that matters. signInWithProvider already calls
+  // window.open for the desktop build, but with no handler here Electron
+  // answers that by making another BrowserWindow -- so Google's page opened
+  // inside the app, in a frame with no address bar. That is exactly the
+  // embedded-webview shape providers refuse, and it asks the user to type a
+  // password into a window that cannot show them where it is going. Denying
+  // the window and handing the URL to the browser is the whole fix; the
+  // callback still comes home through the weatherts:// deep link.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:$/.test(safeProtocol(url))) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
+  // The same rule for a navigation that would replace the app itself. Without
+  // this, one stray external link leaves the user stuck on a web page with no
+  // way back -- the menu is gone and there is no address bar to type into.
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const protocol = safeProtocol(url);
+    // The app's own pages: the built file:// bundle, the data: splash, and the
+    // dev server it reloads from. Blocking these would block the app booting.
+    if (protocol === 'file:' || protocol === 'data:' || protocol === '') return;
+    if (sameOrigin(url, mainWindow.webContents.getURL())) return;
+    event.preventDefault();
+    if (/^https?:$/.test(protocol)) void shell.openExternal(url);
+  });
 
   // Splash. This is on screen for as long as the backend takes to answer, which
   // on a cold first run is tens of seconds, so it carries a live status line
@@ -413,7 +460,7 @@ app.whenReady().then(async () => {
     return;
   }
 
-  setSplashStatus('carregando o mapa…');
+  setSplashStatus('loading the map…');
 
   if (app.isPackaged) {
     const indexUrl = pathToFileURL(path.join(__dirname, '../dist/index.html'));
