@@ -10,12 +10,61 @@ import {
   type OutlookResponse,
   type SpcDay,
   type SpcOutlookType,
+  CIG_COLORS,
 } from "../../lib/outlooks";
 import { useOutlookStore } from "../../store/useOutlookStore";
 
 const ALERT_BEFORE_IDS = ["alerts-fill", "alerts-outline"];
 
 type Loader = () => Promise<OutlookResponse>;
+
+/**
+ * A diagonal hatch, one per conditional-intensity group.
+ *
+ * Conditional intensity qualifies the probability underneath it -- "if a storm
+ * goes severe here, this is how severe" -- so it has to be readable WITH the
+ * risk colour, not instead of it. A second translucent fill would just muddy
+ * the colour it is annotating; hatching is what SPC's own products use, and
+ * what leaves the probability legible through it.
+ *
+ * fill-pattern takes an image rather than a colour, so the three groups need
+ * three images; the feature carries which one in `cigPattern`.
+ */
+function hatchImage(color: string): ImageData | null {
+  const size = 8;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = "square";
+  // Drawn three times, offset by a full tile each way, so the stroke that
+  // leaves one edge arrives at the next tile unbroken.
+  for (const offset of [-size, 0, size]) {
+    ctx.beginPath();
+    ctx.moveTo(offset, size);
+    ctx.lineTo(offset + size, 0);
+    ctx.stroke();
+  }
+  return ctx.getImageData(0, 0, size, size);
+}
+
+function ensureHatches(map: MapLibreMap): void {
+  for (const [group, color] of Object.entries(CIG_COLORS)) {
+    const id = `cig-hatch-${group.slice(3)}`;
+    if (map.hasImage(id)) continue;
+    const image = hatchImage(color);
+    if (image) map.addImage(id, image, { pixelRatio: 2 });
+  }
+}
+
+// Everything that is not conditional intensity, and everything that is. A
+// feature with no `cig` property at all is a plain outlook polygon.
+const NOT_CIG = ["!=", ["coalesce", ["get", "cig"], false], true] as never;
+const IS_CIG = ["==", ["coalesce", ["get", "cig"], false], true] as never;
 
 function beforeAlerts(map: MapLibreMap): string | undefined {
   return ALERT_BEFORE_IDS.find((id) => map.getLayer(id));
@@ -38,6 +87,7 @@ function setGeoMeta(id: string, name: string, response: OutlookResponse) {
 function createGeoOutlookLayer(id: string, name: string, description: string, loader: Loader): LayerModule {
   const sourceId = `${id}-src`;
   const fillId = `${id}-fill`;
+  const hatchId = `${id}-hatch`;
   const lineId = `${id}-line`;
 
   return {
@@ -53,13 +103,28 @@ function createGeoOutlookLayer(id: string, name: string, description: string, lo
       if (!map.getSource(sourceId)) {
         map.addSource(sourceId, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
       }
+      ensureHatches(map);
+
       if (!map.getLayer(fillId)) {
         map.addLayer(
           {
             id: fillId,
             type: "fill",
             source: sourceId,
+            filter: NOT_CIG,
             paint: { "fill-color": ["get", "color"], "fill-opacity": 0.26 },
+          },
+          beforeAlerts(map),
+        );
+      }
+      if (!map.getLayer(hatchId)) {
+        map.addLayer(
+          {
+            id: hatchId,
+            type: "fill",
+            source: sourceId,
+            filter: IS_CIG,
+            paint: { "fill-pattern": ["get", "cigPattern"], "fill-opacity": 0.9 },
           },
           beforeAlerts(map),
         );
@@ -96,6 +161,7 @@ function createGeoOutlookLayer(id: string, name: string, description: string, lo
 
     removeFrom(map) {
       if (map.getLayer(lineId)) map.removeLayer(lineId);
+      if (map.getLayer(hatchId)) map.removeLayer(hatchId);
       if (map.getLayer(fillId)) map.removeLayer(fillId);
       if (map.getSource(sourceId)) map.removeSource(sourceId);
       useOutlookStore.getState().clearMeta(id);
@@ -103,11 +169,12 @@ function createGeoOutlookLayer(id: string, name: string, description: string, lo
 
     setOpacity(map, opacity) {
       if (map.getLayer(fillId)) map.setPaintProperty(fillId, "fill-opacity", 0.32 * opacity);
+      if (map.getLayer(hatchId)) map.setPaintProperty(hatchId, "fill-opacity", opacity);
       if (map.getLayer(lineId)) map.setPaintProperty(lineId, "line-opacity", opacity);
     },
 
     getLayerIds() {
-      return [fillId, lineId];
+      return [fillId, hatchId, lineId];
     },
   };
 }

@@ -606,3 +606,189 @@
 }
 .acct__public span { color: var(--text-faint); flex: none; }
 .acct__public b { color: var(--text-dim); font-weight: 500; text-align: right; }
+
+/* ─────────────────────────  DATA NOTICE  ─────────────────────────
+   The consent step. It replaces the sign-up form rather than sitting beside
+   it, so the card is wider and taller than the usual auth card -- this is
+   something to read, and a notice squeezed into a 380px column is a notice
+   designed not to be read. */
+.auth--consent {
+  max-width: 700px;
+  width: min(94vw, 700px);
+  padding: 0;
+  overflow: hidden;
+}
+.auth--consent-solo { margin: auto; }
+
+.consent { display: flex; flex-direction: column; max-height: min(84vh, 800px); }
+
+/* ---- header ---- */
+.consent__head { display: flex; gap: 13px; align-items: center; padding: 20px 26px 17px; }
+.consent__seal {
+  flex: 0 0 auto; width: 34px; height: 34px;
+  display: grid; place-items: center; border-radius: 10px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.consent__headtext { min-width: 0; }
+.consent__title { margin: 0 0 3px; font-size: 1.06rem; letter-spacing: -0.01em; color: var(--text); }
+.consent__sub { margin: 0; font-size: 0.8rem; color: var(--text-dim); line-height: 1.45; }
+
+/* ---- read-progress rail: how much document is left, without a number ---- */
+.consent__rail { height: 2px; background: var(--border); overflow: hidden; }
+.consent__railfill {
+  display: block; height: 100%;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #a78bfa));
+  transform-origin: left center; transform: scaleX(0);
+  transition: transform 0.12s linear;
+}
+
+/* ---- scrolling body ---- */
+.consent__body { position: relative; min-height: 0; display: flex; }
+.consent__scroll {
+  flex: 1; overflow-y: auto; padding: 18px 26px 34px;
+  scrollbar-width: thin; outline-offset: -3px;
+}
+.consent__scroll::-webkit-scrollbar { width: 9px; }
+.consent__scroll::-webkit-scrollbar-thumb {
+  background: var(--border-strong, var(--border));
+  border-radius: 99px; border: 3px solid transparent; background-clip: content-box;
+}
+
+/* Fades the last line rather than cutting it: a hard edge reads as the end of
+   the document, which is exactly the wrong thing to suggest here. */
+.consent__fade {
+  position: absolute; left: 0; right: 9px; bottom: 0; height: 46px;
+  pointer-events: none;
+  background: linear-gradient(to top, var(--panel, #12161c), transparent);
+  opacity: 1; transition: opacity 0.25s ease;
+}
+.consent__fade.is-done { opacity: 0; }
+
+.consent__jump {
+  position: absolute; right: 22px; bottom: 12px;
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 0.7rem; letter-spacing: 0.02em;
+  padding: 5px 11px; border-radius: 99px;
+  color: var(--text-dim);
+  background: var(--panel-2, rgba(255,255,255,0.05));
+  border: 1px solid var(--border);
+  cursor: pointer; backdrop-filter: blur(6px);
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.consent__jump:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ---- the gist, before the detail ---- */
+.consent__summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin-bottom: 4px; }
+.consent__card {
+  border: 1px solid var(--border); border-radius: 10px; padding: 11px 12px;
+  display: grid; gap: 3px;
+  background: var(--panel-2, rgba(255,255,255,0.02));
+}
+.consent__card b { font-size: 0.76rem; letter-spacing: 0.02em; color: var(--text); }
+.consent__card span { font-size: 0.72rem; line-height: 1.42; color: var(--text-dim); }
+.consent__card.is-private { color: #7dd3fc; border-color: rgba(125,211,252,0.28); }
+.consent__card.is-public  { color: #fbbf24; border-color: rgba(251,191,36,0.28); }
+.consent__card.is-never   { color: #34d399; border-color: rgba(52,211,153,0.28); }
+
+/* ---- sections ---- */
+.consent__sec { padding: 18px 0 4px; border-bottom: 1px solid var(--border); }
+.consent__sec:last-child { border-bottom: 0; padding-bottom: 0; }
+
+.consent__sectitle {
+  display: flex; align-items: center; gap: 9px; margin: 0 0 9px;
+  font-size: 0.89rem; letter-spacing: -0.005em; color: var(--text);
+}
+.consent__secicon {
+  flex: 0 0 auto; width: 24px; height: 24px;
+  display: grid; place-items: center; border-radius: 7px;
+  color: var(--text-dim);
+  background: var(--panel-2, rgba(255,255,255,0.04));
+  border: 1px solid var(--border);
+}
+.consent__secnum { margin-left: auto; flex: 0 0 auto; font-size: 0.65rem; letter-spacing: 0.06em; color: var(--text-mut); }
+
+/* The one section worth not skimming, drawn as a callout. */
+.consent__sec.is-emphasis {
+  margin: 16px 0 4px; padding: 16px 16px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+.consent__sec.is-emphasis .consent__secicon {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 34%, transparent);
+}
+.consent__sec.is-emphasis .consent__point { border-left-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+
+.consent__intro,
+.consent__para { margin: 0 0 10px; font-size: 0.825rem; line-height: 1.6; color: var(--text-dim); }
+
+/* ---- one datum ---- */
+.consent__points { list-style: none; margin: 0; padding: 0; display: grid; gap: 11px; }
+.consent__point { border-left: 2px solid var(--border); padding-left: 13px; }
+.consent__pointhead { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 3px; }
+.consent__pointhead b { font-size: 0.825rem; color: var(--text); }
+.consent__pointdesc { margin: 0; font-size: 0.805rem; line-height: 1.55; color: var(--text-dim); }
+
+.consent__tag,
+.consent__vis {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 0.62rem; letter-spacing: 0.05em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 99px;
+  border: 1px solid var(--border); color: var(--text-mut); white-space: nowrap;
+}
+/* Who can see it, colour-coded, so the three states separate at a glance
+   without reading every badge. */
+.consent__vis.is-private { color: #7dd3fc; border-color: rgba(125,211,252,0.3);  background: rgba(125,211,252,0.08); }
+.consent__vis.is-public  { color: #fbbf24; border-color: rgba(251,191,36,0.32);  background: rgba(251,191,36,0.08); }
+.consent__vis.is-shared  { color: #f87171; border-color: rgba(248,113,113,0.32); background: rgba(248,113,113,0.08); }
+
+/* ---- the agreement ---- */
+.consent__foot {
+  border-top: 1px solid var(--border);
+  padding: 15px 26px 18px;
+  background: var(--panel-2, rgba(255,255,255,0.02));
+}
+.consent__agree {
+  display: flex; gap: 11px; align-items: flex-start;
+  font-size: 0.825rem; line-height: 1.5; color: var(--text); cursor: pointer;
+}
+.consent__agree.is-locked { cursor: default; color: var(--text-mut); }
+.consent__agree input { position: absolute; opacity: 0; width: 0; height: 0; }
+.consent__agreetext { display: block; }
+.consent__lockhint {
+  display: block; margin-top: 2px; font-size: 0.72rem; font-style: normal;
+  color: var(--text-mut); opacity: 0.85;
+}
+.consent__box {
+  flex: 0 0 auto; width: 18px; height: 18px; margin-top: 1px;
+  border-radius: 5px; border: 1.5px solid var(--border-strong, var(--border));
+  display: grid; place-items: center; color: #fff;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+}
+.consent__agree:not(.is-locked):hover .consent__box { border-color: var(--accent); }
+.consent__agree input:checked + .consent__box {
+  background: var(--accent); border-color: var(--accent); transform: scale(1.04);
+}
+.consent__agree.is-locked .consent__box { opacity: 0.4; }
+.consent__agree input:focus-visible + .consent__box { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.consent__acts { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 15px; }
+.consent__accept { min-width: 200px; }
+.consent__accept:disabled { opacity: 0.45; cursor: not-allowed; }
+
+@media (prefers-reduced-motion: reduce) {
+  .consent__railfill, .consent__fade, .consent__box { transition: none; }
+}
+
+@media (max-width: 620px) {
+  .consent { max-height: 90vh; }
+  .consent__head, .consent__scroll, .consent__foot { padding-left: 17px; padding-right: 17px; }
+  .consent__summary { grid-template-columns: 1fr; }
+  .consent__acts { flex-direction: column-reverse; align-items: stretch; }
+  .consent__accept { width: 100%; }
+  .consent__jump { right: 14px; }
+}

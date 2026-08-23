@@ -4,15 +4,38 @@
     {
       "name": "web",
       "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
-      "runtimeArgs": ["node_modules/vite/bin/vite.js"],
+      "runtimeArgs": [
+        "node_modules/vite/bin/vite.js"
+      ],
       "port": 1420,
       "autoPort": false
     },
     {
       "name": "backend",
       "runtimeExecutable": "backend/.venv/Scripts/python.exe",
-      "runtimeArgs": ["-m", "uvicorn", "main:app", "--app-dir", "backend", "--port", "8787"],
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "main:app",
+        "--app-dir",
+        "backend",
+        "--port",
+        "8787"
+      ],
       "port": 8787,
+      "autoPort": false
+    },
+    {
+      "name": "landing",
+      "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
+      "runtimeArgs": [
+        "node_modules/vite/bin/vite.js",
+        "WeatherTS Landing Page",
+        "--port",
+        "4173",
+        "--strictPort"
+      ],
+      "port": 4173,
       "autoPort": false
     }
   ]

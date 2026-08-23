@@ -79,6 +79,37 @@ function probColor(dn: number): string {
   return "#C653C6";
 }
 
+/**
+ * Conditional intensity, drawn rather than described.
+ *
+ * SPC publishes these as separate layers -- "Day 1 Tornado Conditional
+ * Intensity" beside "Day 1 Probabilistic Tornado Outlook" -- and this file
+ * only ever asked for the probabilistic half. The legend listed CIG anyway, so
+ * every outlook advertised a thing it never drew.
+ *
+ * The service's own colours for them are black and near-black, which is a
+ * sensible ink for a hatch printed on white paper and invisible over a dark
+ * basemap. These greys replace them; the hatch pattern is what distinguishes a
+ * CIG area from a probability area, not the fill.
+ */
+export const CIG_COLORS: Record<string, string> = {
+  CIG1: "#d1d5db",
+  CIG2: "#9ca3af",
+  CIG3: "#6b7280",
+};
+
+/**
+ * How many groups a product actually has, which is not the same everywhere:
+ * the service declares three for tornado and wind, two for hail and for the
+ * day 3 severe layer. Listing three on all of them advertised a CIG3 that does
+ * not exist for half the outlooks.
+ */
+function cigLegend(groups: 2 | 3): OutlookLegendItem[] {
+  return (["CIG1", "CIG2", "CIG3"] as const)
+    .slice(0, groups)
+    .map((g) => li(g, CIG_COLORS[g], "Conditional intensity"));
+}
+
 function spcColor(label: string, dn: number): string {
   const exact: Record<string, string> = {
     TSTM: "#C1E9C1",
@@ -125,13 +156,20 @@ function normalizeGeojson(data: GeoJSON.FeatureCollection, kind: string): {
     const props = { ...(feature.properties ?? {}) } as Record<string, unknown>;
     const dn = firstNumber(props, ["dn", "prob"]);
     const label = firstString(props, ["label2", "outlook", "label", "cat", "prob"]) ?? "Outlook";
+    // The short label is the group ("CIG1"); label2 is a sentence about it.
+    // `dn` is NOT the group number on these -- a CIG1 polygon arrived with
+    // dn 2 -- so the group has to come from the label.
+    const cigGroup = firstString(props, ["label"]) ?? "";
+    const isCig = /^CIG\d$/.test(cigGroup);
     const featureValid = firstString(props, ["valid", "valid_time", "start_time", "start_date"]);
     const featureExpire = firstString(props, ["expire", "end_time", "end_date"]);
     const color =
       kind === "spc"
-        ? typeof props.fill === "string"
-          ? props.fill
-          : spcColor(label, dn)
+        ? isCig
+          ? (CIG_COLORS[cigGroup] ?? "#9ca3af")
+          : typeof props.fill === "string"
+            ? props.fill
+            : spcColor(label, dn)
         : kind === "wpc"
           ? wpcColor(dn)
           : kind.startsWith("cpc_")
@@ -147,6 +185,10 @@ function normalizeGeojson(data: GeoJSON.FeatureCollection, kind: string): {
         dn,
         label,
         color,
+        // Read by the map module to decide between a wash and a hatch, and
+        // which of the three hatches to use.
+        cig: isCig,
+        cigPattern: isCig ? `cig-hatch-${cigGroup.slice(3)}` : null,
         ...(featureValid ? { valid: featureValid } : {}),
         ...(featureExpire ? { expire: featureExpire } : {}),
       },
@@ -175,8 +217,7 @@ function spcLegend(kind: SpcOutlookType, day: SpcDay): OutlookLegendItem[] {
       li("30%", "#D15F5F", "Probability"),
       li("45%", "#C653C6", "Probability"),
       li("60%", "#912CEE", "Probability"),
-      li("1", "#d1d5db", "CIG"),
-      li("2", "#9ca3af", "CIG"),
+      ...cigLegend(3),
     ];
   }
   if (kind === "wind" || kind === "hail") {
@@ -186,14 +227,21 @@ function spcLegend(kind: SpcOutlookType, day: SpcDay): OutlookLegendItem[] {
       li("30%", "#D15F5F", "Probability"),
       li("45%", "#C653C6", "Probability"),
       li("60%", "#912CEE", "Probability"),
-      li("1", "#d1d5db", "CIG"),
-      li("2", "#9ca3af", "CIG"),
+      // Hail is the one probabilistic product with only two groups.
+      ...cigLegend(kind === "hail" ? 2 : 3),
     ];
   }
   if (day >= 4) {
+    // Days 4-8 are probability only -- the service publishes no conditional
+    // intensity that far out, so promising one in the legend would be a lie.
     return [li("15%", "#E89B38", "Probability"), li("30%", "#D15F5F", "Probability")];
   }
-  return [li("5%", "#BD998A", "Probability"), li("15%", "#E89B38", "Probability"), li("30%", "#D15F5F", "Probability")];
+  return [
+    li("5%", "#BD998A", "Probability"),
+    li("15%", "#E89B38", "Probability"),
+    li("30%", "#D15F5F", "Probability"),
+    ...cigLegend(2),
+  ];
 }
 
 const wpcLegend = () => [li("Marginal", "#38a800"), li("Slight", "#fffe00"), li("Moderate", "#f50000"), li("High", "#ff69c5")];
@@ -222,19 +270,31 @@ async function fetchOutlook(url: string, source: string, kind: string, legend: O
   };
 }
 
-function spcLayer(day: SpcDay, kind: SpcOutlookType): number {
+/**
+ * The service layers an outlook is made of.
+ *
+ * `cig` is the conditional intensity layer that sits beside the probabilistic
+ * one -- a separate layer in the MapServer, which is why fetching only `main`
+ * left it permanently missing. Categorical outlooks have no CIG counterpart,
+ * and neither do days 4 and beyond.
+ */
+function spcLayers(day: SpcDay, kind: SpcOutlookType): { main: number; cig: number | null } {
   if (day === 1) {
-    const layer = { categorical: 1, tornado: 3, hail: 5, wind: 7 }[kind as Exclude<SpcOutlookType, "probabilistic">];
-    if (layer !== undefined) return layer;
+    const pair = { categorical: [1, null], tornado: [3, 2], hail: [5, 4], wind: [7, 6] }[
+      kind as Exclude<SpcOutlookType, "probabilistic">
+    ];
+    if (pair) return { main: pair[0] as number, cig: pair[1] as number | null };
   }
   if (day === 2) {
-    const layer = { categorical: 9, tornado: 11, hail: 13, wind: 15 }[kind as Exclude<SpcOutlookType, "probabilistic">];
-    if (layer !== undefined) return layer;
+    const pair = { categorical: [9, null], tornado: [11, 10], hail: [13, 12], wind: [15, 14] }[
+      kind as Exclude<SpcOutlookType, "probabilistic">
+    ];
+    if (pair) return { main: pair[0] as number, cig: pair[1] as number | null };
   }
-  if (day === 3 && kind === "categorical") return 17;
-  if (day === 3 && kind === "probabilistic") return 19;
-  if (day === 4 && kind === "probabilistic") return 21;
-  if (day === 5 && kind === "probabilistic") return 22;
+  if (day === 3 && kind === "categorical") return { main: 17, cig: null };
+  if (day === 3 && kind === "probabilistic") return { main: 19, cig: 18 };
+  if (day === 4 && kind === "probabilistic") return { main: 21, cig: null };
+  if (day === 5 && kind === "probabilistic") return { main: 22, cig: null };
   throw new Error(`Unsupported SPC outlook: ${kind} Day ${day}`);
 }
 
@@ -264,8 +324,23 @@ function cpcConfig(kind: CpcOutlookType, period: CpcPeriod): {
   };
 }
 
-export function spcOutlook(day: SpcDay, type: SpcOutlookType): Promise<OutlookResponse> {
-  return fetchOutlook(arcgisQueryUrl(SPC_SERVICE, spcLayer(day, type)), "NOAA SPC", "spc", spcLegend(type, day));
+export async function spcOutlook(day: SpcDay, type: SpcOutlookType): Promise<OutlookResponse> {
+  const { main, cig } = spcLayers(day, type);
+  const legend = spcLegend(type, day);
+  const outlook = await fetchOutlook(arcgisQueryUrl(SPC_SERVICE, main), "NOAA SPC", "spc", legend);
+  if (cig === null) return outlook;
+
+  // The conditional intensity layer is empty on most days -- it is only issued
+  // when SPC expects significant severe -- so a failure here must not take the
+  // outlook itself down. An outlook with no hatching is the normal case; an
+  // outlook that failed to load because its optional half did is not.
+  try {
+    const extra = await fetchOutlook(arcgisQueryUrl(SPC_SERVICE, cig), "NOAA SPC", "spc", legend);
+    outlook.geojson.features.push(...extra.geojson.features);
+  } catch {
+    /* keep the probabilities */
+  }
+  return outlook;
 }
 
 export function wpcEro(day: 1 | 2 | 3): Promise<OutlookResponse> {

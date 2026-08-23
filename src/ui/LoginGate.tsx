@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Loader2, WifiOff } from "lucide-react";
 
-import { completeOAuth, graceRemaining, isElectron } from "../lib/auth";
+import { acceptTerms, completeOAuth, graceRemaining, isElectron, needsConsent, signOut } from "../lib/auth";
 import { useAuthStore } from "../store/useAuthStore";
 import { AuthScreen } from "./auth/AuthScreen";
+import { ConsentPanel } from "./auth/ConsentPanel";
 
 function graceLabel(ms: number): string {
   const days = Math.floor(ms / (24 * 60 * 60 * 1000));
@@ -22,8 +23,12 @@ function graceLabel(ms: number): string {
 export function LoginGate({ children }: { children: ReactNode }) {
   const status = useAuthStore((s) => s.status);
   const recovering = useAuthStore((s) => s.recovering);
+  const profile = useAuthStore((s) => s.profile);
+  const refreshProfile = useAuthStore((s) => s.refreshProfile);
   const init = useAuthStore((s) => s.init);
   const [linkError, setLinkError] = useState<string | null>(null);
+  const [savingConsent, setSavingConsent] = useState(false);
+  const [consentError, setConsentError] = useState<string | null>(null);
 
   useEffect(() => init(), [init]);
 
@@ -65,6 +70,43 @@ export function LoginGate({ children }: { children: ReactNode }) {
         )}
         <AuthScreen />
       </>
+    );
+  }
+
+  // The backstop, and the reason the sign-up step is not the only gate.
+  //
+  // An account can come into existence without ever passing that step: the
+  // Google button on the SIGN IN tab creates one when no account matches, and
+  // every account made before this notice existed never saw it. Checking the
+  // profile column here catches all of them, because it asks about the account
+  // rather than about the screen someone happened to arrive through.
+  if (profile && needsConsent(profile)) {
+    return (
+      <div className="gate">
+        <div className="gate__card auth auth--consent auth--consent-solo">
+          {consentError && (
+            <div className="gate__error" role="alert">
+              {consentError}
+            </div>
+          )}
+          <ConsentPanel
+            busy={savingConsent}
+            acceptLabel="Agree and continue"
+            cancelLabel="Sign out"
+            onCancel={() => void signOut()}
+            onAccept={() => {
+              setConsentError(null);
+              setSavingConsent(true);
+              void acceptTerms(profile.id)
+                .then(() => refreshProfile())
+                .catch((e: { message?: string }) =>
+                  setConsentError(e?.message ?? "That could not be saved. Try again?"),
+                )
+                .finally(() => setSavingConsent(false));
+            }}
+          />
+        </div>
+      </div>
     );
   }
 

@@ -1,0 +1,213 @@
+"filename", "language", "JavaScript", "PostCSS", "HTML", "Python", "XML", "JSON with Comments", "TypeScript", "pip requirements", "TypeScript JSX", "Markdown", "JSON", "YAML", "comment", "blank", "total"
+"c:\Users\pablo\Documents\WeatherTS\.claude\launch.json", "JSON with Comments", 0, 0, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0, 1, 43
+"c:\Users\pablo\Documents\WeatherTS\README.md", "Markdown", 0, 0, 0, 0, 0, 0, 0, 0, 0, 133, 0, 0, 0, 39, 172
+"c:\Users\pablo\Documents\WeatherTS\RELEASE_NOTES_1.1.9.md", "Markdown", 0, 0, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 3, 12
+"c:\Users\pablo\Documents\WeatherTS\WeatherTS Landing Page\favicon.svg", "XML", 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 1, 8
+"c:\Users\pablo\Documents\WeatherTS\WeatherTS Landing Page\index.html", "HTML", 0, 0, 411, 0, 0, 0, 0, 0, 0, 0, 0, 0, 36, 51, 498
+"c:\Users\pablo\Documents\WeatherTS\WeatherTS Landing Page\main.js", "JavaScript", 137, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 70, 29, 236
+"c:\Users\pablo\Documents\WeatherTS\WeatherTS Landing Page\styles.css", "PostCSS", 0, 513, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 28, 55, 596
+"c:\Users\pablo\Documents\WeatherTS\backend\README.md", "Markdown", 0, 0, 0, 0, 0, 0, 0, 0, 0, 27, 0, 0, 0, 11, 38
+"c:\Users\pablo\Documents\WeatherTS\backend\acars_core.py", "Python", 0, 0, 0, 275, 0, 0, 0, 0, 0, 0, 0, 0, 60, 54, 389
+"c:\Users\pablo\Documents\WeatherTS\backend\area_sounding.py", "Python", 0, 0, 0, 282, 0, 0, 0, 0, 0, 0, 0, 0, 59, 41, 382
+"c:\Users\pablo\Documents\WeatherTS\backend\fronts_core.py", "Python", 0, 0, 0, 347, 0, 0, 0, 0, 0, 0, 0, 0, 107, 57, 511
+"c:\Users\pablo\Documents\WeatherTS\backend\lsr_core.py", "Python", 0, 0, 0, 284, 0, 0, 0, 0, 0, 0, 0, 0, 61, 38, 383
+"c:\Users\pablo\Documents\WeatherTS\backend\main.py", "Python", 0, 0, 0, 426, 0, 0, 0, 0, 0, 0, 0, 0, 57, 68, 551
+"c:\Users\pablo\Documents\WeatherTS\backend\model_fields.py", "Python", 0, 0, 0, 450, 0, 0, 0, 0, 0, 0, 0, 0, 94, 64, 608
+"c:\Users\pablo\Documents\WeatherTS\backend\nadocast_core.py", "Python", 0, 0, 0, 177, 0, 0, 0, 0, 0, 0, 0, 0, 17, 32, 226
+"c:\Users\pablo\Documents\WeatherTS\backend\nexrad_core.py", "Python", 0, 0, 0, 567, 0, 0, 0, 0, 0, 0, 0, 0, 180, 109, 856
+"c:\Users\pablo\Documents\WeatherTS\backend\nexrad_level2.py", "Python", 0, 0, 0, 388, 0, 0, 0, 0, 0, 0, 0, 0, 156, 66, 610
+"c:\Users\pablo\Documents\WeatherTS\backend\nexrad_storms.py", "Python", 0, 0, 0, 228, 0, 0, 0, 0, 0, 0, 0, 0, 64, 38, 330
+"c:\Users\pablo\Documents\WeatherTS\backend\nexrad_vwp.py", "Python", 0, 0, 0, 154, 0, 0, 0, 0, 0, 0, 0, 0, 32, 23, 209
+"c:\Users\pablo\Documents\WeatherTS\backend\pal_tables.py", "Python", 0, 0, 0, 312, 0, 0, 0, 0, 0, 0, 0, 0, 47, 18, 377
+"c:\Users\pablo\Documents\WeatherTS\backend\probe_openmeteo.py", "Python", 0, 0, 0, 43, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 48
+"c:\Users\pablo\Documents\WeatherTS\backend\raob_core.py", "Python", 0, 0, 0, 299, 0, 0, 0, 0, 0, 0, 0, 0, 89, 57, 445
+"c:\Users\pablo\Documents\WeatherTS\backend\requirements.txt", "pip requirements", 0, 0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 0, 6, 1, 20
+"c:\Users\pablo\Documents\WeatherTS\backend\sharppy_renderer.py", "Python", 0, 0, 0, 573, 0, 0, 0, 0, 0, 0, 0, 0, 108, 123, 804
+"c:\Users\pablo\Documents\WeatherTS\backend\sounding_core.py", "Python", 0, 0, 0, 783, 0, 0, 0, 0, 0, 0, 0, 0, 128, 112, 1023
+"c:\Users\pablo\Documents\WeatherTS\backend\sounding_upload.py", "Python", 0, 0, 0, 85, 0, 0, 0, 0, 0, 0, 0, 0, 20, 19, 124
+"c:\Users\pablo\Documents\WeatherTS\backend\sounding_view.py", "Python", 0, 0, 0, 39, 0, 0, 0, 0, 0, 0, 0, 0, 10, 10, 59
+"c:\Users\pablo\Documents\WeatherTS\backend\spc_md.py", "Python", 0, 0, 0, 230, 0, 0, 0, 0, 0, 0, 0, 0, 89, 56, 375
+"c:\Users\pablo\Documents\WeatherTS\backend\storm_attributes.py", "Python", 0, 0, 0, 282, 0, 0, 0, 0, 0, 0, 0, 0, 86, 58, 426
+"c:\Users\pablo\Documents\WeatherTS\backend\surface_obs.py", "Python", 0, 0, 0, 181, 0, 0, 0, 0, 0, 0, 0, 0, 20, 30, 231
+"c:\Users\pablo\Documents\WeatherTS\backend\test_sharppy.py", "Python", 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0, 0, 7, 12, 61
+"c:\Users\pablo\Documents\WeatherTS\backend\vwp_panel.py", "Python", 0, 0, 0, 504, 0, 0, 0, 0, 0, 0, 0, 0, 79, 92, 675
+"c:\Users\pablo\Documents\WeatherTS\backend\vwp_sounding.py", "Python", 0, 0, 0, 120, 0, 0, 0, 0, 0, 0, 0, 0, 32, 19, 171
+"c:\Users\pablo\Documents\WeatherTS\electron-builder.yml", "YAML", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 40, 9, 1, 50
+"c:\Users\pablo\Documents\WeatherTS\electron\main.js", "JavaScript", 406, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 49, 41, 496
+"c:\Users\pablo\Documents\WeatherTS\electron\preload.cjs", "JavaScript", 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 7, 38
+"c:\Users\pablo\Documents\WeatherTS\index.html", "HTML", 0, 0, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 21
+"c:\Users\pablo\Documents\WeatherTS\main.js", "JavaScript", 242, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 31, 289
+"c:\Users\pablo\Documents\WeatherTS\package-lock.json", "JSON", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6249, 0, 0, 1, 6250
+"c:\Users\pablo\Documents\WeatherTS\package.json", "JSON", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 38, 0, 0, 1, 39
+"c:\Users\pablo\Documents\WeatherTS\public\data\ne_110m_admin_0_countries.geojson", "JSON", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 2
+"c:\Users\pablo\Documents\WeatherTS\public\data\nexrad-sites.json", "JSON", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1
+"c:\Users\pablo\Documents\WeatherTS\public\data\raob-stations.geojson", "JSON", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1
+"c:\Users\pablo\Documents\WeatherTS\public\data\us-places.json", "JSON", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1
+"c:\Users\pablo\Documents\WeatherTS\public\tauri.svg", "XML", 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 1, 7
+"c:\Users\pablo\Documents\WeatherTS\public\vite.svg", "XML", 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+"c:\Users\pablo\Documents\WeatherTS\scripts\build-places.py", "Python", 0, 0, 0, 49, 0, 0, 0, 0, 0, 0, 0, 0, 22, 13, 84
+"c:\Users\pablo\Documents\WeatherTS\scripts\convert-icon.js", "JavaScript", 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 9, 42
+"c:\Users\pablo\Documents\WeatherTS\src\App.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 92, 0, 0, 0, 25, 2, 119
+"c:\Users\pablo\Documents\WeatherTS\src\ErrorBoundary.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 25, 0, 0, 0, 0, 6, 31
+"c:\Users\pablo\Documents\WeatherTS\src\assets\react.svg", "XML", 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+"c:\Users\pablo\Documents\WeatherTS\src\layers\clickPriority.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 0, 0, 16, 5, 34
+"c:\Users\pablo\Documents\WeatherTS\src\layers\geo\graticule.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 24, 0, 0, 0, 0, 0, 7, 4, 35
+"c:\Users\pablo\Documents\WeatherTS\src\layers\geo\terminator.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 46, 0, 0, 0, 0, 0, 7, 11, 64
+"c:\Users\pablo\Documents\WeatherTS\src\layers\index.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 33, 0, 0, 0, 0, 0, 20, 2, 55
+"c:\Users\pablo\Documents\WeatherTS\src\layers\manager.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 80, 0, 0, 0, 0, 0, 31, 9, 120
+"c:\Users\pablo\Documents\WeatherTS\src\layers\modules\acarsLayer.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 240, 0, 0, 0, 0, 0, 23, 22, 285
+"c:\Users\pablo\Documents\WeatherTS\src\layers\modules\alertsLayer.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 208, 0, 0, 0, 0, 0, 76, 27, 311
+"c:\Users\pablo\Documents\WeatherTS\src\layers\modules\boundaries.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 41, 0, 0, 0, 0, 0, 2, 4, 47
+"c:\Users\pablo\Documents\WeatherTS\src\layers\modules\chasersLayer.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 370, 0, 0, 0, 0, 0, 76, 36, 482
+"c:\Users\pablo\Documents\WeatherTS\src\layers\modules\frontsLayer.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 294, 0, 0, 0, 0, 0, 31, 24, 349
+"c:\Users\pablo\Documents\WeatherTS\src\layers\modules\graticule.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 42, 0, 0, 0, 0, 0, 1, 4, 47
+"c:\Users\pablo\Documents\WeatherTS\src\layers\modules\homesLayer.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 261, 0, 0, 0, 0, 0, 26, 30, 317
+"c:\Users\pablo\Documents\WeatherTS\src\layers\modules\lsrLayer.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 194, 0, 0, 0, 0, 0, 31, 21, 246
+"c:\Users\pablo\Documents\WeatherTS\src\layers\modules\mesoscaleLayer.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 171, 0, 0, 0, 0, 0, 78, 22, 271
+"c:\Users\pablo\Documents\WeatherTS\src\layers\modules\mslpLayer.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 223, 0, 0, 0, 0, 0, 17, 23, 263
+"c:\Users\pablo\Documents\WeatherTS\src\layers\modules\nexradLayer.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 214, 0, 0, 0, 0, 0, 32, 20, 266
+"c:\Users\pablo\Documents\WeatherTS\src\layers\modules\outlooksLayer.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 223, 0, 0, 0, 0, 0, 16, 21, 260
+"c:\Users\pablo\Documents\WeatherTS\src\layers\modules\raobLayer.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 115, 0, 0, 0, 0, 0, 14, 12, 141
+"c:\Users\pablo\Documents\WeatherTS\src\layers\modules\surfaceObsLayer.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 532, 0, 0, 0, 0, 0, 42, 30, 604
+"c:\Users\pablo\Documents\WeatherTS\src\layers\modules\terminator.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 49, 0, 0, 0, 0, 0, 4, 6, 59
+"c:\Users\pablo\Documents\WeatherTS\src\layers\modules\vwpLayer.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 143, 0, 0, 0, 0, 0, 16, 16, 175
+"c:\Users\pablo\Documents\WeatherTS\src\layers\nexradGlLayer.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 136, 0, 0, 0, 0, 0, 15, 18, 169
+"c:\Users\pablo\Documents\WeatherTS\src\layers\nexradRing.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 62, 0, 0, 0, 0, 0, 10, 10, 82
+"c:\Users\pablo\Documents\WeatherTS\src\layers\nexradStorms.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 284, 0, 0, 0, 0, 0, 56, 25, 365
+"c:\Users\pablo\Documents\WeatherTS\src\layers\registry.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 4, 5, 24
+"c:\Users\pablo\Documents\WeatherTS\src\layers\types.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 35, 0, 0, 0, 0, 0, 26, 6, 67
+"c:\Users\pablo\Documents\WeatherTS\src\lib\apiConfig.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 16, 0, 0, 0, 0, 0, 10, 7, 33
+"c:\Users\pablo\Documents\WeatherTS\src\lib\auth.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 427, 0, 0, 0, 0, 0, 158, 72, 657
+"c:\Users\pablo\Documents\WeatherTS\src\lib\chasers.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 234, 0, 0, 0, 0, 0, 126, 37, 397
+"c:\Users\pablo\Documents\WeatherTS\src\lib\fronts.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 77, 0, 0, 0, 0, 0, 7, 14, 98
+"c:\Users\pablo\Documents\WeatherTS\src\lib\fullscreen.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 1, 9
+"c:\Users\pablo\Documents\WeatherTS\src\lib\geolocate.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 190, 0, 0, 0, 0, 0, 66, 20, 276
+"c:\Users\pablo\Documents\WeatherTS\src\lib\gifExport.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 559, 0, 0, 0, 0, 0, 71, 89, 719
+"c:\Users\pablo\Documents\WeatherTS\src\lib\lsr.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 138, 0, 0, 0, 0, 0, 23, 16, 177
+"c:\Users\pablo\Documents\WeatherTS\src\lib\measure.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 263, 0, 0, 0, 0, 0, 11, 36, 310
+"c:\Users\pablo\Documents\WeatherTS\src\lib\metar.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 75, 0, 0, 0, 0, 0, 20, 12, 107
+"c:\Users\pablo\Documents\WeatherTS\src\lib\modelFields.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 85, 0, 0, 0, 0, 0, 18, 13, 116
+"c:\Users\pablo\Documents\WeatherTS\src\lib\nexrad.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 305, 0, 0, 0, 0, 0, 47, 33, 385
+"c:\Users\pablo\Documents\WeatherTS\src\lib\nwsAlerts.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 1153, 0, 0, 0, 0, 0, 109, 124, 1386
+"c:\Users\pablo\Documents\WeatherTS\src\lib\outlooks.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 336, 0, 0, 0, 0, 0, 44, 27, 407
+"c:\Users\pablo\Documents\WeatherTS\src\lib\pal.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 178, 0, 0, 0, 0, 0, 45, 24, 247
+"c:\Users\pablo\Documents\WeatherTS\src\lib\photon.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 39, 0, 0, 0, 0, 0, 1, 5, 45
+"c:\Users\pablo\Documents\WeatherTS\src\lib\radarMesh.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 272, 0, 0, 0, 0, 0, 70, 40, 382
+"c:\Users\pablo\Documents\WeatherTS\src\lib\radarUnits.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 85, 0, 0, 0, 0, 0, 29, 11, 125
+"c:\Users\pablo\Documents\WeatherTS\src\lib\releaseNotes.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 84, 0, 0, 0, 0, 0, 19, 7, 110
+"c:\Users\pablo\Documents\WeatherTS\src\lib\skewt.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 303, 0, 0, 0, 0, 0, 83, 46, 432
+"c:\Users\pablo\Documents\WeatherTS\src\lib\soundingApi.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 293, 0, 0, 0, 0, 0, 0, 37, 330
+"c:\Users\pablo\Documents\WeatherTS\src\lib\soundingStorage.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 188, 0, 0, 0, 0, 0, 2, 25, 215
+"c:\Users\pablo\Documents\WeatherTS\src\lib\soundingSummary.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 135, 0, 0, 0, 0, 0, 0, 16, 151
+"c:\Users\pablo\Documents\WeatherTS\src\lib\soundingTools.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 146, 0, 0, 0, 0, 0, 18, 11, 175
+"c:\Users\pablo\Documents\WeatherTS\src\lib\soundingViewer.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 190, 0, 0, 0, 0, 0, 21, 21, 232
+"c:\Users\pablo\Documents\WeatherTS\src\lib\stationPlot.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 110, 0, 0, 0, 0, 0, 11, 18, 139
+"c:\Users\pablo\Documents\WeatherTS\src\lib\stormImpacts.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 89, 0, 0, 0, 0, 0, 30, 22, 141
+"c:\Users\pablo\Documents\WeatherTS\src\lib\surfaceObs.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 57, 0, 0, 0, 0, 0, 8, 7, 72
+"c:\Users\pablo\Documents\WeatherTS\src\lib\theme.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 6, 6, 27
+"c:\Users\pablo\Documents\WeatherTS\src\lib\useDragOffset.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 120, 0, 0, 0, 0, 0, 49, 24, 193
+"c:\Users\pablo\Documents\WeatherTS\src\lib\vwpKinematics.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 184, 0, 0, 0, 0, 0, 50, 18, 252
+"c:\Users\pablo\Documents\WeatherTS\src\lib\weatherCatalog.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 342, 0, 0, 0, 0, 0, 4, 5, 351
+"c:\Users\pablo\Documents\WeatherTS\src\main.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 72, 0, 0, 0, 20, 11, 103
+"c:\Users\pablo\Documents\WeatherTS\src\map\MapPane.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 190, 0, 0, 0, 85, 25, 300
+"c:\Users\pablo\Documents\WeatherTS\src\map\MapView.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 9, 3, 26
+"c:\Users\pablo\Documents\WeatherTS\src\map\basemaps.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 408, 0, 0, 0, 0, 0, 36, 25, 469
+"c:\Users\pablo\Documents\WeatherTS\src\map\mapInstance.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 46, 0, 0, 0, 0, 0, 15, 13, 74
+"c:\Users\pablo\Documents\WeatherTS\src\map\mapStyle.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 6, 2, 14
+"c:\Users\pablo\Documents\WeatherTS\src\store\useAcarsStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 38, 0, 0, 0, 0, 0, 9, 8, 55
+"c:\Users\pablo\Documents\WeatherTS\src\store\useAlertStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 78, 0, 0, 0, 0, 0, 24, 13, 115
+"c:\Users\pablo\Documents\WeatherTS\src\store\useAppStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 179, 0, 0, 0, 0, 0, 18, 21, 218
+"c:\Users\pablo\Documents\WeatherTS\src\store\useAuthStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 95, 0, 0, 0, 0, 0, 17, 17, 129
+"c:\Users\pablo\Documents\WeatherTS\src\store\useCatalogStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 53, 0, 0, 0, 0, 0, 8, 7, 68
+"c:\Users\pablo\Documents\WeatherTS\src\store\useChaserStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 43, 0, 0, 0, 0, 0, 22, 6, 71
+"c:\Users\pablo\Documents\WeatherTS\src\store\useFrontsStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 135, 0, 0, 0, 0, 0, 16, 18, 169
+"c:\Users\pablo\Documents\WeatherTS\src\store\useGifStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 77, 0, 0, 0, 0, 0, 21, 12, 110
+"c:\Users\pablo\Documents\WeatherTS\src\store\useLayoutStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 44, 0, 0, 0, 0, 0, 17, 10, 71
+"c:\Users\pablo\Documents\WeatherTS\src\store\useLsrStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 102, 0, 0, 0, 0, 0, 21, 13, 136
+"c:\Users\pablo\Documents\WeatherTS\src\store\useMesoscaleStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 37, 0, 0, 0, 0, 0, 12, 5, 54
+"c:\Users\pablo\Documents\WeatherTS\src\store\useModelStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 73, 0, 0, 0, 0, 0, 22, 11, 106
+"c:\Users\pablo\Documents\WeatherTS\src\store\useMslpStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 14, 10, 88
+"c:\Users\pablo\Documents\WeatherTS\src\store\useNexradStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 789, 0, 0, 0, 0, 0, 200, 85, 1074
+"c:\Users\pablo\Documents\WeatherTS\src\store\useOnboardingStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 36, 0, 0, 0, 0, 0, 7, 8, 51
+"c:\Users\pablo\Documents\WeatherTS\src\store\useOutlookStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 5, 37
+"c:\Users\pablo\Documents\WeatherTS\src\store\usePaletteStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 108, 0, 0, 0, 0, 0, 15, 17, 140
+"c:\Users\pablo\Documents\WeatherTS\src\store\useSoundingViewStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 68, 0, 0, 0, 0, 0, 12, 10, 90
+"c:\Users\pablo\Documents\WeatherTS\src\store\useSoundingViewerStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 364, 0, 0, 0, 0, 0, 71, 47, 482
+"c:\Users\pablo\Documents\WeatherTS\src\store\useStationStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 27, 0, 0, 0, 0, 0, 12, 6, 45
+"c:\Users\pablo\Documents\WeatherTS\src\store\useStormCellStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 0, 0, 14, 4, 38
+"c:\Users\pablo\Documents\WeatherTS\src\store\useSurfaceObsStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 123, 0, 0, 0, 0, 0, 10, 15, 148
+"c:\Users\pablo\Documents\WeatherTS\src\store\useThemeStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 19, 0, 0, 0, 0, 0, 1, 4, 24
+"c:\Users\pablo\Documents\WeatherTS\src\store\useVwpStore.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 155, 0, 0, 0, 0, 0, 15, 21, 191
+"c:\Users\pablo\Documents\WeatherTS\src\styles\app.css", "PostCSS", 0, 5921, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 233, 157, 6311
+"c:\Users\pablo\Documents\WeatherTS\src\styles\auth.css", "PostCSS", 0, 546, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 29, 34, 609
+"c:\Users\pablo\Documents\WeatherTS\src\styles\sounding.css", "PostCSS", 0, 646, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 36, 71, 753
+"c:\Users\pablo\Documents\WeatherTS\src\styles\storms.css", "PostCSS", 0, 1613, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 84, 31, 1728
+"c:\Users\pablo\Documents\WeatherTS\src\styles\theme.css", "PostCSS", 0, 61, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 38, 3, 102
+"c:\Users\pablo\Documents\WeatherTS\src\types\gifenc.d.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 29, 0, 0, 0, 0, 0, 1, 1, 31
+"c:\Users\pablo\Documents\WeatherTS\src\ui\AlertController.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 152, 0, 0, 0, 48, 19, 219
+"c:\Users\pablo\Documents\WeatherTS\src\ui\AlertPanel.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 590, 0, 0, 0, 28, 48, 666
+"c:\Users\pablo\Documents\WeatherTS\src\ui\AnimationModal.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 304, 0, 0, 0, 11, 24, 339
+"c:\Users\pablo\Documents\WeatherTS\src\ui\BasemapPicker.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 76, 0, 0, 0, 8, 9, 93
+"c:\Users\pablo\Documents\WeatherTS\src\ui\BrandMark.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 1, 1, 14
+"c:\Users\pablo\Documents\WeatherTS\src\ui\ChaserController.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 94, 0, 0, 0, 26, 11, 131
+"c:\Users\pablo\Documents\WeatherTS\src\ui\ChaserPopup.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 130, 0, 0, 0, 22, 16, 168
+"c:\Users\pablo\Documents\WeatherTS\src\ui\DataPanel.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 19, 0, 0, 0, 3, 3, 25
+"c:\Users\pablo\Documents\WeatherTS\src\ui\DayLoadOverlay.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 39, 0, 0, 0, 4, 9, 52
+"c:\Users\pablo\Documents\WeatherTS\src\ui\FrontPopup.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 106, 0, 0, 0, 5, 13, 124
+"c:\Users\pablo\Documents\WeatherTS\src\ui\LayerPower.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 8, 1, 29
+"c:\Users\pablo\Documents\WeatherTS\src\ui\LoginGate.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 0, 12, 9, 83
+"c:\Users\pablo\Documents\WeatherTS\src\ui\LsrCard.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 93, 0, 0, 0, 5, 12, 110
+"c:\Users\pablo\Documents\WeatherTS\src\ui\LsrShape.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 29, 0, 0, 0, 5, 2, 36
+"c:\Users\pablo\Documents\WeatherTS\src\ui\MapTimeline.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 402, 0, 0, 0, 73, 35, 510
+"c:\Users\pablo\Documents\WeatherTS\src\ui\MeasureTool.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 161, 0, 0, 0, 6, 17, 184
+"c:\Users\pablo\Documents\WeatherTS\src\ui\MesoscaleList.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 72, 0, 0, 0, 21, 10, 103
+"c:\Users\pablo\Documents\WeatherTS\src\ui\MesoscalePanel.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 96, 0, 0, 0, 5, 14, 115
+"c:\Users\pablo\Documents\WeatherTS\src\ui\MesoscalePopup.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 92, 0, 0, 0, 16, 13, 121
+"c:\Users\pablo\Documents\WeatherTS\src\ui\ModelBar.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 159, 0, 0, 0, 20, 17, 196
+"c:\Users\pablo\Documents\WeatherTS\src\ui\MslpLegend.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 28, 0, 0, 0, 5, 4, 37
+"c:\Users\pablo\Documents\WeatherTS\src\ui\OutlookControls.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 211, 0, 0, 0, 4, 25, 240
+"c:\Users\pablo\Documents\WeatherTS\src\ui\OutlookLegend.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 78, 0, 0, 0, 0, 10, 88
+"c:\Users\pablo\Documents\WeatherTS\src\ui\QuickStart.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 266, 0, 0, 0, 10, 23, 299
+"c:\Users\pablo\Documents\WeatherTS\src\ui\RadarColorBar.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 79, 0, 0, 0, 22, 10, 111
+"c:\Users\pablo\Documents\WeatherTS\src\ui\RadarHud.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 3, 3, 13
+"c:\Users\pablo\Documents\WeatherTS\src\ui\RadarProductPanel.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 103, 0, 0, 0, 21, 8, 132
+"c:\Users\pablo\Documents\WeatherTS\src\ui\RadarReadout.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 39, 0, 0, 0, 18, 7, 64
+"c:\Users\pablo\Documents\WeatherTS\src\ui\SearchBar.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 125, 0, 0, 0, 2, 9, 136
+"c:\Users\pablo\Documents\WeatherTS\src\ui\StationPanel.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 249, 0, 0, 0, 12, 25, 286
+"c:\Users\pablo\Documents\WeatherTS\src\ui\StatusBar.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 79, 0, 0, 0, 6, 7, 92
+"c:\Users\pablo\Documents\WeatherTS\src\ui\StormCellPanel.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 421, 0, 0, 0, 36, 40, 497
+"c:\Users\pablo\Documents\WeatherTS\src\ui\StormPopup.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 66, 0, 0, 0, 24, 10, 100
+"c:\Users\pablo\Documents\WeatherTS\src\ui\TabsBar.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 68, 0, 0, 0, 0, 6, 74
+"c:\Users\pablo\Documents\WeatherTS\src\ui\TopBar.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 195, 0, 0, 0, 16, 13, 224
+"c:\Users\pablo\Documents\WeatherTS\src\ui\UpdateBanner.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 203, 0, 0, 0, 16, 22, 241
+"c:\Users\pablo\Documents\WeatherTS\src\ui\VwpPanel.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 283, 0, 0, 0, 27, 25, 335
+"c:\Users\pablo\Documents\WeatherTS\src\ui\VwpSharpPanel.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 93, 0, 0, 0, 13, 7, 113
+"c:\Users\pablo\Documents\WeatherTS\src\ui\WhatsNew.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 159, 0, 0, 0, 9, 19, 187
+"c:\Users\pablo\Documents\WeatherTS\src\ui\ZoomControls.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 44, 0, 0, 0, 3, 3, 50
+"c:\Users\pablo\Documents\WeatherTS\src\ui\auth\AccountPanel.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 606, 0, 0, 0, 25, 27, 658
+"c:\Users\pablo\Documents\WeatherTS\src\ui\auth\AuthScreen.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 381, 0, 0, 0, 21, 33, 435
+"c:\Users\pablo\Documents\WeatherTS\src\ui\panels\AcarsView.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 118, 0, 0, 0, 11, 15, 144
+"c:\Users\pablo\Documents\WeatherTS\src\ui\panels\ActiveLayers.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 49, 0, 0, 0, 11, 6, 66
+"c:\Users\pablo\Documents\WeatherTS\src\ui\panels\CatalogTabs.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 164, 0, 0, 0, 13, 13, 190
+"c:\Users\pablo\Documents\WeatherTS\src\ui\panels\CatalogView.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 132, 0, 0, 0, 5, 12, 149
+"c:\Users\pablo\Documents\WeatherTS\src\ui\panels\FrontsView.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 172, 0, 0, 0, 7, 17, 196
+"c:\Users\pablo\Documents\WeatherTS\src\ui\panels\LayersContent.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 167, 0, 0, 0, 15, 14, 196
+"c:\Users\pablo\Documents\WeatherTS\src\ui\panels\LsrView.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 271, 0, 0, 0, 19, 21, 311
+"c:\Users\pablo\Documents\WeatherTS\src\ui\panels\ModelsView.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 132, 0, 0, 0, 3, 13, 148
+"c:\Users\pablo\Documents\WeatherTS\src\ui\panels\PressureView.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 163, 0, 0, 0, 1, 15, 179
+"c:\Users\pablo\Documents\WeatherTS\src\ui\panels\RadarView.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 310, 0, 0, 0, 10, 23, 343
+"c:\Users\pablo\Documents\WeatherTS\src\ui\panels\SettingsContent.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 364, 0, 0, 0, 17, 33, 414
+"c:\Users\pablo\Documents\WeatherTS\src\ui\panels\SoundingPlotOptions.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 155, 0, 0, 0, 15, 8, 178
+"c:\Users\pablo\Documents\WeatherTS\src\ui\panels\SoundingToolTabs.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 303, 0, 0, 0, 12, 21, 336
+"c:\Users\pablo\Documents\WeatherTS\src\ui\panels\SoundingsContent.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 708, 0, 0, 0, 21, 70, 799
+"c:\Users\pablo\Documents\WeatherTS\src\ui\panels\SurfaceObsView.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 257, 0, 0, 0, 2, 19, 278
+"c:\Users\pablo\Documents\WeatherTS\src\ui\sounding\AreaBoxTool.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 128, 0, 0, 0, 30, 22, 180
+"c:\Users\pablo\Documents\WeatherTS\src\ui\sounding\AreaSoundingOverlay.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 99, 0, 0, 0, 17, 15, 131
+"c:\Users\pablo\Documents\WeatherTS\src\ui\sounding\MapContextMenu.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 115, 0, 0, 0, 0, 12, 127
+"c:\Users\pablo\Documents\WeatherTS\src\ui\sounding\SoundingViewer.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 338, 0, 0, 0, 23, 22, 383
+"c:\Users\pablo\Documents\WeatherTS\src\ui\useRadarSample.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 69, 0, 0, 0, 0, 0, 41, 11, 121
+"c:\Users\pablo\Documents\WeatherTS\src\vite-env.d.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2
+"c:\Users\pablo\Documents\WeatherTS\tsconfig.json", "JSON with Comments", 0, 0, 0, 0, 0, 21, 0, 0, 0, 0, 0, 0, 2, 3, 26
+"c:\Users\pablo\Documents\WeatherTS\tsconfig.node.json", "JSON", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 1, 11
+"c:\Users\pablo\Documents\WeatherTS\vite.config.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 46, 0, 0, 0, 0, 0, 14, 2, 62
+"Total", "-", 833, 9300, 429, 7120, 15, 63, 14107, 13, 11029, 169, 6301, 40, 5796, 4519, 59734

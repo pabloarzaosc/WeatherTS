@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ConsentPanel } from "./ConsentPanel";
 import { ArrowLeft, Loader2, MailCheck, Radio, Satellite, Siren, Users, Wind, WifiOff } from "lucide-react";
 
 import {
@@ -15,7 +16,7 @@ import {
 } from "../../lib/auth";
 import { useAuthStore } from "../../store/useAuthStore";
 
-type Mode = "signin" | "signup" | "forgot" | "sent" | "verify" | "reset";
+type Mode = "signin" | "signup" | "forgot" | "sent" | "verify" | "reset" | "consent";
 
 const errText = (e: unknown): string =>
   typeof e === "object" && e && "message" in e
@@ -120,6 +121,11 @@ export function AuthScreen() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // Agreed to on this screen, before the account exists. The profile column is
+  // what the app checks from then on; this only unlocks the form in front of
+  // it, and is deliberately not persisted -- closing the window and coming
+  // back should show the notice again, not a remembered "yes".
+  const [consented, setConsented] = useState(false);
   const first = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -195,6 +201,28 @@ export function AuthScreen() {
     </button>
   );
 
+  // The notice takes the whole card. It is not a paragraph beside a form: it
+  // is the step, and the form does not exist until it is done.
+  if (mode === "consent") {
+    return (
+      <div className="gate">
+        <div className="gate__split">
+          <Intro />
+          <div className="gate__card auth auth--consent">
+            <ConsentPanel
+              onAccept={() => {
+                setConsented(true);
+                setMode("signup");
+              }}
+              onCancel={() => setMode("signin")}
+              cancelLabel="Cancel"
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="gate">
       <div className="gate__split">
@@ -229,7 +257,7 @@ export function AuthScreen() {
                 role="tab"
                 aria-selected={mode === "signup"}
                 className={`auth__tab${mode === "signup" ? " is-on" : ""}`}
-                onClick={() => setMode("signup")}
+                onClick={() => setMode(consented ? "signup" : "consent")}
               >
                 Create account
               </button>

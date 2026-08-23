@@ -1,4 +1,5 @@
 import { createClient, type Session, type User } from "@supabase/supabase-js";
+import { TERMS_VERSION } from "./consent";
 
 /**
  * Accounts: sign-up, sign-in, recovery and the profile behind them.
@@ -114,6 +115,11 @@ export interface Profile {
   homeLon: number | null;
   homeLabel: string | null;
   homePublic: boolean;
+  /** When this account accepted the data notice, and which wording. Null on an
+   *  account that has not -- the app blocks in front of the notice until it
+   *  has, which is what makes the consent real rather than decorative. */
+  termsAcceptedAt: string | null;
+  termsVersion: string | null;
 }
 
 interface ProfileRow {
@@ -128,6 +134,8 @@ interface ProfileRow {
   home_lon: number | null;
   home_label: string | null;
   home_public: boolean;
+  terms_accepted_at: string | null;
+  terms_version: string | null;
 }
 
 const toProfile = (r: ProfileRow): Profile => ({
@@ -142,10 +150,12 @@ const toProfile = (r: ProfileRow): Profile => ({
   homeLon: r.home_lon,
   homeLabel: r.home_label,
   homePublic: r.home_public,
+  termsAcceptedAt: r.terms_accepted_at,
+  termsVersion: r.terms_version,
 });
 
 const PROFILE_COLS =
-  "id, username, display_name, avatar_url, role, active, created_at, home_lat, home_lon, home_label, home_public";
+  "id, username, display_name, avatar_url, role, active, created_at, home_lat, home_lon, home_label, home_public, terms_accepted_at, terms_version";
 
 export async function fetchProfile(uid: string): Promise<Profile | null> {
   const { data } = await supabase
@@ -272,6 +282,31 @@ const PUBLIC_COLS =
   "id, username, display_name, avatar_url, role, stream_url, home_lat, home_lon, home_label";
 
 /** Look up accounts by handle -- the map's directory. */
+/**
+ * Record that this account accepted the data notice.
+ *
+ * Written against the profile rather than kept in the client, because a
+ * consent that only ever existed in React state cannot answer "did they
+ * agree, and to which wording" the day it matters. The version travels with
+ * the timestamp so a later revision can re-ask exactly the people who have
+ * not seen it.
+ */
+export async function acceptTerms(uid: string): Promise<Profile> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ terms_accepted_at: new Date().toISOString(), terms_version: TERMS_VERSION })
+    .eq("id", uid)
+    .select(PROFILE_COLS)
+    .single();
+  if (error) throw readable(error);
+  return toProfile(data as ProfileRow);
+}
+
+/** Whether this profile still owes us an agreement -- never accepted, or
+ *  accepted an older wording than the one now shipping. */
+export const needsConsent = (p: Profile | null): boolean =>
+  !!p && (!p.termsAcceptedAt || p.termsVersion !== TERMS_VERSION);
+
 export async function fetchPublicProfiles(usernames: string[]): Promise<PublicProfile[]> {
   const names = [...new Set(usernames.map((n) => n.toLowerCase()).filter(Boolean))];
   if (!names.length) return [];

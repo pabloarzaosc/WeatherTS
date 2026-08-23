@@ -4270,8 +4270,28 @@ html[data-reduce-motion="true"] *::after {
   background: var(--border);
 }
 
+/* The tiling, which has to be spelled out for every count.
+ *
+ * A grid with no grid-template-columns lays its items out in ONE column, so
+ * "split screen" split nothing: two panes sat one above the other, each the
+ * full width, and the same for four and six. The only column rule in this file
+ * lived inside the phone media query below, which is why the narrow layout
+ * looked right while the desktop one -- the layout this feature exists for --
+ * did not.
+ *
+ * Widths before heights: two map panes compared side by side each keep the
+ * full height of the map area, and a radar scan is wider than it is tall. */
+.map-canvas--panes-1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+.map-canvas--panes-2 { grid-template-columns: repeat(2, 1fr); grid-template-rows: 1fr; }
+.map-canvas--panes-4 { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); }
+.map-canvas--panes-6 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); }
+
 /* a phone can't show 3 columns of map usefully */
 @media (max-width: 820px) {
+  /* ...and at two panes it cannot usefully show two, either: half of a phone
+     width is a strip. Stacked is the one arrangement that leaves each pane a
+     readable shape here, which is why this is the layout the whole file had. */
+  .map-canvas--panes-2 { grid-template-columns: 1fr; grid-template-rows: repeat(2, 1fr); }
   .map-canvas--panes-4,
   .map-canvas--panes-6 { grid-template-columns: 1fr 1fr; grid-template-rows: repeat(3, 1fr); }
 }
