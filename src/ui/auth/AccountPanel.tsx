@@ -149,12 +149,12 @@ export function AccountPanel({ onClose }: { onClose: () => void }) {
   return createPortal(
     // Rendered into <body> rather than where it is written.
     //
-    // The button that opens this lives in the top bar, and the top bar carries
-    // a slide-down animation on `transform` with fill-mode `both` -- so the
-    // transform stays applied forever after it plays. A transformed element
-    // becomes the containing block for `position: fixed` children, which meant
-    // this dialog's "cover the whole window" was really "cover the 44px strip
-    // the top bar occupies". A portal takes it out of that subtree entirely.
+    // The button that opens this lives in the tool dock, and the dock has a
+    // z-index, which makes it a stacking context: a dialog left inside it can
+    // cover the window yet never rise above anything stacked higher than the
+    // dock itself. (Its old home, the top bar, was worse -- a transform left
+    // over from its entrance animation turned "cover the window" into "cover
+    // the 44px strip".) A portal takes it out of that subtree entirely.
     <div className="acct__backdrop" onClick={onClose}>
       <div className="acct" role="dialog" aria-label="Account" onClick={(e) => e.stopPropagation()}>
         <header className="acct__head">

@@ -1,5 +1,7 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
 
+import type { AccountFeature } from "../store/useAccountGate";
+
 export type LayerCategoryId =
   | "alerts"
   | "chasers"
@@ -40,6 +42,12 @@ export interface LayerModule {
   source: string;
   defaultVisible: boolean;
   defaultOpacity: number; // 0..1
+  /**
+   * Set on layers that show people rather than weather. Switching one on
+   * without an account puts up that feature's account prompt instead, and one
+   * already on when a visitor has no account stays off until they sign in.
+   */
+  requiresAccount?: AccountFeature;
 
   /** Add this module's source(s) + map layer(s). May be async (e.g. fetch). */
   addTo(map: MapLibreMap): void | Promise<void>;

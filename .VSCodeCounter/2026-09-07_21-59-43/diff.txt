@@ -1,0 +1,65 @@
+Date : 2026-09-07 21:59:43
+Directory : c:\Users\pablo\Documents\WeatherTS
+Total : 21 files,  2073 codes, 492 comments, 258 blanks, all 2823 lines
+
+Languages
++----------------+------------+------------+------------+------------+------------+
+| language       | files      | code       | comment    | blank      | total      |
++----------------+------------+------------+------------+------------+------------+
+| TypeScript JSX |          9 |        527 |         85 |         54 |        666 |
+| PostCSS        |          3 |        515 |         57 |         48 |        620 |
+| TypeScript     |          5 |        491 |        126 |         43 |        660 |
+| Python         |          2 |        482 |        215 |        108 |        805 |
+| HTML           |          1 |         47 |          7 |          3 |         57 |
+| JavaScript     |          1 |         11 |          2 |          2 |         15 |
++----------------+------------+------------+------------+------------+------------+
+
+Directories
++----------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                                 | files      | code       | comment    | blank      | total      |
++----------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                    |         21 |      2,073 |        492 |        258 |      2,823 |
+| WeatherTS Landing Page                                               |          3 |        182 |         26 |         17 |        225 |
+| backend                                                              |          2 |        482 |        215 |        108 |        805 |
+| src                                                                  |         16 |      1,409 |        251 |        133 |      1,793 |
+| src (Files)                                                          |          1 |          2 |          0 |          0 |          2 |
+| src\layers                                                           |          2 |        172 |         44 |         21 |        237 |
+| src\layers (Files)                                                   |          1 |          2 |          3 |          0 |          5 |
+| src\layers\modules                                                   |          1 |        170 |         41 |         21 |        232 |
+| src\lib                                                              |          2 |        220 |         52 |         10 |        282 |
+| src\map                                                              |          1 |          2 |          2 |          0 |          4 |
+| src\store                                                            |          1 |         99 |         30 |         12 |        141 |
+| src\styles                                                           |          2 |        391 |         40 |         36 |        467 |
+| src\ui                                                               |          7 |        523 |         83 |         54 |        660 |
+| src\ui (Files)                                                       |          2 |         93 |         31 |         12 |        136 |
+| src\ui\auth                                                          |          2 |        222 |         25 |         21 |        268 |
+| src\ui\panels                                                        |          3 |        208 |         27 |         21 |        256 |
++----------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++----------------------------------------------------------------------+----------------+------------+------------+------------+------------+
+| filename                                                             | language       | code       | comment    | blank      | total      |
++----------------------------------------------------------------------+----------------+------------+------------+------------+------------+
+| c:\Users\pablo\Documents\WeatherTS\WeatherTS Landing Page\index.html | HTML           |         47 |          7 |          3 |         57 |
+| c:\Users\pablo\Documents\WeatherTS\WeatherTS Landing Page\main.js    | JavaScript     |         11 |          2 |          2 |         15 |
+| c:\Users\pablo\Documents\WeatherTS\WeatherTS Landing Page\styles.css | PostCSS        |        124 |         17 |         12 |        153 |
+| c:\Users\pablo\Documents\WeatherTS\backend\main.py                   | Python         |         42 |         11 |          7 |         60 |
+| c:\Users\pablo\Documents\WeatherTS\backend\mrms_core.py              | Python         |        440 |        204 |        101 |        745 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\index.ts               | TypeScript     |          2 |          3 |          0 |          5 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\modules\mrmsLayer.ts   | TypeScript     |        170 |         41 |         21 |        232 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\auth.ts                   | TypeScript     |         19 |         14 |          2 |         35 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\consent.ts                | TypeScript     |        201 |         38 |          8 |        247 |
+| c:\Users\pablo\Documents\WeatherTS\src\main.tsx                      | TypeScript JSX |          2 |          0 |          0 |          2 |
+| c:\Users\pablo\Documents\WeatherTS\src\map\MapPane.tsx               | TypeScript JSX |          2 |          2 |          0 |          4 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useMrmsStore.ts         | TypeScript     |         99 |         30 |         12 |        141 |
+| c:\Users\pablo\Documents\WeatherTS\src\styles\app.css                | PostCSS        |        240 |         23 |         18 |        281 |
+| c:\Users\pablo\Documents\WeatherTS\src\styles\auth.css               | PostCSS        |        151 |         17 |         18 |        186 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\LoginGate.tsx              | TypeScript JSX |         34 |          7 |          1 |         42 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\MrmsColorBar.tsx           | TypeScript JSX |         59 |         24 |         11 |         94 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\auth\AuthScreen.tsx        | TypeScript JSX |         21 |          6 |          1 |         28 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\auth\ConsentPanel.tsx      | TypeScript JSX |        201 |         19 |         20 |        240 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\panels\ActiveLayers.tsx    | TypeScript JSX |         24 |          6 |          3 |         33 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\panels\CatalogView.tsx     | TypeScript JSX |          8 |          0 |          0 |          8 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\panels\MrmsView.tsx        | TypeScript JSX |        176 |         21 |         18 |        215 |
+| Total                                                                |                |      2,073 |        492 |        258 |      2,823 |
++----------------------------------------------------------------------+----------------+------------+------------+------------+------------+

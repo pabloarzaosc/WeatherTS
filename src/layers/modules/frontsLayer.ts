@@ -94,10 +94,10 @@ export const frontsLayer: LayerModule = {
   id: "fronts",
   name: "Surface Fronts",
   description:
-    "WPC surface analysis and progs: cold, warm, stationary and occluded fronts, "
-    + "troughs and pressure centres. Scrubs on the timeline.",
+    "Surface fronts and pressure centres: WPC's analysis of North America, and fronts "
+    + "found automatically in a model of your choice for the rest of the world. Scrubs on the timeline.",
   category: "weather",
-  source: "NWS Weather Prediction Center — Coded Surface Bulletin",
+  source: "NWS Weather Prediction Center — Coded Surface Bulletin · open model data",
   defaultVisible: false,
   defaultOpacity: DEFAULT_OPACITY,
 
@@ -269,6 +269,10 @@ export const frontsLayer: LayerModule = {
         strength: props.strength ? String(props.strength) : "",
         pressure: props.pressure != null ? Number(props.pressure) : null,
         lngLat: [e.lngLat.lng, e.lngLat.lat],
+        source: props.source === "wpc" || props.source === "gfs" ? props.source : undefined,
+        chart: props.chart ? String(props.chart) : undefined,
+        model: props.model ? String(props.model) : undefined,
+        validUnix: props.validUnix != null ? Number(props.validUnix) : null,
       });
     };
     const onEnter = () => {
@@ -292,13 +296,17 @@ export const frontsLayer: LayerModule = {
     };
 
     // The frame on screen is chosen by the timeline, so redraw whenever the
-    // selection, the frame list or the type filters change.
+    // selection, the frame list, the type filters or the regions change.
     const unsub = useFrontsStore.subscribe((s, prev) => {
       if (
         s.index !== prev.index ||
         s.frames !== prev.frames ||
         s.kinds !== prev.kinds ||
-        s.showCentres !== prev.showCentres
+        s.showCentres !== prev.showCentres ||
+        s.regions !== prev.regions ||
+        s.regionSources !== prev.regionSources ||
+        s.bySource !== prev.bySource ||
+        s.axis !== prev.axis
       ) {
         push();
       }

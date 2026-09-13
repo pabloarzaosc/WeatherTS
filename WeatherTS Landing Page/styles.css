@@ -654,3 +654,95 @@ a:focus-visible, button:focus-visible, input:focus-visible {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ─────────────  THE PEOPLE  ───────────── */
+.people__label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-mut);
+  text-align: center;
+  margin: 44px 0 18px;
+}
+
+.people {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+  gap: 12px;
+}
+/* Five people: three and two reads as a group, four and one reads as somebody
+   left over. Capped rather than left to auto-fit for that reason alone. */
+/* Four testers: four across on a wide screen, two and two when it narrows.
+   Both split evenly, which is the whole reason this is pinned rather than
+   left to auto-fit. */
+@media (min-width: 900px) {
+  .people {
+    grid-template-columns: repeat(4, 1fr);
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+}
+
+.person {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 15px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.person:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+
+.person__face {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  /* The avatars are not all the same aspect: cover crops rather than squashes,
+     which is the one distortion a face never survives. */
+  object-fit: cover;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.person__who { display: grid; gap: 1px; min-width: 0; }
+.person__name {
+  font-size: 0.92rem;
+  color: var(--ink);
+  /* A long handle must not push the card wider than its column. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.person__role { font-size: 0.76rem; color: var(--ink-mut); }
+.person__nick {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--ink-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.person__nick svg { flex: 0 0 auto; color: #5865F2; }
+
+/* The creator's handle, under his own paragraph rather than in the grid --
+   the credit above IS the bigger one, and repeating him as one card among
+   five made it smaller, not larger. */
+.credits__handle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--ink-dim);
+}
+.credits__handle svg { color: #5865F2; }

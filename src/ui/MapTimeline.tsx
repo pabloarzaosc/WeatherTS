@@ -9,6 +9,8 @@ import { selectCurrentModel, useModelStore } from "../store/useModelStore";
 import { useMslpStore } from "../store/useMslpStore";
 import { useLsrStore } from "../store/useLsrStore";
 import { useFrontsStore } from "../store/useFrontsStore";
+import { useObsStore } from "../store/useObsStore";
+import { useSatStore } from "../store/useSatStore";
 
 /** Stable empty array so the selector doesn't rerender on every store tick. */
 const NO_HOURS: number[] = [];
@@ -89,6 +91,14 @@ export function MapTimeline() {
   const radarArchiveDay = useNexradStore((s) => s.archiveDate);
   // Model fields (pressure today, more later) scrub forecast hours on this same
   // timeline rather than carrying a second slider of their own.
+  const satVisible = useAppStore((s) => s.layers["satellite"]?.visible ?? false);
+  const satFrames = useSatStore((s) => s.frames);
+  const satIndex = useSatStore((s) => s.index);
+  const satBusy = useSatStore((s) => s.busy);
+  const obsVisible = useAppStore((s) => s.layers["observations"]?.visible ?? false);
+  const obsFrames = useObsStore((s) => s.frames);
+  const obsIndex = useObsStore((s) => s.index);
+  const obsBusy = useObsStore((s) => s.busy);
   const lsrVisible = useAppStore((s) => s.layers["lsr"]?.visible ?? false);
   const frontsVisible = useAppStore((s) => s.layers["fronts"]?.visible ?? false);
   const frontFrames = useFrontsStore((s) => s.frames);
@@ -112,17 +122,23 @@ export function MapTimeline() {
   // What drives the timeline: an open sounding wins; then radar scans (the
   // live product); then a model field; else the closed sounding axis.
   const isRadar = !open && radarVisible && radarScans.length > 0;
-  const isModel = !open && !isRadar && mslpVisible && modelHours.length > 0;
+  // The analyses are an observed product like radar, and their hours ARE the
+  // axis -- so they take it before any forecast clock does.
+  // Satellite next: its frames are minutes apart, finer than any analysis, so
+  // when both are on the loop is the axis and the analysis follows it.
+  const isSat = !open && !isRadar && satVisible && satFrames.length > 0;
+  const isObs = !open && !isRadar && !isSat && obsVisible && obsFrames.length > 0;
+  const isModel = !open && !isRadar && !isSat && !isObs && mslpVisible && modelHours.length > 0;
   // Storm reports drive the axis only when nothing more specific does; the rest
   // of the time they FOLLOW whatever does (see the sync effect below), which is
   // what keeps every product on one clock.
-  const isLsr = !open && !isRadar && !isModel && lsrVisible;
+  const isLsr = !open && !isRadar && !isSat && !isObs && !isModel && lsrVisible;
   // Fronts drive the axis when nothing more specific does; the frames ARE the
   // axis (3-hourly analyses plus the 12 h and 24 h progs), so there is no grid
   // to invent.
   const isFronts =
-    !open && !isRadar && !isModel && !isLsr && frontsVisible && frontFrames.length > 0;
-  const active = open || isRadar || isModel || isLsr || isFronts;
+    !open && !isRadar && !isSat && !isObs && !isModel && !isLsr && frontsVisible && frontFrames.length > 0;
+  const active = open || isRadar || isSat || isObs || isModel || isLsr || isFronts;
   // Which axis the closed viewer would use. Area soundings scrub forecast hours
   // exactly like a point sounding, so only RAOB (and ACARS, which is observed)
   // need the observation axis.
@@ -135,6 +151,13 @@ export function MapTimeline() {
   if (isRadar) {
     times = radarScans.map((s) => s.time);
     maxHour = Math.max(radarScans.length - 1, 0);
+  } else if (isSat) {
+    times = satFrames.map((f) => f.unix);
+    maxHour = Math.max(satFrames.length - 1, 0);
+  } else if (isObs) {
+    // The analysis hours the server still holds, oldest first.
+    times = obsFrames.map((f) => f.unix);
+    maxHour = Math.max(obsFrames.length - 1, 0);
   } else if (isModel) {
     // Forecast hours become real clock times off the run, so the readout and
     // NOW behave the same as they do for every other context.
@@ -169,7 +192,11 @@ export function MapTimeline() {
     Math.min(
       isRadar
         ? radarIndex
-        : isModel
+        : isSat
+          ? Math.max(satIndex, 0)
+          : isObs
+          ? Math.max(obsIndex, 0)
+          : isModel
           ? modelIndex
           : isLsr
             ? lsrIndex
@@ -181,7 +208,7 @@ export function MapTimeline() {
   );
   const selectedUnix = times ? times[value] ?? null : null;
   const canPlay =
-    isRadar || isModel || isLsr || isFronts
+    isRadar || isSat || isObs || isModel || isLsr || isFronts
       ? maxHour > 0
       : active && !!data && maxHour > 0;
 
@@ -221,16 +248,31 @@ export function MapTimeline() {
     useFrontsStore.getState().goToUnix(isRadar || isModel || open ? selectedUnix : null);
   }, [frontsVisible, isFronts, isRadar, isModel, open, selectedUnix]);
 
+  // Satellite and the analyses are observed too: while something else drives
+  // the axis they park on the frame nearest the instant on screen, so a radar
+  // loop scrubbed back to 21Z shows the 21Z visible and the 21Z analysis.
+  useEffect(() => {
+    if (!satVisible || isSat) return;
+    useSatStore.getState().goToUnix(isRadar || isObs ? selectedUnix : null);
+  }, [satVisible, isSat, isRadar, isObs, selectedUnix]);
+
+  useEffect(() => {
+    if (!obsVisible || isObs) return;
+    if (isRadar || isSat) useObsStore.getState().goToUnix(selectedUnix);
+  }, [obsVisible, isObs, isRadar, isSat, selectedUnix]);
+
   useEffect(() => {
     if (!lsrVisible || isLsr) return;
-    const follows = isRadar;
+    const follows = isRadar || isSat || isObs;
     useLsrStore.getState().setEndUnix(follows ? selectedUnix : null);
-  }, [lsrVisible, isLsr, isRadar, selectedUnix]);
+  }, [lsrVisible, isLsr, isRadar, isSat, isObs, selectedUnix]);
 
 
   const scrub = (h: number) => {
     const clamped = Math.max(0, Math.min(h, maxHour));
     if (isRadar) void useNexradStore.getState().showIndex(clamped);
+    else if (isSat) useSatStore.getState().setIndex(clamped);
+    else if (isObs) useObsStore.getState().setIndex(clamped);
     else if (isModel) useModelStore.getState().setHour(modelHours[clamped] ?? 0);
     else if (isLsr) useLsrStore.getState().setEndUnix(times?.[clamped] ?? null);
     else if (isFronts) useFrontsStore.getState().setIndex(clamped);
@@ -238,7 +280,7 @@ export function MapTimeline() {
     else setPreselectHour(clamped);
   };
   const step = (delta: number) => {
-    if (isRadar || isModel || isLsr || isFronts) scrub(value + delta);
+    if (isRadar || isSat || isObs || isModel || isLsr || isFronts) scrub(value + delta);
     else if (open) stepHour(delta);
     else scrub(value + delta);
   };
@@ -372,6 +414,32 @@ export function MapTimeline() {
       }
     }
 
+    // Satellite and the analyses step, then hold until the frame is on the map:
+    // a loop must never run ahead of what is drawn.
+    async function runFrames(
+      read: () => { index: number; length: number; busy: boolean },
+      go: (i: number) => void,
+      dwell: number,
+    ) {
+      while (!cancelled) {
+        await wait(dwell / speed);
+        if (cancelled) return;
+        const { index, length } = read();
+        if (length === 0) return;
+        const atEnd = index >= length - 1;
+        if (atEnd && !loop) {
+          setPlaying(false);
+          return;
+        }
+        go(atEnd ? 0 : index + 1);
+        await wait(60);
+        for (let k = 0; k < 300 && read().busy; k++) {
+          if (cancelled) return;
+          await wait(50);
+        }
+      }
+    }
+
     // Fronts step frame by frame; each is already in memory, so the only wait
     // is the paint.
     async function runFronts() {
@@ -390,6 +458,24 @@ export function MapTimeline() {
 
     void (isRadar
       ? runRadar()
+      : isSat
+        ? runFrames(
+            () => {
+              const s = useSatStore.getState();
+              return { index: s.index, length: s.frames.length, busy: s.busy };
+            },
+            (i) => useSatStore.getState().setIndex(i),
+            350,
+          )
+      : isObs
+        ? runFrames(
+            () => {
+              const s = useObsStore.getState();
+              return { index: s.index, length: s.frames.length, busy: s.busy };
+            },
+            (i) => useObsStore.getState().setIndex(i),
+            500,
+          )
       : isModel
         ? runModel()
           : isLsr
@@ -400,7 +486,7 @@ export function MapTimeline() {
     return () => {
       cancelled = true;
     };
-  }, [playing, speed, loop, canPlay, isRadar, isModel, isLsr, isFronts, gotoPlaybackHour, setPendingHour]);
+  }, [playing, speed, loop, canPlay, isRadar, isSat, isObs, isModel, isLsr, isFronts, gotoPlaybackHour, setPendingHour]);
 
   // Stop playing if the context can no longer play (e.g. viewer closed).
   useEffect(() => {
@@ -419,7 +505,8 @@ export function MapTimeline() {
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const chip = isRadar
+  // Observed products read as a clock time, not a forecast hour.
+  const chip = isRadar || isSat || isObs
     ? fmtScan(selectedUnix)
     : isModel
       ? `F${String(modelHour).padStart(3, "0")}`
@@ -432,7 +519,11 @@ export function MapTimeline() {
         : `F${String(value).padStart(3, "0")}`;
   const rendering = isRadar
     ? radarLoading
-    : isModel
+    : isSat
+      ? satBusy
+    : isObs
+      ? obsBusy
+      : isModel
       ? modelBusy
       : isLsr
         ? lsrBusy

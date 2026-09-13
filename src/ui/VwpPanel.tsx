@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, Loader2, Maximize2, Minimize2, Wind, X } from "lucide-react";
+import { Select } from "./Select";
 
 import { windBarb } from "../lib/skewt";
 import type { VwpLevel } from "../lib/nexrad";
@@ -129,17 +130,13 @@ export function VwpPanel() {
           </div>
         </div>
         <div className="vwp__headbtns">
-          <select
-            value={columns}
-            onChange={(e) => setColumns(Number(e.target.value))}
-            title="How many volume scans the display covers"
-          >
-            {VWP_COLUMN_CHOICES.map((n) => (
-              <option key={n} value={n}>
-                {n} vols
-              </option>
-            ))}
-          </select>
+          <Select
+            className="vwp__cols"
+            value={String(columns)}
+            onChange={(value) => setColumns(Number(value))}
+            aria-label="How many volume scans the display covers"
+            options={VWP_COLUMN_CHOICES.map((n) => ({ value: String(n), label: `${n} vols` }))}
+          />
           {busy && <Loader2 size={14} className="spin" />}
           <button
             type="button"

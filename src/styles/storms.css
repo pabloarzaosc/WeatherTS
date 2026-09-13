@@ -29,7 +29,7 @@
   gap: 6px;
   padding: 5px 7px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-faint);
   font-size: 11px;
@@ -50,6 +50,7 @@
 }
 .lsrv__cat b {
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-size: 10px;
   font-weight: 600;
 }
@@ -72,7 +73,7 @@
   width: 100%;
   padding: 6px 8px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: transparent;
   text-align: left;
   transition: background-color var(--t) var(--ease);
@@ -100,6 +101,7 @@
   grid-area: age;
   align-self: center;
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-size: 10px;
   color: var(--text-faint);
 }
@@ -120,8 +122,6 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--panel);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
   box-shadow: var(--shadow);
   /* Above the sounding viewer (40): the report card is a transient detail the
      user just asked for, so it must not open behind a panel that happens to be
@@ -146,6 +146,7 @@
 .lsrcard__mag {
   margin-left: 8px;
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-size: 12px;
   color: var(--text);
 }
@@ -163,7 +164,7 @@
   margin-left: 8px;
   padding: 1px 7px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-chip);
   font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -205,6 +206,7 @@
   text-align: right;
   color: var(--text);
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -251,8 +253,6 @@
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--panel);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
   box-shadow: var(--shadow);
   animation: fade-up 0.12s var(--ease-out) both;
 }
@@ -265,6 +265,7 @@
 .stormpop__head b {
   font-size: 12.5px;
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
 }
 .stormpop__head button {
   border: 0;
@@ -307,8 +308,6 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--panel);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
   box-shadow: var(--shadow);
   z-index: 26;
   animation: fade-up 0.16s var(--ease-out) both;
@@ -371,6 +370,7 @@
   font-size: 10.5px;
   color: var(--text-faint);
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
 }
 .vwp__headbtns {
   display: flex;
@@ -380,7 +380,7 @@
 .vwp__headbtns select {
   padding: 3px 6px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--panel-2);
   color: var(--text-dim);
   font-size: 11px;
@@ -400,7 +400,7 @@
   margin: 10px 12px;
   padding: 8px 11px;
   border: 1px solid var(--danger-border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--danger-soft);
   color: var(--danger);
   font-size: 12px;
@@ -463,6 +463,7 @@
   fill: #e8eef7;
   font-size: 9.5px;
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-weight: 700;
   letter-spacing: 0.04em;
 }
@@ -470,18 +471,21 @@
   fill: #e8eef7;
   font-size: 9.5px;
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   text-anchor: end;
 }
 .vwpc__time {
   fill: #e8eef7;
   font-size: 9px;
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   text-anchor: middle;
 }
 .vwpc__nd {
   fill: rgba(190, 203, 219, 0.62);
   font-size: 8.5px;
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   text-anchor: middle;
 }
 .vwp__hoverdot {
@@ -525,6 +529,7 @@
   margin: 0;
   text-align: right;
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
 }
 .vwp__readout dd small {
   color: var(--text-faint);
@@ -585,7 +590,7 @@
   width: 100%;
   padding: 6px 8px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-dim);
   font-size: 11.5px;
@@ -596,6 +601,7 @@
 .lsrv__refbtn b {
   margin-left: auto;
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-size: 10px;
   color: var(--text-faint);
 }
@@ -615,8 +621,6 @@
   margin: 0 0 4px;
   font-size: 9.5px;
   font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--text-faint);
 }
 .lsrv__ref h5 svg { flex: none; }
@@ -631,9 +635,10 @@
   height: 16px;
   display: grid;
   place-items: center;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: rgba(190, 200, 210, 0.12);
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-size: 9.5px;
   color: var(--text-dim);
 }
@@ -659,7 +664,7 @@
   width: 100%;
   padding: 6px 8px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-dim);
   font-size: 11.5px;
@@ -683,9 +688,10 @@
   flex: none;
   min-width: 22px;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-chip);
   background: rgba(190, 200, 210, 0.14);
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-size: 10px;
   font-weight: 700;
   text-align: center;
@@ -717,7 +723,7 @@
   gap: 8px;
   padding: 4px 7px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-faint);
   font-size: 11.5px;
@@ -741,9 +747,10 @@
   flex: none;
   min-width: 20px;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-chip);
   background: rgba(190, 200, 210, 0.14);
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-size: 10px;
   text-align: center;
 }
@@ -782,8 +789,6 @@
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--panel);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
   box-shadow: var(--shadow);
   animation: fade-up 0.12s var(--ease-out) both;
   overflow: hidden;
@@ -878,7 +883,7 @@
   max-height: 86vh;
   overflow-y: auto;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius);
   background: var(--panel-solid);
   box-shadow: var(--shadow);
   animation: fade-up var(--t) var(--ease-out) both;
@@ -897,6 +902,7 @@
 }
 .scp__head b {
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-size: 16px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -905,6 +911,7 @@
   margin-left: 8px;
   color: var(--text-faint);
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-size: 11px;
 }
 .scp__head button {
@@ -914,7 +921,7 @@
   width: 27px;
   height: 27px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-dim);
 }
@@ -936,7 +943,7 @@
   gap: 8px;
   margin: 14px 16px 0;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--panel-2);
   font-size: 12.5px;
   font-weight: 600;
@@ -944,7 +951,7 @@
 .scp__tvs {
   margin-left: auto;
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-chip);
   background: rgba(240, 23, 158, 0.14);
   border: 1px solid rgba(240, 23, 158, 0.45);
   color: #f0179e;
@@ -967,13 +974,12 @@
   color: var(--text-dim);
   font-size: 10px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
 }
 .scp__count {
   margin-left: auto;
   color: var(--text-faint);
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -988,10 +994,11 @@
 .scp__rangebtn {
   padding: 3px 9px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-faint);
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-size: 10px;
 }
 .scp__rangebtn:hover {
@@ -1000,7 +1007,7 @@
 .scp__rangebtn.is-on {
   border-color: transparent;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 /* auto-fit rather than a fixed count: the hail row has three tiles and the
    structure row five, and both should fill the width without their own rule */
@@ -1015,7 +1022,7 @@
   gap: 2px;
   padding: 7px 9px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: rgba(var(--wash-rgb), 0.03);
 }
 .scp__tile span {
@@ -1024,6 +1031,7 @@
 }
 .scp__tile b {
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-size: 13px;
   font-weight: 700;
 }
@@ -1039,7 +1047,7 @@
   gap: 4px;
   padding: 4px 9px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-chip);
   background: transparent;
   color: var(--text-dim);
   font-size: 11px;
@@ -1051,7 +1059,7 @@
 .scp__metric.is-on {
   border-color: transparent;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 /* Trend arrows keep meaning on the selected chip, so they are tinted by
    direction rather than inheriting the chip's own colour. */
@@ -1081,12 +1089,14 @@
 .scp__ylab {
   fill: var(--text-faint);
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-size: 9px;
   text-anchor: end;
 }
 .scp__xlab {
   fill: var(--text-faint);
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-size: 9px;
 }
 .scp__unit {
@@ -1102,7 +1112,7 @@
   gap: 7px;
   padding: 14px 12px;
   border: 1px dashed var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius);
   color: var(--text-faint);
   font-size: 11.5px;
   line-height: 1.45;
@@ -1129,7 +1139,7 @@ html[data-reduce-motion="true"] .scp__spin {
   width: 100%;
   padding: 6px 8px;
   border: 1px solid var(--accent-ring);
-  border-radius: 7px;
+  border-radius: var(--radius);
   background: var(--accent-soft);
   color: var(--accent-text);
   font-size: 11.5px;
@@ -1155,6 +1165,7 @@ html[data-reduce-motion="true"] .scp__spin {
   margin: 0;
   text-align: right;
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
 }
 .scp__meso {
   display: flex;
@@ -1163,7 +1174,7 @@ html[data-reduce-motion="true"] .scp__spin {
   margin: 10px 16px 0;
   padding: 7px 10px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--panel-2);
   color: var(--text-dim);
   font-size: 11.5px;
@@ -1185,7 +1196,7 @@ html[data-reduce-motion="true"] .scp__spin {
   align-items: baseline;
   gap: 10px;
   padding: 5px 9px;
-  border-radius: 7px;
+  border-radius: var(--radius);
   background: var(--panel-2);
   font-size: 11.5px;
 }
@@ -1198,6 +1209,7 @@ html[data-reduce-motion="true"] .scp__spin {
 .scp__towndist {
   color: var(--text-faint);
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-size: 10.5px;
 }
 .scp__towneta {
@@ -1205,6 +1217,7 @@ html[data-reduce-motion="true"] .scp__spin {
   text-align: right;
   color: var(--accent-text);
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-weight: 700;
 }
 .scp__alerts {
@@ -1218,7 +1231,7 @@ html[data-reduce-motion="true"] .scp__spin {
 .scp__alerts li {
   padding: 6px 9px;
   border-left: 3px solid var(--danger);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--panel-2);
   font-size: 11.5px;
   font-weight: 600;
@@ -1229,7 +1242,7 @@ html[data-reduce-motion="true"] .scp__spin {
   gap: 5px;
   padding: 5px 9px;
   border: 1px solid var(--accent-ring);
-  border-radius: 7px;
+  border-radius: var(--radius);
   background: var(--accent-soft);
   color: var(--accent-text);
   font-size: 11.5px;
@@ -1255,8 +1268,6 @@ html[data-reduce-motion="true"] .scp__spin {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--panel);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
   box-shadow: var(--shadow);
   animation: fade-up 0.12s var(--ease-out) both;
 }
@@ -1298,14 +1309,12 @@ html[data-reduce-motion="true"] .scp__spin {
   margin-bottom: 7px;
   padding: 2px 7px;
   border: 1px solid rgba(245, 165, 36, 0.45);
-  border-radius: 999px;
+  border-radius: var(--radius-chip);
   background: rgba(245, 165, 36, 0.14);
   color: #f5a524;
   font-size: 9.5px;
   font-weight: 700;
-  letter-spacing: 0.05em;
   text-align: center;
-  text-transform: uppercase;
 }
 .chpop__motion {
   display: flex;
@@ -1313,7 +1322,7 @@ html[data-reduce-motion="true"] .scp__spin {
   gap: 7px;
   padding: 5px 8px;
   margin-bottom: 7px;
-  border-radius: 7px;
+  border-radius: var(--radius);
   background: var(--panel-2);
   font-size: 11.5px;
   font-weight: 600;
@@ -1332,6 +1341,7 @@ html[data-reduce-motion="true"] .scp__spin {
   margin: 0;
   text-align: right;
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
 }
 /* A stale reading is still shown, but never as though it were current. */
 .chpop__rows dd.is-stale {
@@ -1349,7 +1359,7 @@ html[data-reduce-motion="true"] .scp__spin {
   gap: 5px;
   padding: 5px 8px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-dim);
   font-size: 11px;
@@ -1400,8 +1410,6 @@ html[data-reduce-motion="true"] .scp__spin {
   border: 1px solid var(--md-accent);
   border-radius: var(--radius-sm);
   background: var(--panel);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
   box-shadow: var(--shadow);
   animation: fade-up 0.12s var(--ease-out) both;
 }
@@ -1413,18 +1421,17 @@ html[data-reduce-motion="true"] .scp__spin {
 }
 .mdpop__head b {
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-size: 13px;
   color: var(--md-accent);
 }
 .mdpop__tag {
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-chip);
   border: 1px solid var(--md-accent);
   color: var(--md-accent);
   font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 .mdpop__head button {
   margin-left: auto;
@@ -1466,7 +1473,7 @@ html[data-reduce-motion="true"] .scp__spin {
   width: 100%;
   padding: 6px 8px;
   border: 1px solid var(--md-accent);
-  border-radius: 7px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--md-accent);
   font-size: 11.5px;
@@ -1498,7 +1505,7 @@ html[data-reduce-motion="true"] .scp__spin {
   padding: 0 0 16px;
   border: 1px solid var(--border);
   border-top: 3px solid var(--md-accent);
-  border-radius: 14px;
+  border-radius: var(--radius);
   background: var(--panel-solid);
   box-shadow: var(--shadow);
   animation: fade-up var(--t) var(--ease-out) both;
@@ -1522,13 +1529,11 @@ html[data-reduce-motion="true"] .scp__spin {
 .mdrep__tag {
   margin-left: 9px;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-chip);
   border: 1px solid var(--md-accent);
   color: var(--md-accent);
   font-size: 9.5px;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 .mdrep__head button {
   flex: none;
@@ -1537,7 +1542,7 @@ html[data-reduce-motion="true"] .scp__spin {
   width: 27px;
   height: 27px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-dim);
 }
@@ -1568,8 +1573,6 @@ html[data-reduce-motion="true"] .scp__spin {
   color: var(--text-dim);
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
 }
 .mdrep__sec p {
   margin: 0;
@@ -1583,10 +1586,11 @@ html[data-reduce-motion="true"] .scp__spin {
   margin: 0;
   padding: 10px 11px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--panel-2);
   color: var(--text-dim);
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-size: 11px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -1603,7 +1607,7 @@ html[data-reduce-motion="true"] .scp__spin {
   gap: 5px;
   padding: 6px 10px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-dim);
   font-size: 11.5px;
@@ -1662,6 +1666,7 @@ html[data-reduce-motion="true"] .scp__spin {
 }
 .mdlist__id {
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-weight: 700;
   color: var(--md-accent);
 }
@@ -1672,6 +1677,7 @@ html[data-reduce-motion="true"] .scp__spin {
 }
 .mdlist__time {
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   font-size: 10px;
   color: var(--text-faint);
 }
@@ -1705,14 +1711,13 @@ html[data-reduce-motion="true"] .scp__spin {
   gap: 1px;
   padding: 5px 9px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius);
   background: var(--panel);
-  backdrop-filter: blur(14px) saturate(1.2);
-  -webkit-backdrop-filter: blur(14px) saturate(1.2);
   box-shadow: var(--shadow);
   /* Never intercept a click meant for the map underneath. */
   pointer-events: none;
   font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
   line-height: 1.25;
   white-space: nowrap;
 }

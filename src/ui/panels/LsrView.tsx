@@ -3,6 +3,7 @@ import { AlertTriangle, ChevronDown, ChevronRight, Loader2 } from "lucide-react"
 
 import { useAppStore } from "../../store/useAppStore";
 import { LayerPower } from "../LayerPower";
+import { Select } from "../Select";
 import {
   LSR_CATEGORIES,
   LSR_LABELS,
@@ -160,13 +161,12 @@ export function LsrView() {
         <span className="sfcobs__label">
           Window{endUnix != null ? " — following the timeline" : " — ending now"}
         </span>
-        <select value={hours} onChange={(e) => setHours(Number(e.target.value) as never)}>
-          {LSR_WINDOWS.map((h) => (
-            <option key={h} value={h}>
-              last {h} h
-            </option>
-          ))}
-        </select>
+        <Select
+          value={String(hours)}
+          onChange={(value) => setHours(Number(value) as never)}
+          aria-label="Time window"
+          options={LSR_WINDOWS.map((h) => ({ value: String(h), label: `last ${h} h` }))}
+        />
       </label>
 
       <div className="sfcobs__section">

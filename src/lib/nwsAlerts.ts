@@ -150,6 +150,9 @@ const STATE_FIPS: Record<string, string> = {
 
 function activeAlertsUrl(query: ActiveAlertQuery = {}): string {
   const url = new URL(`${NWS_ALERTS_URL}/active`);
+  // The live feed carries the NWS's own "Test Message" products alongside the
+  // real ones -- measured one in 255 -- and they are not weather.
+  url.searchParams.set("status", "actual");
   if (query.area) url.searchParams.set("area", query.area.trim().toUpperCase());
   if (query.event) url.searchParams.set("event", query.event.trim());
   if (query.point) {
@@ -244,7 +247,14 @@ const ISSUE_LOOKBACK_S = 12 * 3600;
 const MAX_ARCHIVE_PAGES = 6;
 
 function parseAlertFeatures(features: RawFeature[] | undefined): AlertFeature[] {
-  return (features ?? []).map((f) => {
+  // The requests already ask for status=actual; this holds if a proxy or a
+  // cached answer ever drops the parameter. Exercise, System and Test messages
+  // never belong on the map.
+  const real = (features ?? []).filter((f) => {
+    const status = str(f.properties?.status);
+    return !status || status === "Actual";
+  });
+  return real.map((f) => {
     const p = (f.properties ?? {}) as Record<string, unknown>;
     const alert: NwsAlert = {
       id: str(p.id) || str(f.id) || `${str(p.event)}-${str(p.sent)}`,

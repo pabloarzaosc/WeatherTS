@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Compass, RotateCcw, Sparkles, Trash2, Upload } from "lucide-react";
+import { Select } from "../Select";
 
 import { useAppStore } from "../../store/useAppStore";
 import { useOnboardingStore } from "../../store/useOnboardingStore";
@@ -98,13 +99,12 @@ function UnitSettings() {
           return (
             <label key={kind} className="set__unit">
               <span>{label}</span>
-              <select value={current} onChange={(e) => setRadarUnit(kind, e.target.value)}>
-                {options.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
+              <Select
+                value={current}
+                onChange={(value) => setRadarUnit(kind, value)}
+                aria-label={label}
+                options={options.map((o) => ({ value: o.id, label: o.label }))}
+              />
             </label>
           );
         })}
@@ -216,14 +216,15 @@ function PaletteSettings() {
               <PalStrip pal={p.pal} />
               <label className="pallist__target">
                 <span>Replaces</span>
-                <select value={targetOf(p.id)} onChange={(e) => changeTarget(p.id, e.target.value)}>
-                  <option value="">— not used —</option>
-                  {builtins.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.label}
-                    </option>
-                  ))}
-                </select>
+                <Select
+                  value={targetOf(p.id)}
+                  onChange={(value) => changeTarget(p.id, value)}
+                  aria-label="Which product this palette replaces"
+                  options={[
+                    { value: "", label: "— not used —" },
+                    ...builtins.map((b) => ({ value: b.id, label: b.label })),
+                  ]}
+                />
               </label>
             </li>
           ))}

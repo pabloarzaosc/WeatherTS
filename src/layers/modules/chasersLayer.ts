@@ -264,6 +264,8 @@ export const chasersLayer: LayerModule = {
   // most people would never find they had.
   defaultVisible: true,
   defaultOpacity: 1,
+  // The channel only admits signed-in accounts (see lib/chasers).
+  requiresAccount: "chasers",
 
   addTo(map) {
     if (!map.getSource(SOURCE_ID)) {

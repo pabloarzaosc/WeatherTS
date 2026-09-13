@@ -8,6 +8,7 @@ import { LayerManager } from "../layers/manager";
 import { useAppStore } from "../store/useAppStore";
 import { useNexradStore } from "../store/useNexradStore";
 import { RadarColorBar } from "../ui/RadarColorBar";
+import { MrmsColorBar } from "../ui/MrmsColorBar";
 
 // One split-screen pane: a full MapLibre map with the whole layer stack, so a
 // pane is a real workspace (alerts, sounding clicks, tools) and not a
@@ -155,6 +156,24 @@ export function MapPane({ id }: { id: string }) {
       syncLayers();
     });
 
+    /**
+     * The safety net under that latch.
+     *
+     * "load" and "style.load" are one-shot per style, and a sync that arrives
+     * before either of them parks itself on an event that may already have
+     * passed -- the layer then reads as ON in the panel with nothing on the
+     * map, and only switching it off and on again fixes it. styledata fires
+     * every time the style becomes usable, including that first parse and
+     * every setStyle after it, so it is the signal that always comes. Adding a
+     * layer twice is a no-op in every module, and the manager catches an add
+     * that lands too early, so re-running the reconcile here is free.
+     */
+    map.on("styledata", () => {
+      styleReady = true;
+      pendingSync = false;
+      void manager.sync(store.getState());
+    });
+
     // Only the primary pane drives the status-bar readout; every pane shares
     // the camera, so the numbers would be identical anyway.
     const onMouseMove = (e: maplibregl.MapMouseEvent) =>
@@ -250,6 +269,9 @@ export function MapPane({ id }: { id: string }) {
           products was meaningless, and it spanned the panes it didn't describe */}
       <div className="mappane__cbar">
         <RadarColorBar paneId={id} />
+        {/* The mosaic is not a per-pane product -- one grid covers the app --
+            so its scale is drawn once, under the pane that owns the tools. */}
+        {focused && <MrmsColorBar />}
       </div>
     </div>
   );

@@ -1,0 +1,23 @@
+"filename", "language", "PostCSS", "JavaScript", "HTML", "TypeScript JSX", "TypeScript", "Python", "comment", "blank", "total"
+"c:\Users\pablo\Documents\WeatherTS\WeatherTS Landing Page\index.html", "HTML", 0, 0, 47, 0, 0, 0, 7, 3, 57
+"c:\Users\pablo\Documents\WeatherTS\WeatherTS Landing Page\main.js", "JavaScript", 0, 11, 0, 0, 0, 0, 2, 2, 15
+"c:\Users\pablo\Documents\WeatherTS\WeatherTS Landing Page\styles.css", "PostCSS", 124, 0, 0, 0, 0, 0, 17, 12, 153
+"c:\Users\pablo\Documents\WeatherTS\backend\main.py", "Python", 0, 0, 0, 0, 0, 42, 11, 7, 60
+"c:\Users\pablo\Documents\WeatherTS\backend\mrms_core.py", "Python", 0, 0, 0, 0, 0, 440, 204, 101, 745
+"c:\Users\pablo\Documents\WeatherTS\src\layers\index.ts", "TypeScript", 0, 0, 0, 0, 2, 0, 3, 0, 5
+"c:\Users\pablo\Documents\WeatherTS\src\layers\modules\mrmsLayer.ts", "TypeScript", 0, 0, 0, 0, 170, 0, 41, 21, 232
+"c:\Users\pablo\Documents\WeatherTS\src\lib\auth.ts", "TypeScript", 0, 0, 0, 0, 19, 0, 14, 2, 35
+"c:\Users\pablo\Documents\WeatherTS\src\lib\consent.ts", "TypeScript", 0, 0, 0, 0, 201, 0, 38, 8, 247
+"c:\Users\pablo\Documents\WeatherTS\src\main.tsx", "TypeScript JSX", 0, 0, 0, 2, 0, 0, 0, 0, 2
+"c:\Users\pablo\Documents\WeatherTS\src\map\MapPane.tsx", "TypeScript JSX", 0, 0, 0, 2, 0, 0, 2, 0, 4
+"c:\Users\pablo\Documents\WeatherTS\src\store\useMrmsStore.ts", "TypeScript", 0, 0, 0, 0, 99, 0, 30, 12, 141
+"c:\Users\pablo\Documents\WeatherTS\src\styles\app.css", "PostCSS", 240, 0, 0, 0, 0, 0, 23, 18, 281
+"c:\Users\pablo\Documents\WeatherTS\src\styles\auth.css", "PostCSS", 151, 0, 0, 0, 0, 0, 17, 18, 186
+"c:\Users\pablo\Documents\WeatherTS\src\ui\LoginGate.tsx", "TypeScript JSX", 0, 0, 0, 34, 0, 0, 7, 1, 42
+"c:\Users\pablo\Documents\WeatherTS\src\ui\MrmsColorBar.tsx", "TypeScript JSX", 0, 0, 0, 59, 0, 0, 24, 11, 94
+"c:\Users\pablo\Documents\WeatherTS\src\ui\auth\AuthScreen.tsx", "TypeScript JSX", 0, 0, 0, 21, 0, 0, 6, 1, 28
+"c:\Users\pablo\Documents\WeatherTS\src\ui\auth\ConsentPanel.tsx", "TypeScript JSX", 0, 0, 0, 201, 0, 0, 19, 20, 240
+"c:\Users\pablo\Documents\WeatherTS\src\ui\panels\ActiveLayers.tsx", "TypeScript JSX", 0, 0, 0, 24, 0, 0, 6, 3, 33
+"c:\Users\pablo\Documents\WeatherTS\src\ui\panels\CatalogView.tsx", "TypeScript JSX", 0, 0, 0, 8, 0, 0, 0, 0, 8
+"c:\Users\pablo\Documents\WeatherTS\src\ui\panels\MrmsView.tsx", "TypeScript JSX", 0, 0, 0, 176, 0, 0, 21, 18, 215
+"Total", "-", 515, 11, 47, 527, 491, 482, 492, 258, 2823

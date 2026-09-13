@@ -24,12 +24,16 @@ import nadocast_core
 import raob_core
 import surface_obs
 import nexrad_core
+import mrms_core
+import observations
+import satellite
 import nexrad_level2
 import nexrad_storms
 import storm_attributes
 import nexrad_vwp
 import lsr_core
 import fronts_core
+import fronts_model
 import spc_md
 import acars_core
 import area_sounding
@@ -228,14 +232,23 @@ def lsr_types():
 def fronts(
     history: int = Query(4, ge=0, le=24),
     forecast: bool = Query(True),
+    source: str = Query("wpc", pattern="^(wpc|gfs|model)$"),
+    model: str = Query(fronts_model.DEFAULT_MODEL),
 ):
-    """WPC surface analysis and progs, as timeline frames of GeoJSON.
+    """Surface fronts and progs, as timeline frames of GeoJSON.
 
+    `source` picks the analysis: "wpc" is WPC's hand analysis of North America;
+    "model" (or "gfs", its first name) is fronts found automatically in `model`,
+    which can be any model /api/model-fields/models marks as `fronts`.
     `history` past analyses plus the 12 h and 24 h forecast positions, so the
     fronts can be scrubbed on the same timeline as everything else.
     """
     try:
+        if source in ("gfs", "model"):
+            return fronts_model.build_fronts(model=model, history=history, forecast=forecast)
         return fronts_core.build_fronts(history=history, forecast=forecast)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
 
@@ -481,6 +494,225 @@ def nexrad_render(
         raise HTTPException(status_code=502, detail=str(exc))
 
 
+# ---------------------------------------------------------------------------
+# MRMS — the national mosaic
+# ---------------------------------------------------------------------------
+
+@app.get("/api/mrms/catalog")
+def mrms_catalog(region: str = Query(mrms_core.DEFAULT_REGION)):
+    return mrms_core.catalog(region)
+
+
+@app.get("/api/mrms/frames")
+def mrms_frames(
+    product: str = Query(mrms_core.DEFAULT_PRODUCT),
+    limit: int = Query(60),
+    region: str = Query(mrms_core.DEFAULT_REGION),
+):
+    try:
+        return {"frames": mrms_core.frames(product, limit=max(1, min(limit, 400)), region=region)}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/mrms/render")
+def mrms_render(
+    product: str = Query(mrms_core.DEFAULT_PRODUCT),
+    key: str = Query(""),
+    width: int = Query(2048),
+    region: str = Query(mrms_core.DEFAULT_REGION),
+    bbox: str = Query("", description="west,south,east,north — the visible window"),
+):
+    """One frame as a Mercator-warped PNG plus the corners to place it at.
+
+    The image is already in the projection the map draws in, so the four
+    coordinates below are exact rather than approximate -- see the note on
+    _mercator_rows in mrms_core.
+    """
+    try:
+        box = None
+        if bbox:
+            parts = [float(v) for v in bbox.split(",")]
+            if len(parts) == 4:
+                box = (parts[0], parts[1], parts[2], parts[3])
+        out = mrms_core.render(
+            product,
+            key=key,
+            # 4096 is the texture size every WebGL implementation is required
+            # to manage; past it the browser may quietly refuse the image.
+            width=max(500, min(width, 4096)),
+            region=region,
+            bbox=box,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {
+        "image": base64.b64encode(out["png"]).decode("ascii"),
+        "coordinates": out["coordinates"],
+        "meta": out["meta"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Observations — the hourly analyses, as timeline frames
+# ---------------------------------------------------------------------------
+
+# The satellite services' capabilities are slow (EUMETView takes six seconds);
+# read them in the background now so the panel opens onto a frame list.
+satellite.warm()
+
+
+@app.get("/api/sat/catalog")
+def sat_catalog():
+    """Every satellite, every product, and the tile URL each is drawn from."""
+    return satellite.catalog()
+
+
+@app.get("/api/sat/frames")
+def sat_frames(
+    product: str = Query(satellite.DEFAULT_PRODUCT),
+    hours: float = Query(3.0, ge=0.5, le=48.0, description="how long a loop, for the geostationary products"),
+):
+    """The times one product has in the loop, oldest first."""
+    try:
+        return satellite.frames(product, hours)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/api/obs/catalog")
+def obs_catalog():
+    """Which analyses are wired, and which fields each one carries."""
+    return observations.catalog()
+
+
+@app.get("/api/obs/frames")
+def obs_frames(
+    source: str = Query(observations.DEFAULT_SOURCE),
+    field: str = Query("", description="the field about to be drawn — its newest hour starts warming"),
+):
+    """Every hour still on the server, oldest first — the timeline's frames."""
+    try:
+        out = observations.frames(source)
+        if field:
+            observations.warm_newest(source, field)
+        return {"frames": out}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/obs/value")
+def obs_value(
+    source: str = Query(observations.DEFAULT_SOURCE),
+    field: str = Query(observations.DEFAULT_FIELD),
+    key: str = Query(""),
+    lat: float = Query(...),
+    lon: float = Query(...),
+):
+    """The analysed value at one point — what the pointer is over."""
+    try:
+        return observations.value_at(source, field, key, lat, lon)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/obs/vectors")
+def obs_vectors(
+    source: str = Query(observations.DEFAULT_SOURCE),
+    field: str = Query(observations.DEFAULT_FIELD),
+    key: str = Query(""),
+):
+    """Labelled contours over the field, and the outline of the analysed area."""
+    try:
+        return observations.vectors(source, field, key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/obs/meta")
+def obs_meta(
+    source: str = Query(observations.DEFAULT_SOURCE),
+    field: str = Query(observations.DEFAULT_FIELD),
+    key: str = Query(""),
+    width: int = Query(observations.DEFAULT_WIDTH, ge=400, le=2400),
+):
+    """Where the picture goes and what it shows, without the picture itself.
+
+    The picture is served apart (/api/obs/image) as a plain PNG: inside JSON it
+    was base64 -- a third larger, parsed as text, then decoded again -- where
+    the map can fetch and decode a PNG natively, and the browser can cache it.
+    """
+    try:
+        out = observations.render(source=source, field=field, key=key, width=width)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+    b = out["bounds"]
+    return {
+        "coordinates": [
+            [b["west"], b["north"]],
+            [b["east"], b["north"]],
+            [b["east"], b["south"]],
+            [b["west"], b["south"]],
+        ],
+        "meta": {k: v for k, v in out.items() if k != "png"},
+    }
+
+
+@app.get("/api/obs/image")
+def obs_image(
+    source: str = Query(observations.DEFAULT_SOURCE),
+    field: str = Query(observations.DEFAULT_FIELD),
+    key: str = Query(...),
+    width: int = Query(observations.DEFAULT_WIDTH, ge=400, le=2400),
+):
+    """The picture for one hour, as the PNG itself."""
+    try:
+        out = observations.render(source=source, field=field, key=key, width=width, warm=False)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+    # An analysis hour never changes once published, so the browser may keep it.
+    return Response(content=out["png"], media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/api/obs/render")
+def obs_render(
+    source: str = Query(observations.DEFAULT_SOURCE),
+    field: str = Query(observations.DEFAULT_FIELD),
+    key: str = Query("", description="YYYYMMDDHH — blank means the newest hour"),
+    width: int = Query(1600, ge=400, le=2400),
+):
+    """One hour of one field as a Mercator PNG plus the corners to place it at."""
+    try:
+        out = observations.render(source=source, field=field, key=key, width=width)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+    b = out["bounds"]
+    return {
+        "image": base64.b64encode(out["png"]).decode("ascii"),
+        # Clockwise from the top left, which is the order MapLibre expects.
+        "coordinates": [
+            [b["west"], b["north"]],
+            [b["east"], b["north"]],
+            [b["east"], b["south"]],
+            [b["west"], b["south"]],
+        ],
+        "meta": {k: v for k, v in out.items() if k != "png"},
+    }
+
+
 @app.get("/api/surface-obs")
 def surface_obs_endpoint(bbox: str = Query(...)):
     try:
@@ -512,6 +744,22 @@ def nadocast(
 def model_field_models():
     """The sidebar's model picker: every model that can back a model field."""
     return {"models": model_fields.list_models(), "default": model_fields.DEFAULT_MODEL}
+
+
+@app.get("/api/model-fields/thickness")
+def model_field_thickness(
+    model: str = Query(model_fields.DEFAULT_MODEL),
+    hour: int = Query(0, ge=0, le=384),
+    interval: float = Query(6.0, gt=0, le=30),
+    smooth: float = Query(1.0, ge=0, le=4),
+):
+    """1000-500 hPa thickness contours for one model run hour, as GeoJSON."""
+    try:
+        return model_fields.build_thickness(model=model, hour=hour, interval=interval, smooth=smooth)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
 
 
 @app.get("/api/model-fields/mslp")

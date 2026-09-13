@@ -1,4 +1,5 @@
 import { AlertTriangle, Loader2 } from "lucide-react";
+import { Select } from "../Select";
 
 import { ACARS_WINDOWS, useAcarsStore, type AcarsWindow } from "../../store/useAcarsStore";
 
@@ -70,16 +71,12 @@ export function AcarsView() {
 
       <label className="sfcobs__field">
         <span className="sfcobs__label">Window — how far back to look</span>
-        <select
-          value={windowH}
-          onChange={(e) => setWindowH(Number(e.target.value) as AcarsWindow)}
-        >
-          {ACARS_WINDOWS.map((h) => (
-            <option key={h} value={h}>
-              last {h} h
-            </option>
-          ))}
-        </select>
+        <Select
+          value={String(windowH)}
+          onChange={(value) => setWindowH(Number(value) as AcarsWindow)}
+          aria-label="Window"
+          options={ACARS_WINDOWS.map((h) => ({ value: String(h), label: `last ${h} h` }))}
+        />
       </label>
       <div className="sfcobs__row">
         <span style={{ color: "var(--text-faint)", fontSize: 11 }}>
@@ -92,16 +89,12 @@ export function AcarsView() {
 
       <label className="sfcobs__field">
         <span className="sfcobs__label">Hide profiles older than</span>
-        <select
+        <Select
           value={maxAgeMin === null ? "" : String(maxAgeMin)}
-          onChange={(e) => setMaxAgeMin(e.target.value === "" ? null : Number(e.target.value))}
-        >
-          {AGE_CHOICES.map((c) => (
-            <option key={c.label} value={c.v === null ? "" : c.v}>
-              {c.label}
-            </option>
-          ))}
-        </select>
+          onChange={(value) => setMaxAgeMin(value === "" ? null : Number(value))}
+          aria-label="Hide profiles older than"
+          options={AGE_CHOICES.map((c) => ({ value: c.v === null ? "" : String(c.v), label: c.label }))}
+        />
       </label>
 
       <label className="sfcobs__field">

@@ -25,7 +25,10 @@ function hourLabel(hour: number): string {
  * grows -- stops being scannable, and "which models do I have at mesoscale"
  * is the question actually being asked.
  */
-function Menu({ models, onPick }: { models: ModelInfo[]; onPick: (id: string) => void }) {
+function Menu({ models: all, onPick }: { models: ModelInfo[]; onPick: (id: string) => void }) {
+  // The one model product this bar drives today is the pressure field, so a
+  // model without sea level pressure would be a choice that draws nothing.
+  const models = useMemo(() => all.filter((m) => m.mslp !== false), [all]);
   const modelId = useModelStore((s) => s.modelId);
   const categories = useMemo(() => {
     const present = [...new Set(models.map((m) => m.category))];

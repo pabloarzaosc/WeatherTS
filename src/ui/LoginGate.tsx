@@ -2,7 +2,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Loader2, WifiOff } from "lucide-react";
 
 import { acceptTerms, completeOAuth, graceRemaining, isElectron, needsConsent, signOut } from "../lib/auth";
+import { useAccountGate } from "../store/useAccountGate";
 import { useAuthStore } from "../store/useAuthStore";
+import { AccountGuard, AccountRequired, GuestWelcome } from "./auth/AccountPrompts";
 import { AuthScreen } from "./auth/AuthScreen";
 import { ConsentPanel } from "./auth/ConsentPanel";
 
@@ -16,16 +18,26 @@ function graceLabel(ms: number): string {
 /**
  * The boundary between "who are you" and the app.
  *
- * The app stays behind an account because half of what it does is tied to one
- * -- the handle other chasers see, saved workspaces, the position you share.
- * Anyone can create one now; the closed build's issued-account list is gone.
+ * The app opens without an account. Radar, warnings, outlooks and soundings are
+ * public feeds; an account is for the part tied to a person -- the handle other
+ * chasers see, the position you share, where you are on the map -- and each of
+ * those asks for one when someone reaches for it (see store/useAccountGate).
+ * Signing in is a screen opened over the app, from the dock or from one of those
+ * prompts, and it closes itself the moment it succeeds.
+ *
+ * Two things still stand in front of the app: a password-reset link, whose
+ * session exists only to set a new password, and an account that has not yet
+ * agreed to the data notice.
  */
 export function LoginGate({ children }: { children: ReactNode }) {
   const status = useAuthStore((s) => s.status);
   const recovering = useAuthStore((s) => s.recovering);
+  const banned = useAuthStore((s) => s.banned);
   const profile = useAuthStore((s) => s.profile);
   const refreshProfile = useAuthStore((s) => s.refreshProfile);
   const init = useAuthStore((s) => s.init);
+  const authMode = useAccountGate((s) => s.auth);
+  const closeAuth = useAccountGate((s) => s.closeAuth);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [savingConsent, setSavingConsent] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
@@ -34,18 +46,35 @@ export function LoginGate({ children }: { children: ReactNode }) {
 
   // The desktop build gets its OAuth answer as a deep link on the protocol it
   // registered, forwarded here by the main process. A browser completes the
-  // same flow on its own, from the URL it was redirected to.
+  // same flow on its own, from the URL it was redirected to. A link that fails
+  // reopens the sign-in screen, so trying again is right there with the error.
   useEffect(() => {
     if (!isElectron) return;
     const api = (window as unknown as {
       electronAPI?: { onAuthCallback?: (cb: (url: string) => void) => void };
     }).electronAPI;
     api?.onAuthCallback?.((url) => {
-      void completeOAuth(url).catch((e: { message?: string }) =>
-        setLinkError(e?.message ?? "That sign-in link could not be completed."),
-      );
+      void completeOAuth(url).catch((e: { message?: string }) => {
+        setLinkError(e?.message ?? "That sign-in link could not be completed.");
+        useAccountGate.getState().openAuth("signin");
+      });
     });
   }, []);
+
+  // Signed in: nothing that was asking them to sign in is true any more.
+  useEffect(() => {
+    if (status === "signedIn" || status === "offline") {
+      useAccountGate.setState({ auth: null, need: null });
+      setLinkError(null);
+    }
+  }, [status]);
+
+  // A banned account is signed straight back out, and the sign-in screen is
+  // where that is explained -- so it opens on its own instead of leaving the
+  // person in an app that has quietly forgotten them.
+  useEffect(() => {
+    if (banned) useAccountGate.getState().openAuth("signin");
+  }, [banned]);
 
   if (status === "checking") {
     return (
@@ -59,8 +88,9 @@ export function LoginGate({ children }: { children: ReactNode }) {
   }
 
   // A recovery link signs you in, but the only thing that session is for is
-  // choosing a new password -- so the app waits behind that form.
-  if (status === "signedOut" || recovering) {
+  // choosing a new password -- so the app waits behind that form, and the form
+  // has no way to close.
+  if (recovering) {
     return (
       <>
         {linkError && (
@@ -119,6 +149,17 @@ export function LoginGate({ children }: { children: ReactNode }) {
         </div>
       )}
       {children}
+      <AccountGuard />
+      <GuestWelcome />
+      {status === "signedOut" && <AccountRequired />}
+      {status === "signedOut" && authMode && (
+        <AuthScreen key={authMode} initialMode={authMode} onClose={closeAuth} />
+      )}
+      {linkError && authMode && (
+        <div className="gate__linkerr" role="alert">
+          {linkError}
+        </div>
+      )}
     </>
   );
 }

@@ -166,6 +166,18 @@ a = Analysis(
         # Imported by main.py but never listed, so the packaged backend had
         # no pressure field at all.
         'model_fields',
+        # Listed for the same reason: the model roster, automatic fronts, the
+        # hourly analyses and satellite are all imported by main.py, and a
+        # missing one takes its whole panel down only in the installed app.
+        'model_sources',
+        'model_footprints',
+        'fronts_model',
+        'mrms_core',
+        'observations',
+        'obs_products',
+        'satellite',
+        'contourpy',
+        'scipy.ndimage',
     ],
     hookspath=[],
     hooksconfig={},

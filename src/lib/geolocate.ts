@@ -1,5 +1,6 @@
 import maplibregl, { type Marker } from "maplibre-gl";
 import { getMap } from "../map/mapInstance";
+import { requireAccount } from "../store/useAccountGate";
 
 let marker: Marker | null = null;
 
@@ -158,8 +159,12 @@ export async function currentFix(options: PositionOptions = {}): Promise<Fix> {
 
 /** Center the map on the device's current position (browser Geolocation API)
  *  and mark it. Depends on the browser granting location access.
- *  Rejects if unavailable/denied. */
+ *  Rejects if unavailable/denied. Without an account it only asks for one. */
 export async function flyToMyLocation(): Promise<void> {
+  // Finding someone reads their device's position and, when the device cannot
+  // answer, sends their IP address to an outside lookup. The data notice an
+  // account agrees to is what covers both, so both wait for an account.
+  if (!requireAccount("location")) return;
   const fix = await currentFix({ maximumAge: 60000 });
   const map = getMap();
   // A network fix knows the city, so flying to street level would be showing

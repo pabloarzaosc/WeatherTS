@@ -15,6 +15,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
+import { Select } from "../Select";
 
 import { useSoundingViewerStore } from "../../store/useSoundingViewerStore";
 
@@ -243,19 +244,16 @@ export function SoundingViewer() {
         ) : (
           <label className="sv__ctl">
             <span>MODEL</span>
-            <select value={model} onChange={(e) => setModel(e.target.value)}>
-              {modelGroups.map((group) => (
-                <optgroup key={group} label={group}>
-                  {modelList
-                    .filter((item) => item.group === group)
-                    .map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.label}
-                      </option>
-                    ))}
-                </optgroup>
-              ))}
-            </select>
+            <Select
+              value={model}
+              onChange={setModel}
+              aria-label="Model"
+              options={modelGroups.flatMap((group) =>
+                modelList
+                  .filter((item) => item.group === group)
+                  .map((item) => ({ value: item.id, label: item.label, group })),
+              )}
+            />
           </label>
         )}
         {isArea && (

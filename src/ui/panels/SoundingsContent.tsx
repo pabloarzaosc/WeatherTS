@@ -15,6 +15,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { Select } from "../Select";
 
 import {
   type RiskScanResult,
@@ -540,21 +541,25 @@ export function SoundingsContent() {
           <div className="snd-row2">
             <label className="snd-inputlabel">
               Source
-              <select value={source} onChange={(event) => setSource(event.target.value as SoundingSource)}>
-                <option value="obs">Observed RAOB</option>
-                <option value="psu">PSU BUFKIT</option>
-                <option value="bufkit">Iowa State BUFKIT</option>
-              </select>
+              <Select
+                value={source}
+                onChange={(value) => setSource(value as SoundingSource)}
+                aria-label="Sounding source"
+                options={[
+                  { value: "obs", label: "Observed RAOB" },
+                  { value: "psu", label: "PSU BUFKIT" },
+                  { value: "bufkit", label: "Iowa State BUFKIT" },
+                ]}
+              />
             </label>
             <label className="snd-inputlabel">
               Model
-              <select value={model} onChange={(event) => setModel(event.target.value)}>
-                {MODELS.map((item) => (
-                  <option key={item} value={item}>
-                    {item.toUpperCase()}
-                  </option>
-                ))}
-              </select>
+              <Select
+                value={model}
+                onChange={setModel}
+                aria-label="Model"
+                options={MODELS.map((item) => ({ value: item, label: item.toUpperCase() }))}
+              />
             </label>
           </div>
           <div className="snd-row2">

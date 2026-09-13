@@ -49,7 +49,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function setMsg(text, kind) {
   msg.textContent = text;
   msg.classList.remove("is-ok", "is-err");
-  if (kind) msg.classList.add(kind);
+  if (kind) msg.classLisSt.add(kind);
 }
 
 if (form) {
@@ -163,12 +163,9 @@ async function wireDownload() {
     const notes = document.getElementById("dl-notes");
     if (notes && rel.html_url) notes.href = rel.html_url;
   } catch (_) {
-    // The buttons still work -- their markup href is /releases/latest, which
-    // GitHub resolves to the newest release on its own. Only the facts are
-    // lost, and a stated "unknown" is better than a number nobody checked.
     setText("dl-version", "latest");
-    setText("dl-size", "see GitHub");
-    setText("dl-date", "see GitHub");
+    setText("dl-size", "see Github");
+    setText("dl-date", "see Github");
   }
 }
 wireDownload();

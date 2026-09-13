@@ -153,12 +153,12 @@ function showErrorPage(title, detail) {
   const safeDetail = String(detail).replace(/</g, '&lt;').substring(0, 2000);
   mainWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`
     <html>
-      <body style="background-color: #0b0e13; color: #e9edf2; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: sans-serif; padding: 40px;">
+      <body style="background-color: #0b1522; color: #e8eef6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: sans-serif; padding: 40px;">
         <div style="max-width: 600px; text-align: center;">
-          <h1 style="color: #f26d6d; margin-bottom: 12px;">${safeTitle}</h1>
-          <p style="color: #a6afba; font-size: 14px; line-height: 1.5; margin-bottom: 20px;">The backend server failed to start. This usually means Windows Defender (or another antivirus) is still scanning the bundled runtime on first launch — it can take a couple of minutes. On a fresh PC, the VC++ Redistributable may also be missing.</p>
-          <pre style="background: #16191e; border: 1px solid rgba(190,200,210,0.12); border-radius: 8px; padding: 12px; color: #6b7480; font-size: 11px; text-align: left; overflow-x: auto; max-height: 240px; overflow-y: auto;">${safeDetail}</pre>
-          <p style="color: #6b7480; font-size: 12px; margin-top: 16px;">If this keeps happening, try: (1) wait a minute and launch again — the second run is fast, (2) add <code style="background:#16191e;padding:1px 6px;border-radius:4px;">%LOCALAPPDATA%\Temp\_MEI*</code> to your AV exclusions, or (3) install the <a href="https://aka.ms/vs/17/release/vc_redist.x64.exe" style="color: #3b82f6;">Microsoft VC++ Redistributable</a>.</p>
+          <h1 style="color: #f2715a; margin-bottom: 12px;">${safeTitle}</h1>
+          <p style="color: #aabbd0; font-size: 14px; line-height: 1.5; margin-bottom: 20px;">The backend server failed to start. This usually means Windows Defender (or another antivirus) is still scanning the bundled runtime on first launch — it can take a couple of minutes. On a fresh PC, the VC++ Redistributable may also be missing.</p>
+          <pre style="background: #101d2e; border: 1px solid #22364f; border-radius: 8px; padding: 12px; color: #8196b0; font-size: 11px; text-align: left; overflow-x: auto; max-height: 240px; overflow-y: auto;">${safeDetail}</pre>
+          <p style="color: #8196b0; font-size: 12px; margin-top: 16px;">If this keeps happening, try: (1) wait a minute and launch again — the second run is fast, (2) add <code style="background:#101d2e;padding:1px 6px;border-radius:4px;">%LOCALAPPDATA%\Temp\_MEI*</code> to your AV exclusions, or (3) install the <a href="https://aka.ms/vs/17/release/vc_redist.x64.exe" style="color: #8fb4ff;">Microsoft VC++ Redistributable</a>.</p>
         </div>
       </body>
     </html>
@@ -188,7 +188,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
-    backgroundColor: '#0b0e13',
+    backgroundColor: '#0b1522',
     title: 'WeatherTS — Geo Workstation',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -228,7 +228,7 @@ function createWindow() {
 
   // Splash. This is on screen for as long as the backend takes to answer, which
   // on a cold first run is tens of seconds, so it carries a live status line
-  // (see setSplashStatus) instead of a bare "Loading". Colours and type are the
+  // (see setSplashStatus) instead of a bare "Loading". The colours are the
   // app's own tokens from theme.css, inlined because a data: URL has no CSS.
   mainWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`
     <html>
@@ -238,7 +238,7 @@ function createWindow() {
           body {
             margin: 0; height: 100vh; display: flex; flex-direction: column;
             align-items: center; justify-content: center; gap: 20px;
-            background: #0c0f13; color: #e9edf2; user-select: none;
+            background: #0b1522; color: #e8eef6; user-select: none;
             font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
             -webkit-font-smoothing: antialiased;
           }
@@ -247,19 +247,19 @@ function createWindow() {
             font-size: 25px; font-weight: 700; letter-spacing: 0.22em;
             animation: rise .55s cubic-bezier(.2,.7,.3,1) both;
           }
-          .mark span { color: #3b82f6; }
+          .mark span { color: #6c9dff; }
           .bar {
             width: 186px; height: 2px; border-radius: 2px; overflow: hidden;
-            background: rgba(190,200,210,0.18);
+            background: #22364f;
             animation: rise .55s cubic-bezier(.2,.7,.3,1) .08s both;
           }
           .bar i {
             display: block; width: 38%; height: 100%; border-radius: 2px;
-            background: #3b82f6; animation: slide 1.2s ease-in-out infinite;
+            background: #6c9dff; animation: slide 1.2s ease-in-out infinite;
           }
           .status {
             font-family: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
-            font-size: 11px; letter-spacing: 0.04em; color: #6b7480;
+            font-size: 11px; letter-spacing: 0.04em; color: #8196b0;
             min-height: 14px; text-align: center; padding: 0 24px;
             animation: rise .55s cubic-bezier(.2,.7,.3,1) .16s both;
           }

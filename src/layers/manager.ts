@@ -65,6 +65,11 @@ export class LayerManager {
       const ls = state.layers[module.id];
       if (!ls) continue;
       const isAdded = this.added.has(module.id);
+      // Pieces of a module on the map that the manager never recorded: an add
+      // that threw partway (after some of its layers went in) is never marked
+      // added, so switching it off would skip removeFrom and strand whatever it
+      // had drawn. Those count as on the map for the purpose of taking it off.
+      const stranded = !isAdded && module.getLayerIds().some((layerId) => this.map.getLayer(layerId));
       // Each module is isolated. addTo may be async and may reach the network,
       // and an unhandled rejection here used to abort the whole loop -- so one
       // layer whose feed was down silently took every layer after it in the
@@ -74,7 +79,7 @@ export class LayerManager {
           await module.addTo(this.map);
           module.setOpacity(this.map, ls.opacity);
           this.added.add(module.id);
-        } else if (!ls.visible && isAdded) {
+        } else if (!ls.visible && (isAdded || stranded)) {
           module.removeFrom(this.map);
           this.added.delete(module.id);
         } else if (ls.visible) {

@@ -1,7 +1,32 @@
-/* Design tokens + the light/dark color palettes. Every UI color is a variable. */
+/* Design tokens + the light/dark palettes. Every UI colour is a variable.
+ *
+ * A road console, not a dashboard template: the blue of an interstate shield
+ * at night -- deep sign blue for the ground, reflective white for the legend
+ * and one lit blue for what is on -- drawn with solid hairlines instead of
+ * glass and glow. Two constraints decide nearly everything below.
+ *
+ * Radar already uses almost every hue, blue included, so the accent is spent
+ * sparingly, on what is on and what has focus, and never on the map. It is a
+ * light, faintly violet blue (220deg at 71% lightness), where the standard
+ * reflectivity table's weak-echo blues are saturated mid-tones at 200deg and
+ * 240deg -- close enough to belong to the same family, far enough apart that
+ * a lit control and a light echo do not read as the same thing. Filled, it
+ * carries dark text: white on a blue light enough to show on this ground
+ * would be unreadable.
+ *
+ * Panels float over a map whose brightness is anyone's guess, so separation
+ * comes from an opaque surface and a hard keyline -- never from a soft shadow,
+ * or a blur whose colour changes with whatever happens to be underneath.
+ */
 :root {
-  --topbar-h: 44px;
-  --tabsbar-h: 38px;
+  /* The top bar and the tab strip are gone -- their controls live in the dock
+     on the edge -- but both heights stay as tokens at 0, because a dozen
+     overlays still offset themselves by them. Zeroing them moved every one of
+     those overlays to the top of the map in a single edit. */
+  --topbar-h: 0px;
+  --tabsbar-h: 0px;
+  /* The tool dock: one strip down the side the drawers slide out of. */
+  --dock-w: 52px;
   --panel-w: 320px;
   /* Left inset for anything floating over the map. On desktop it clears the
      side panel; on mobile the panel becomes an overlay, so this collapses to a
@@ -18,84 +43,86 @@
   --status-h: 30px;
   --timeline-h: 46px; /* global map timeline bar height */
   --dock-h: calc(var(--status-h) + var(--timeline-h)); /* bottom reserved strip */
-  --radius: 12px;
-  --radius-sm: 9px;
-  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
-  --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* A road sign is a rectangle with the corners taken off, not a lozenge. */
+  --radius: 4px;
+  --radius-sm: 3px;
+  /* Chips, tags and progress tracks -- formerly 999px pills. */
+  --radius-chip: 3px;
+
+  /* One variable family for everything. Recursive runs from casual to mono on
+     axes of a single design, so labels, headings and numbers are one voice at
+     three settings rather than two unrelated fonts glued together. The axes
+     travel with font-family through inheritance, so a mono container's
+     children stay mono without being told. */
+  --sans: "Recursive Variable", "Recursive", system-ui, sans-serif;
+  --mono: "Recursive Variable", "Recursive", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --sans-axes: "MONO" 0, "CASL" 0.3;
+  --mono-axes: "MONO" 1, "CASL" 0;
+  --casual-axes: "MONO" 0, "CASL" 1;
+
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --t-fast: 0.12s;
   --t: 0.2s;
   --t-slow: 0.34s;
 
-  /* dark theme (default -- also the fallback before JS picks a theme) */
-  --bg: #0c0f13;
-  /* 0.94, not 0.8: these panels float over the map, so at 0.8 the basemap
-     showed through and the effective background moved with whatever was
-     underneath -- small text measured 2.65:1 over the Light basemap. The blur
-     still reads as glass at this opacity. */
-  --panel: rgba(22, 26, 31, 0.94);
-  --panel-solid: #16191e;
-  --panel-2: rgba(255, 255, 255, 0.045);
-  --border: rgba(190, 200, 210, 0.12);
-  --border-strong: rgba(190, 200, 210, 0.22);
-  --text: #e9edf2;
-  --text-dim: #a6afba;
-  /* Lifted from #6b7480, which measured 3.72:1 on --panel-solid -- under the
-     4.5:1 WCAG AA floor for text this size, and this token carries the small
-     print (sources, hints, timestamps) across the whole app. */
-  --text-faint: #8892a0;
-  --accent: #3b82f6;
-  --accent-strong: #2563eb;
-  --accent-soft: rgba(59, 130, 246, 0.16);
-  --accent-ring: rgba(59, 130, 246, 0.45);
-  /* Accent used as TEXT, which is a different job from accent used as a fill.
-     On a soft-accent chip --accent measured 3.93:1 here, under AA, but simply
-     brightening --accent would drag white-on-accent buttons the other way.
-     Two tokens, so each can be right: fills keep --accent, small accent text
-     takes this. */
-  --accent-text: #6aabff;
-  /* danger / "not working" red -- radar offline, failed scans, dead sites */
-  --danger: #f26d6d;
-  --danger-soft: rgba(222, 80, 80, 0.14);
-  --danger-border: rgba(222, 80, 80, 0.44);
-  --shadow: 0 10px 34px rgba(0, 0, 0, 0.5);
-  --track: rgba(190, 200, 210, 0.18);
-  /* RGB triplet (no alpha) behind every wash/hover overlay in app.css --
-     white to lighten dark surfaces here; the light theme flips it to a dark
-     ink so the same overlays darken instead of vanishing. */
-  --wash-rgb: 255, 255, 255;
+  /* dark: sign blue at night (default -- also the fallback before JS picks a theme) */
+  --bg: #0b1522;
+  /* Opaque. The panels used to be 94% glass; the few percent of basemap that
+     showed through made every surface a slightly different colour. */
+  --panel: #101d2e;
+  --panel-solid: #101d2e;
+  --panel-2: rgba(232, 238, 246, 0.045);
+  --border: #22364f;
+  --border-strong: #3a5577;
+  --text: #e8eef6;
+  --text-dim: #aabbd0;
+  --text-faint: #8196b0;
+  /* The lit blue. A fill, with dark text on it. */
+  --accent: #6c9dff;
+  --accent-strong: #5287f5;
+  --accent-soft: rgba(108, 157, 255, 0.14);
+  --accent-ring: rgba(108, 157, 255, 0.6);
+  --accent-text: #8fb4ff;
+  --on-accent: #0b1522;
+  /* danger / "not working" -- radar offline, failed scans, dead sites */
+  --danger: #f2715a;
+  --danger-soft: rgba(242, 113, 90, 0.14);
+  --danger-border: rgba(242, 113, 90, 0.45);
+  /* A keyline, not a glow: separation that reads the same over any basemap. */
+  --shadow: 0 0 0 1px rgba(2, 6, 12, 0.55);
+  --track: #22364f;
+  /* RGB triplet (no alpha) behind every wash/hover overlay: sign white to
+     lighten the blue here; the light theme flips it to ink so the same
+     overlays darken instead of vanishing. */
+  --wash-rgb: 232, 238, 246;
 }
 
-/* light theme */
+/* light: the same sign in daylight */
 :root[data-theme="light"] {
-  --bg: #eef1f4;
-  --panel: rgba(255, 255, 255, 0.94);
-  --panel-solid: #ffffff;
-  --panel-2: rgba(15, 23, 32, 0.04);
-  --border: rgba(15, 23, 42, 0.12);
-  --border-strong: rgba(15, 23, 42, 0.22);
-  --text: #12161c;
-  --text-dim: #545e6b;
-  /* Was #8992a0 = 3.14:1 on white -- well under AA. */
-  --text-faint: #5f6874;
-  /* Accent doubles as text on --accent-soft (category counts, status chips,
-     the Full report button). #2563eb measured 4.37:1 there -- under AA. This
-     fixes all of them at once and still passes with white on top (6.7:1). */
-  --accent: #1d4ed8;
-  --accent-strong: #1e40af;
-  --accent-soft: rgba(29, 78, 216, 0.12);
-  --accent-ring: rgba(29, 78, 216, 0.4);
-  /* Light needs no separate text shade: #1d4ed8 already clears AA both as
-     text on the soft chip (5.56) and under white on a filled button (6.7). */
-  --accent-text: #1d4ed8;
-  /* Error text is the one thing that must never be hard to read. #d64545 came
-     out at 4.38:1 on white -- just under AA, and this is what a failed sign-in
-     and every failed fetch is rendered in. */
-  --danger: #c62f2f;
-  --danger-soft: rgba(198, 47, 47, 0.1);
-  --danger-border: rgba(198, 47, 47, 0.35);
-  --shadow: 0 10px 34px rgba(15, 23, 42, 0.16);
-  --track: rgba(15, 23, 42, 0.16);
-  --wash-rgb: 15, 23, 32;
+  --bg: #e3eaf3;
+  --panel: #f4f7fb;
+  --panel-solid: #f4f7fb;
+  --panel-2: rgba(11, 21, 34, 0.045);
+  --border: #c3cfdd;
+  --border-strong: #90a3ba;
+  --text: #0b1522;
+  --text-dim: #394a60;
+  --text-faint: #56687f;
+  /* The fill keeps its dark text in both themes, so it stays light enough to
+     carry it (and its hover shade steps lighter, not darker); only blue used AS
+     text takes a deeper shade to hold contrast on a pale surface. */
+  --accent: #3f7cf2;
+  --accent-strong: #4d86f4;
+  --accent-soft: rgba(47, 105, 220, 0.12);
+  --accent-ring: rgba(47, 105, 220, 0.55);
+  --accent-text: #1f55c2;
+  --on-accent: #0b1522;
+  --danger: #b3321f;
+  --danger-soft: rgba(179, 50, 31, 0.1);
+  --danger-border: rgba(179, 50, 31, 0.38);
+  --shadow: 0 0 0 1px rgba(11, 21, 34, 0.2);
+  --track: #c3cfdd;
+  --wash-rgb: 11, 21, 34;
 }

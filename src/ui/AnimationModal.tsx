@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Film, RefreshCw, Repeat, Type, X } from "lucide-react";
+import { Select } from "./Select";
 
 import { useNexradStore } from "../store/useNexradStore";
 import {
@@ -236,29 +237,21 @@ export function AnimationModal() {
               <div className="animrange">
                 <label className="animfield">
                   <span>Start</span>
-                  <select
-                    value={startIdx}
-                    onChange={(e) => setRange(Math.min(Number(e.target.value), endIdx), endIdx)}
-                  >
-                    {scans.map((s, i) => (
-                      <option key={i} value={i}>
-                        {fmtLocal(s.time)}
-                      </option>
-                    ))}
-                  </select>
+                  <Select
+                    value={String(startIdx)}
+                    onChange={(value) => setRange(Math.min(Number(value), endIdx), endIdx)}
+                    aria-label="First frame"
+                    options={scans.map((s, i) => ({ value: String(i), label: fmtLocal(s.time) }))}
+                  />
                 </label>
                 <label className="animfield">
                   <span>End</span>
-                  <select
-                    value={endIdx}
-                    onChange={(e) => setRange(startIdx, Math.max(Number(e.target.value), startIdx))}
-                  >
-                    {scans.map((s, i) => (
-                      <option key={i} value={i}>
-                        {fmtLocal(s.time)}
-                      </option>
-                    ))}
-                  </select>
+                  <Select
+                    value={String(endIdx)}
+                    onChange={(value) => setRange(startIdx, Math.max(Number(value), startIdx))}
+                    aria-label="Last frame"
+                    options={scans.map((s, i) => ({ value: String(i), label: fmtLocal(s.time) }))}
+                  />
                 </label>
               </div>
 

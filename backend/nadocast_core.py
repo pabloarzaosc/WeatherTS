@@ -21,6 +21,8 @@ import requests
 import eccodes as ec
 from matplotlib.figure import Figure
 
+from model_sources import EC_HANDLE_LOCK
+
 NADOCAST_BASE = "http://data.nadocast.com"
 RUNS = ("t18z", "t14z", "t12z", "t0z")
 LOOKBACK_DAYS = 5
@@ -115,7 +117,8 @@ def _read_prob_grid(content: bytes) -> tuple[np.ndarray, np.ndarray, np.ndarray]
         with os.fdopen(fd, "wb") as f:
             f.write(content)
         with open(path, "rb") as f:
-            gid = ec.codes_grib_new_from_file(f)
+            with EC_HANDLE_LOCK:  # see model_sources.EC_HANDLE_LOCK
+                gid = ec.codes_grib_new_from_file(f)
             if gid is None:
                 raise RuntimeError("GRIB2 had no messages")
             ni = ec.codes_get(gid, "Ni")

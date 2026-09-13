@@ -19,18 +19,31 @@ export interface ModelInfo {
   /** Forecast hours this model actually publishes. */
   hours: number[];
   global: boolean;
+  /** Publishes sea level pressure: can draw isobars. */
+  mslp: boolean;
+  /** Publishes 850 hPa temperature, humidity and wind: can find fronts. */
+  fronts: boolean;
+  /** Publishes the 500 and 1000 hPa heights: can draw thickness. */
+  thickness: boolean;
+  /** Where a regional model has data: the south-west corners of the 5-degree
+   *  tiles its grid reaches. Null for a global model. */
+  footprint: [number, number][] | null;
 }
 
 /** Order the picker lists categories in — forecaster convention, not alphabetical. */
-export const CATEGORY_ORDER = ["Global", "Regional", "Mesoscale", "AI", "Ensemble"];
-const REGION_ORDER = ["USA", "European", "Canadian"];
+export const CATEGORY_ORDER = ["Global", "Regional", "Mesoscale", "AI", "Ensemble", "Climate"];
+const REGION_ORDER = ["USA", "European", "Canadian", "Asian"];
+
+/** A region the order does not name goes last, not first. */
+const regionRank = (r: string) => {
+  const i = REGION_ORDER.indexOf(r);
+  return i < 0 ? REGION_ORDER.length : i;
+};
 
 export const byRegion = (models: ModelInfo[]): [string, ModelInfo[]][] => {
   const map = new Map<string, ModelInfo[]>();
   for (const m of models) map.set(m.region, [...(map.get(m.region) ?? []), m]);
-  return [...map.entries()].sort(
-    (a, b) => REGION_ORDER.indexOf(a[0]) - REGION_ORDER.indexOf(b[0]),
-  );
+  return [...map.entries()].sort((a, b) => regionRank(a[0]) - regionRank(b[0]));
 };
 
 /**
@@ -75,6 +88,22 @@ export interface MslpField {
   geojson: GeoJSON.FeatureCollection;
 }
 
+/** 1000-500 hPa thickness contours, in decametres. */
+export interface ThicknessField {
+  source: string;
+  model: string;
+  modelLabel: string;
+  variable: string;
+  units: string;
+  run: string;
+  runIso: string;
+  valid: string;
+  validIso: string;
+  hour: number;
+  interval: number;
+  geojson: GeoJSON.FeatureCollection;
+}
+
 export async function fetchModels(signal?: AbortSignal): Promise<{ models: ModelInfo[]; default: string }> {
   const res = await fetch(`${BASE}/api/model-fields/models`, { signal });
   if (!res.ok) throw new Error(`models ${res.status}`);
@@ -112,4 +141,18 @@ export async function fetchMslp(
 export function snapHour(model: ModelInfo | null, hour: number): number {
   if (!model || model.hours.length === 0) return hour;
   return model.hours.reduce((best, h) => (Math.abs(h - hour) < Math.abs(best - hour) ? h : best), model.hours[0]);
+}
+
+export async function fetchThickness(
+  opts: { model: string; hour: number; interval: number },
+  signal?: AbortSignal,
+): Promise<ThicknessField> {
+  const q = new URLSearchParams({
+    model: opts.model,
+    hour: String(opts.hour),
+    interval: String(opts.interval),
+  });
+  const res = await fetch(`${BASE}/api/model-fields/thickness?${q}`, { signal });
+  if (!res.ok) throw new Error(await detail(res));
+  return res.json();
 }

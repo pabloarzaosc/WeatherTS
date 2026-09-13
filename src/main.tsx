@@ -2,6 +2,10 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import "maplibre-gl/dist/maplibre-gl.css";
+// The whole UI speaks Recursive: one variable family whose MONO and CASL axes
+// cover labels, headings and numbers. "full" is the file carrying every axis;
+// the others ship weight only, and MONO would silently do nothing.
+import "@fontsource-variable/recursive/full.css";
 import "./styles/theme.css";
 import "./styles/app.css";
 import "./styles/sounding.css";
@@ -24,6 +28,7 @@ import { useSoundingViewerStore } from "./store/useSoundingViewerStore";
 import { useSoundingViewStore } from "./store/useSoundingViewStore";
 import { useAcarsStore } from "./store/useAcarsStore";
 import { useNexradStore } from "./store/useNexradStore";
+import { useMrmsStore } from "./store/useMrmsStore";
 import { useVwpStore } from "./store/useVwpStore";
 import { useSurfaceObsStore } from "./store/useSurfaceObsStore";
 import { useThemeStore } from "./store/useThemeStore";
@@ -51,6 +56,7 @@ if (import.meta.env.DEV) {
     soundingView: useSoundingViewStore,
     acars: useAcarsStore,
     nexrad: useNexradStore,
+    mrms: useMrmsStore,
     vwp: useVwpStore,
   };
 }
@@ -88,9 +94,9 @@ setInterval(syncTheme, 60_000);
 
 import { ErrorBoundary } from "./ErrorBoundary";
 
-// The gate wraps App rather than living inside it: nothing of the workspace --
-// no map, no layer fetches, no onboarding -- should mount before a session is
-// accepted.
+// The gate wraps App rather than living inside it: the workspace mounts once
+// the session check has answered -- for a guest as much as for an account -- so
+// nothing in it starts out assuming the wrong one.
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <ErrorBoundary>

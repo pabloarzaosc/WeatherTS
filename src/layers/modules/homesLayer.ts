@@ -166,6 +166,7 @@ export const homesLayer: LayerModule = {
   source: "WeatherTS accounts",
   defaultVisible: false,
   defaultOpacity: 1,
+  requiresAccount: "homes",
 
   addTo(map) {
     state.get(map)?.unsub();

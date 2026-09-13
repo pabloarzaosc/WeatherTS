@@ -257,7 +257,20 @@ export async function joinChasers(listeners: {
     emit();
     return;
   }
+  // Two callers can ask in the same moment -- signing in, and the Chasers layer
+  // that sign-in switches back on -- and everything below awaits before
+  // `channel` is set. Without this both would build a channel on the topic and
+  // the second one's .on() would throw. The later caller waits for the first.
+  if (joining) return joining;
+  joining = connect().finally(() => {
+    joining = null;
+  });
+  return joining;
+}
 
+let joining: Promise<void> | null = null;
+
+async function connect(): Promise<void> {
   onStatus("joining");
 
   // supabase.channel() hands back the EXISTING channel when one is already

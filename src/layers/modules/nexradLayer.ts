@@ -134,8 +134,12 @@ export const nexradLayer: LayerModule = {
     // Z-order is the manager's job (it re-stacks every module after each
     // reconcile, which would undo any beforeId passed here); alert outlines stay
     // above this via their module's topLayerIds().
-    let glLayer: NexradGlLayer | null = null;
-    if (!map.getLayer(GL_LAYER)) {
+    // A layer already on this map (left by an earlier add that failed partway)
+    // is taken over rather than abandoned: abandoned, it would keep drawing its
+    // last scan with nothing left holding it to update or remove.
+    const existing = (map.getLayer(GL_LAYER) as { implementation?: unknown } | undefined)?.implementation;
+    let glLayer: NexradGlLayer | null = existing instanceof NexradGlLayer ? existing : null;
+    if (!glLayer) {
       glLayer = new NexradGlLayer(GL_LAYER);
       glLayer.setOpacity(opacity);
       map.addLayer(glLayer);

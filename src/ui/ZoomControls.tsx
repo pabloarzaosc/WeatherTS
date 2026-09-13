@@ -33,7 +33,7 @@ export function ZoomControls() {
       >
         <Minus size={18} />
       </button>
-      {/* Reset-view lives in the top bar (and "Home"); the map's own corner is
+      {/* Reset-view lives in the dock's Map tools; the map's own corner is
           where a locate button is expected, so that is what sits here. */}
       <button
         type="button"

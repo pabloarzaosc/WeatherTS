@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ConsentPanel } from "./ConsentPanel";
-import { ArrowLeft, Loader2, MailCheck, Radio, Satellite, Siren, Users, Wind, WifiOff } from "lucide-react";
+import { ArrowLeft, Loader2, MailCheck, Radio, Satellite, Siren, Users, Wind, WifiOff, X } from "lucide-react";
 
 import {
   GRACE_DAYS,
@@ -93,28 +93,40 @@ function Intro() {
         ))}
       </ul>
       <p className="gate__introfoot">
-        Free while it is being built. An account is what carries your handle, your saved workspaces
-        and your position on the map.
+        Free while it is being built, and open without an account. An account is what puts your
+        handle, your picture and your position on the map.
       </p>
     </aside>
   );
 }
 
 /**
- * Everything that happens before the app opens: signing in, signing up,
- * recovering a password, confirming an address, and the one-time-code flow for
- * a phone number.
+ * Signing in, signing up, recovering a password and confirming an address.
+ * Opened over the app -- from the dock, or from the prompt a guest gets on
+ * reaching for something that needs an account -- and on its own only for a
+ * password reset, the one thing a recovery session is for.
  *
  * One component on purpose. These screens share a card, a busy flag and an
  * error line, and every one of them is a step in the same errand -- splitting
  * them apart would mean passing that state around for no gain.
  */
-export function AuthScreen() {
+export function AuthScreen({
+  initialMode = "signin",
+  onClose,
+}: {
+  /** Where it opens. "signup" starts at the data notice, as the tab does. */
+  initialMode?: "signin" | "signup";
+  /** Given whenever the screen is opened over the app -- every time but a
+   *  password reset. Signing in is optional, so there has to be a way back. */
+  onClose?: () => void;
+} = {}) {
   const recovering = useAuthStore((s) => s.recovering);
   const setRecovering = useAuthStore((s) => s.setRecovering);
   const banned = useAuthStore((s) => s.banned);
 
-  const [mode, setMode] = useState<Mode>(recovering ? "reset" : "signin");
+  const [mode, setMode] = useState<Mode>(
+    recovering ? "reset" : initialMode === "signup" ? "consent" : "signin",
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -137,6 +149,21 @@ export function AuthScreen() {
     setError(null);
     setNote(null);
   }, [mode]);
+
+  useEffect(() => {
+    if (!onClose) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const closer = onClose ? (
+    <button type="button" className="gate__close" onClick={onClose}>
+      <X size={13} /> Continue without an account
+    </button>
+  ) : null;
 
   const run = async (tag: string, fn: () => Promise<void>) => {
     if (busy) return;
@@ -206,6 +233,7 @@ export function AuthScreen() {
   if (mode === "consent") {
     return (
       <div className="gate">
+        {closer}
         <div className="gate__split">
           <Intro />
           <div className="gate__card auth auth--consent">
@@ -225,6 +253,7 @@ export function AuthScreen() {
 
   return (
     <div className="gate">
+      {closer}
       <div className="gate__split">
         <Intro />
         <form className="gate__card auth" onSubmit={submit}>

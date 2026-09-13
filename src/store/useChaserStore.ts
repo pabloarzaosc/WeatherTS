@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, subscribeWithSelector } from "zustand/middleware";
 
 import type { ChaserPresence } from "../lib/chasers";
+import { requireAccount } from "./useAccountGate";
 
 /**
  * Live chaser positions, and whether this device is broadcasting its own.
@@ -50,8 +51,12 @@ export const useChaserStore = create<ChaserState>()(
         // Switching off also drops the last known position: leaving a "you are
         // here" dot up after you stopped sharing would misrepresent what other
         // people can currently see.
-        setSharing: (sharing) =>
-          set(sharing ? { sharing, shareError: null } : { sharing, shareError: null, myPosition: null }),
+        // Broadcasting puts a name on a position, and without an account there
+        // is no name to put on it -- so switching on asks for one first.
+        setSharing: (sharing) => {
+          if (sharing && !requireAccount("share")) return;
+          set(sharing ? { sharing, shareError: null } : { sharing, shareError: null, myPosition: null });
+        },
         setStatus: (status) => set({ status }),
         setChasers: (chasers) => set({ chasers }),
         setShareError: (shareError) => set({ shareError }),

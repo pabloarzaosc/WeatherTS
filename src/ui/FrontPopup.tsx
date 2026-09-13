@@ -107,12 +107,18 @@ export function FrontPopup() {
         )}
         <div>
           <dt>Chart</dt>
-          <dd>{frame ? (frame.kind === "forecast" ? frame.label : "Analysis") : "--"}</dd>
+          <dd>{pick.chart ?? (frame ? (frame.kind === "forecast" ? frame.label : "Analysis") : "--")}</dd>
         </div>
         <div>
           <dt>Valid at</dt>
-          <dd>{fmtValid(frame?.validUnix ?? null)}</dd>
+          <dd>{fmtValid(pick.validUnix ?? frame?.validUnix ?? null)}</dd>
         </div>
+        {pick.source && (
+          <div>
+            <dt>Source</dt>
+            <dd>{pick.source === "wpc" ? "WPC analysis" : `Found automatically in ${pick.model ?? "a model"}`}</dd>
+          </div>
+        )}
       </dl>
 
       {!isCentre && FRONT_DESCRIPTIONS[pick.kind as FrontKind] && (

@@ -1,6 +1,6 @@
 import { MapView } from "./map/MapView";
-import { TopBar } from "./ui/TopBar";
-import { TabsBar } from "./ui/TabsBar";
+import { Dock } from "./ui/Dock";
+import { SearchBar } from "./ui/SearchBar";
 import { DataPanel } from "./ui/DataPanel";
 import { StatusBar } from "./ui/StatusBar";
 import { ZoomControls } from "./ui/ZoomControls";
@@ -21,6 +21,7 @@ import { FrontPopup } from "./ui/FrontPopup";
 import { MapTimeline } from "./ui/MapTimeline";
 import { RadarHud } from "./ui/RadarHud";
 import { RadarReadout } from "./ui/RadarReadout";
+import { ObsReadout } from "./ui/ObsReadout";
 import { DayLoadOverlay } from "./ui/DayLoadOverlay";
 import { AnimationModal } from "./ui/AnimationModal";
 import { UpdateBanner } from "./ui/UpdateBanner";
@@ -60,11 +61,14 @@ export default function App() {
       <AlertController />
       {/* HUD overlay: click-through container; each child re-enables pointer events */}
       <div className="hud">
-        <div className="watermark">
-          WEATHER<span>TS</span>
+        {/* The tool dock replaces the top bar and the tab strip: every control
+            that sat in a row across the top now lives down one edge, and the
+            drawers slide out of it. */}
+        <Dock />
+        {/* search floats on the map now that there is no bar to live in */}
+        <div className="mapsearch">
+          <SearchBar />
         </div>
-        <TopBar />
-        <TabsBar />
         {/* top-left corner of the map: swapping the base is a view control */}
         <BasemapPicker />
         <DataPanel />
@@ -78,6 +82,7 @@ export default function App() {
         <RadarHud />
         {/* the gate value under the pointer, pinned to the pointer */}
         <RadarReadout />
+        <ObsReadout />
         {/* radar storm-cell card, anchored to the cell it describes */}
         <StormPopup />
         <ChaserPopup />

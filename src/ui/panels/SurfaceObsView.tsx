@@ -2,6 +2,7 @@ import { AlertTriangle, Loader2 } from "lucide-react";
 
 import { useAppStore } from "../../store/useAppStore";
 import { LayerPower } from "../LayerPower";
+import { Select } from "../Select";
 import {
   useSurfaceObsStore,
   ELEMENT_PRESETS,
@@ -137,17 +138,13 @@ export function SurfaceObsView() {
         <div className="sfx__head">
           <span>Field</span>
         </div>
-        <select
+        <Select
           className="sfx__select"
           value={displayMode}
-          onChange={(e) => setDisplayMode(e.target.value as SurfaceDisplayMode)}
-        >
-          {MODES.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label}
-            </option>
-          ))}
-        </select>
+          onChange={(value) => setDisplayMode(value as SurfaceDisplayMode)}
+          aria-label="What to draw"
+          options={MODES.map((m) => ({ value: m.id, label: m.label }))}
+        />
       </div>
 
       <div className={`sfx__block${stationMode ? "" : " is-dim"}`}>

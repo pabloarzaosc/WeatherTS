@@ -3,6 +3,7 @@ import { AlertTriangle, Loader2, Radio } from "lucide-react";
 
 import { useAppStore } from "../../store/useAppStore";
 import { LayerPower } from "../LayerPower";
+import { Select } from "../Select";
 import { frameChoicesFor, useNexradStore } from "../../store/useNexradStore";
 import { getMap } from "../../map/mapInstance";
 
@@ -119,29 +120,28 @@ export function RadarView() {
 
       <label className="sfcobs__field">
         <span className="sfcobs__label">Radar site ({usSites.length})</span>
-        <select
+        <Select
           value={site ?? ""}
-          onChange={(e) => {
-            const id = e.target.value || null;
+          aria-label="Radar site"
+          options={[
+            { value: "", label: "— pick a site (or click one on the map) —" },
+            ...usSites.map((s) => ({
+              value: s.id,
+              label: `${s.icao} — ${s.name}`,
+              hint: s.online === false ? "offline" : undefined,
+              disabled: s.online === false,
+              tone: s.online === false ? ("warn" as const) : undefined,
+            })),
+          ]}
+          onChange={(value) => {
+            const id = value || null;
             selectSite(id);
             if (id) {
               if (!enabled) setLayerVisible(LAYER, true);
               jumpTo(id);
             }
           }}
-        >
-          <option value="">— pick a site (or click one on the map) —</option>
-          {usSites.map((s) => (
-            <option
-              key={s.id}
-              value={s.id}
-              disabled={s.online === false}
-              style={{ color: s.online === false ? "#d33" : undefined }}
-            >
-              {s.icao} — {s.name}{s.online === false ? " (offline)" : ""}
-            </option>
-          ))}
-        </select>
+        />
       </label>
 
       {scan?.meta.vcp != null && (
@@ -162,13 +162,16 @@ export function RadarView() {
         <span className="sfcobs__label">
           Loop length{product.startsWith("L2") ? " — super-res, ~7 MB/frame" : ""}
         </span>
-        <select value={frames} onChange={(e) => setFrames(Number(e.target.value))}>
-          {frameChoicesFor(product).map((n) => (
-            <option key={n} value={n}>
-              {n} frames{n >= 200 ? " (heavy)" : ""}
-            </option>
-          ))}
-        </select>
+        <Select
+          value={String(frames)}
+          onChange={(value) => setFrames(Number(value))}
+          aria-label="How many frames"
+          options={frameChoicesFor(product).map((n) => ({
+            value: String(n),
+            label: `${n} frames`,
+            hint: n >= 200 ? "heavy" : undefined,
+          }))}
+        />
       </label>
 
       {/* Products + tilt now live on the map, top-right (RadarProductPanel):

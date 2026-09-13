@@ -4,6 +4,7 @@ import { persist, subscribeWithSelector } from "zustand/middleware";
 import { getLayerModule, getLayerModules } from "../layers/registry";
 import { DEFAULT_BASEMAP } from "../map/basemaps";
 import type { MeasureMode } from "../lib/measure";
+import { requireAccount } from "./useAccountGate";
 
 export type Projection = "mercator" | "globe";
 /** Left data-panel tabs. */
@@ -76,12 +77,25 @@ interface AppState {
   setLayerVisibilityBatch: (updates: Record<string, boolean>) => void;
   setLayerOpacity: (id: string, opacity: number) => void;
   moveLayer: (id: string, dir: "up" | "down") => void;
+  /** The whole stack at once, bottom -> top, as dragging a row rewrites it. */
+  setLayerOrder: (order: string[]) => void;
 }
 
 function applyOutlookSideEffects(layers: Record<string, LayerUIState>, id: string, visible: boolean) {
   if (!visible || getLayerModule(id)?.category !== "outlooks") return;
   const alerts = layers["nws-alerts"];
   if (alerts) layers["nws-alerts"] = { ...alerts, visible: false };
+}
+
+/**
+ * Whether `id` may be switched to `visible`. Layers that show people need an
+ * account: for a visitor without one this puts up the prompt and says no, so
+ * every switch in the app -- catalog tile, layer row, saved workspace -- gets
+ * the same answer without each having to ask. Switching off is always allowed.
+ */
+function mayShow(id: string, visible: boolean): boolean {
+  const feature = visible ? getLayerModule(id)?.requiresAccount : undefined;
+  return !feature || requireAccount(feature);
 }
 
 /**
@@ -153,6 +167,7 @@ export const useAppStore = create<AppState>()(
           const layer = get().layers[id];
           if (!layer) return;
           const visible = !layer.visible;
+          if (!mayShow(id, visible)) return;
           const layers = { ...get().layers, [id]: { ...layer, visible } };
           applyOutlookSideEffects(layers, id, visible);
           set({ layers });
@@ -160,6 +175,7 @@ export const useAppStore = create<AppState>()(
         setLayerVisible: (id, visible) => {
           const layer = get().layers[id];
           if (!layer) return;
+          if (!mayShow(id, visible)) return;
           const layers = { ...get().layers, [id]: { ...layer, visible } };
           applyOutlookSideEffects(layers, id, visible);
           set({ layers });
@@ -169,6 +185,7 @@ export const useAppStore = create<AppState>()(
           for (const [id, visible] of Object.entries(updates)) {
             const layer = layers[id];
             if (!layer) continue;
+            if (!mayShow(id, visible)) continue;
             layers[id] = { ...layer, visible };
             applyOutlookSideEffects(layers, id, visible);
           }
@@ -187,6 +204,14 @@ export const useAppStore = create<AppState>()(
           if (j < 0 || j >= order.length) return;
           [order[i], order[j]] = [order[j], order[i]];
           set({ layerOrder: order });
+        },
+        setLayerOrder: (order) => {
+          // Anything the caller left out keeps its place at the bottom, so a
+          // stale list can never drop a layer out of the stack entirely.
+          const known = get().layerOrder;
+          const kept = order.filter((id) => known.includes(id));
+          const rest = known.filter((id) => !kept.includes(id));
+          set({ layerOrder: [...rest, ...kept] });
         },
       }),
       {
