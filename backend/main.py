@@ -685,6 +685,28 @@ def obs_image(
                     headers={"Cache-Control": "public, max-age=3600"})
 
 
+@app.get("/api/obs/view")
+def obs_view(
+    source: str = Query(observations.DEFAULT_SOURCE),
+    field: str = Query(observations.DEFAULT_FIELD),
+    key: str = Query(...),
+    west: float = Query(..., ge=-540, le=540),
+    south: float = Query(..., ge=-90, le=90),
+    east: float = Query(..., ge=-540, le=540),
+    north: float = Query(..., ge=-90, le=90),
+    width: int = Query(1024, ge=64, le=2048),
+    height: int = Query(768, ge=64, le=2048),
+):
+    """The part of one hour on screen, sharp at the zoom it is looked at."""
+    try:
+        png = observations.render_view(source, field, key, west, south, east, north, width, height)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+
+
 @app.get("/api/obs/render")
 def obs_render(
     source: str = Query(observations.DEFAULT_SOURCE),

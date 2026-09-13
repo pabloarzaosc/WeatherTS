@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import type { GeoJSONSource } from "maplibre-gl";
 
-import { getMap } from "../map/mapInstance";
+import { allMaps } from "../map/mapInstance";
 import { useAlertStore } from "../store/useAlertStore";
 import {
   alertsToFeatureCollection,
@@ -34,11 +34,15 @@ export function AlertController() {
   useEffect(() => {
     let ctrl: AbortController | null = null;
 
+    // Every pane, not the focused one: with the screen split, only the pane
+    // last clicked was getting new alerts, and a warning issued after the split
+    // showed on one side of the screen and not the other.
     const draw = () => {
-      const map = getMap();
-      const src = map?.getSource(ALERT_SOURCE) as GeoJSONSource | undefined;
-      if (!src) return;
-      src.setData(alertsToFeatureCollection(useAlertStore.getState().features));
+      const data = alertsToFeatureCollection(useAlertStore.getState().features);
+      for (const map of allMaps()) {
+        const src = map.getSource(ALERT_SOURCE) as GeoJSONSource | undefined;
+        src?.setData(data);
+      }
     };
 
     const load = async () => {

@@ -1,14 +1,24 @@
 import type { GeoJSONSource, ImageSource, Map as MapLibreMap, MapStyleImageMissingEvent } from "maplibre-gl";
 
 import type { LayerModule } from "../types";
-import { fetchObsMeta, fetchObsVectors, obsImageUrl, type ObsBarbs } from "../../lib/observations";
+import {
+  fetchObsMeta,
+  fetchObsVectors,
+  obsImageUrl,
+  obsViewUrl,
+  type ObsBarbs,
+  type ObsRender,
+  type ObsVectors,
+} from "../../lib/observations";
 import { useObsStore } from "../../store/useObsStore";
 
 const SRC = "obs-src";
+const DETAIL_SRC = "obs-detail-src";
 const LINES_SRC = "obs-lines-src";
 const EDGE_SRC = "obs-edge-src";
 const BARBS_SRC = "obs-barbs-src";
 const LAYER = "obs-raster";
+const DETAIL = "obs-detail";
 const LINE = "obs-line";
 const LABEL = "obs-line-label";
 const EDGE = "obs-edge";
@@ -28,7 +38,15 @@ const BARB_BANDS = [
 const BARB_IDS = BARB_BANDS.map((b) => b.id);
 const BARB_IMAGE = "obsbarb-";
 
-const ALL = [LAYER, EDGE, LINE, ...BARB_IDS, LABEL];
+const ALL = [LAYER, DETAIL, EDGE, LINE, ...BARB_IDS, LABEL];
+
+/**
+ * From this zoom the whole-domain picture (about 6 km a pixel) shows its
+ * pixels as squares, so a second picture of just what is on screen is drawn
+ * over it -- the field interpolated by the server before it is coloured.
+ */
+const DETAIL_MIN_ZOOM = 4.5;
+const DETAIL_SETTLE_MS = 220;
 
 const DEFAULT_OPACITY = 0.75;
 
@@ -47,14 +65,120 @@ const HOME: [number, number][] = [
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
 interface PaneState {
-  abort: AbortController | null;
   unsub: () => void;
   onMissing: (e: MapStyleImageMissingEvent) => void;
+  onMove: () => void;
   seq: number;
   /** What is drawn, so a redraw of the same frame is skipped. */
   shown: string;
+  detailSeq: number;
+  /** The box and frame the detail picture on the map was made for. */
+  detailKey: string;
+  detailUrl: string | null;
+  moveTimer: number | null;
 }
 const state = new WeakMap<MapLibreMap, PaneState>();
+
+/**
+ * One request per frame however many panes draw it. With the screen split,
+ * every pane asked for the same picture and lines at once -- twice the server
+ * threads for one answer, and the second pane's request was the one a slow
+ * hour kept waiting.
+ */
+const inflight = new Map<string, Promise<[Pick<ObsRender, "coordinates" | "meta">, ObsVectors]>>();
+function frameData(args: { source: string; field: string; key: string }) {
+  const k = `${args.source}|${args.field}|${args.key}`;
+  let p = inflight.get(k);
+  if (!p) {
+    p = Promise.all([fetchObsMeta(args), fetchObsVectors(args)]);
+    inflight.set(k, p);
+    const drop = () => inflight.delete(k);
+    p.then(drop, drop);
+  }
+  return p;
+}
+
+function hideDetail(map: MapLibreMap, st: PaneState): void {
+  st.detailSeq += 1;
+  st.detailKey = "";
+  if (map.getLayer(DETAIL)) map.setLayoutProperty(DETAIL, "visibility", "none");
+}
+
+async function refreshDetail(map: MapLibreMap): Promise<void> {
+  const st = state.get(map);
+  const src = map.getSource(DETAIL_SRC) as ImageSource | undefined;
+  if (!st || !src || !map.getLayer(DETAIL)) return;
+  const { source, field, frames, index } = useObsStore.getState();
+  const frame = frames[index];
+  const want = frame ? `${source}|${field}|${frame.key}` : "";
+  // Only over a frame that is already drawn, and only once zoomed in.
+  if (!frame || st.shown !== want || map.getZoom() < DETAIL_MIN_ZOOM) {
+    hideDetail(map, st);
+    return;
+  }
+  const b = map.getBounds();
+  let west = b.getWest();
+  let east = b.getEast();
+  let north = Math.min(b.getNorth(), 85);
+  let south = Math.max(b.getSouth(), -85);
+  // A view across the antimeridian, or wider than the analyses, keeps the
+  // whole-domain picture: at that scale it is sharp enough already.
+  if (west < -180 || east > 180 || east - west > 120) {
+    hideDetail(map, st);
+    return;
+  }
+  // A margin, so a small pan does not uncover the edge before the next picture.
+  const padX = (east - west) * 0.12;
+  const padY = (north - south) * 0.12;
+  west = Math.max(-180, west - padX);
+  east = Math.min(180, east + padX);
+  north = Math.min(85, north + padY);
+  south = Math.max(-85, south - padY);
+
+  const canvas = map.getCanvas();
+  const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
+  const width = Math.min(2048, Math.max(64, canvas.clientWidth * 1.24 * ratio));
+  const height = Math.min(2048, Math.max(64, canvas.clientHeight * 1.24 * ratio));
+  const key = `${want}|${west.toFixed(2)},${south.toFixed(2)},${east.toFixed(2)},${north.toFixed(2)}|${Math.round(width)}x${Math.round(height)}`;
+  if (key === st.detailKey) return;
+
+  const seq = ++st.detailSeq;
+  try {
+    const res = await fetch(obsViewUrl({ source, field, key: frame.key, west, south, east, north, width, height }));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    if (seq !== st.detailSeq || !map.getSource(DETAIL_SRC)) return;
+    const url = URL.createObjectURL(blob);
+    // Decoded before it goes on the map, so the swap never shows a blank box.
+    await new Promise<void>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("detail image did not decode"));
+      img.src = url;
+    });
+    if (seq !== st.detailSeq || !map.getSource(DETAIL_SRC)) {
+      URL.revokeObjectURL(url);
+      return;
+    }
+    src.updateImage({
+      url,
+      coordinates: [
+        [west, north],
+        [east, north],
+        [east, south],
+        [west, south],
+      ] as never,
+    });
+    const previous = st.detailUrl;
+    st.detailUrl = url;
+    st.detailKey = key;
+    if (previous) window.setTimeout(() => URL.revokeObjectURL(previous), 2000);
+    map.setLayoutProperty(DETAIL, "visibility", "visible");
+  } catch {
+    // The whole-domain picture is still underneath; a missed detail is not an error.
+    if (seq === st.detailSeq) hideDetail(map, st);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Barb pictures
@@ -177,20 +301,17 @@ async function draw(map: MapLibreMap): Promise<void> {
   const want = `${source}|${field}|${frame.key}`;
   if (want === st.shown) return;
 
-  st.abort?.abort();
-  const ctrl = new AbortController();
-  st.abort = ctrl;
   const seq = ++st.seq;
+  // The detail picture belongs to the frame being replaced: left up, it would
+  // show the old hour over the new one while the new one loads.
+  hideDetail(map, st);
   useObsStore.getState().setStatus({ busy: true, error: null });
 
   const args = { source, field, key: frame.key };
   try {
     // The picture and the numbers over it come from the same cached variables
     // on the server, so asking for both at once costs one download, not two.
-    const [picture, vectors] = await Promise.all([
-      fetchObsMeta(args, ctrl.signal),
-      fetchObsVectors(args, ctrl.signal),
-    ]);
+    const [picture, vectors] = await frameData(args);
     // A slower earlier frame must not paint over a newer one that already landed.
     if (seq !== st.seq || !map.getSource(SRC)) return;
     // The meta call made the PNG; this URL is served straight from that cache.
@@ -199,6 +320,7 @@ async function draw(map: MapLibreMap): Promise<void> {
     edge.setData(vectors.edge);
     barbs.setData(barbFeatures(vectors.barbs));
     st.shown = want;
+    void refreshDetail(map);
     useObsStore.getState().setStatus({
       busy: false,
       error: null,
@@ -208,7 +330,7 @@ async function draw(map: MapLibreMap): Promise<void> {
       linesUnit: vectors.linesUnit,
     });
   } catch (err) {
-    if (ctrl.signal.aborted || seq !== st.seq) return;
+    if (seq !== st.seq) return;
     st.shown = "";
     lines.setData(EMPTY);
     edge.setData(EMPTY);
@@ -257,6 +379,9 @@ export const obsLayer: LayerModule = {
     if (!map.getSource(SRC)) {
       map.addSource(SRC, { type: "image", url: BLANK, coordinates: HOME as never });
     }
+    if (!map.getSource(DETAIL_SRC)) {
+      map.addSource(DETAIL_SRC, { type: "image", url: BLANK, coordinates: HOME as never });
+    }
     if (!map.getSource(LINES_SRC)) map.addSource(LINES_SRC, { type: "geojson", data: EMPTY });
     if (!map.getSource(EDGE_SRC)) map.addSource(EDGE_SRC, { type: "geojson", data: EMPTY });
     if (!map.getSource(BARBS_SRC)) map.addSource(BARBS_SRC, { type: "geojson", data: EMPTY });
@@ -270,6 +395,19 @@ export const obsLayer: LayerModule = {
           "raster-opacity": DEFAULT_OPACITY,
           // The field is a backdrop for everything drawn over it; a hard edge
           // between neighbouring cells would read as data it is not.
+          "raster-resampling": "linear",
+          "raster-fade-duration": 0,
+        },
+      });
+    }
+    if (!map.getLayer(DETAIL)) {
+      map.addLayer({
+        id: DETAIL,
+        type: "raster",
+        source: DETAIL_SRC,
+        layout: { visibility: "none" },
+        paint: {
+          "raster-opacity": DEFAULT_OPACITY,
           "raster-resampling": "linear",
           "raster-fade-duration": 0,
         },
@@ -367,7 +505,30 @@ export const obsLayer: LayerModule = {
         applyVisibility(map);
       }
     });
-    state.set(map, { abort: null, seq: 0, shown: "", unsub, onMissing });
+    const onMove = () => {
+      const st = state.get(map);
+      if (!st) return;
+      if (st.moveTimer != null) window.clearTimeout(st.moveTimer);
+      st.moveTimer = window.setTimeout(() => {
+        st.moveTimer = null;
+        void refreshDetail(map);
+      }, DETAIL_SETTLE_MS);
+    };
+    map.on("moveend", onMove);
+    // A panel opening or closing resizes the map without moving it, and the
+    // uncovered strip would otherwise keep the blocky whole-domain picture.
+    map.on("resize", onMove);
+    state.set(map, {
+      seq: 0,
+      shown: "",
+      unsub,
+      onMissing,
+      onMove,
+      detailSeq: 0,
+      detailKey: "",
+      detailUrl: null,
+      moveTimer: null,
+    });
 
     // The catalogue and the frame list may not be loaded yet -- the panel need
     // never have been opened.
@@ -378,18 +539,24 @@ export const obsLayer: LayerModule = {
   removeFrom(map) {
     const st = state.get(map);
     if (st) {
-      st.abort?.abort();
+      st.seq += 1;
+      st.detailSeq += 1;
       st.unsub();
       map.off("styleimagemissing", st.onMissing);
+      map.off("moveend", st.onMove);
+      map.off("resize", st.onMove);
+      if (st.moveTimer != null) window.clearTimeout(st.moveTimer);
+      if (st.detailUrl) URL.revokeObjectURL(st.detailUrl);
       state.delete(map);
     }
     for (const id of ALL) if (map.getLayer(id)) map.removeLayer(id);
-    for (const id of [SRC, LINES_SRC, EDGE_SRC, BARBS_SRC]) if (map.getSource(id)) map.removeSource(id);
+    for (const id of [SRC, DETAIL_SRC, LINES_SRC, EDGE_SRC, BARBS_SRC]) if (map.getSource(id)) map.removeSource(id);
     useObsStore.getState().setStatus({ busy: false, error: null, valid: null, interval: null });
   },
 
   setOpacity(map, opacity) {
     if (map.getLayer(LAYER)) map.setPaintProperty(LAYER, "raster-opacity", opacity);
+    if (map.getLayer(DETAIL)) map.setPaintProperty(DETAIL, "raster-opacity", opacity);
     // The lines and barbs stay readable as the field is faded back: they are
     // the part you are meant to read when the colours are turned down.
     const ink = Math.min(1, 0.35 + opacity * 0.5);

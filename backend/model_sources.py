@@ -26,6 +26,7 @@ behind an account or key are left out rather than scraped.
 from __future__ import annotations
 
 import bz2
+import contextlib
 import io
 import json
 import math
@@ -578,6 +579,29 @@ class RateLimited(RuntimeError):
 _HOST_LIMITS = {"nomads.ncep.noaa.gov": 60}
 _HITS: dict[str, list[float]] = {}
 _HITS_LOCK = threading.Lock()
+_NO_WAIT = threading.local()
+
+
+class Throttled(RateLimited):
+    """This process has used a host's budget for the minute, and the caller
+    asked not to wait for it (see no_wait)."""
+
+
+@contextlib.contextmanager
+def no_wait():
+    """Inside this, a request that would wait for the per-host budget raises
+    Throttled instead of sleeping.
+
+    For callers with somewhere else to go. The analyses read the same files from
+    NOAA's AWS copy, and a request that slept for most of a minute here held the
+    frame someone was waiting for on "Drawing..." with the mirror idle.
+    """
+    before = getattr(_NO_WAIT, "on", False)
+    _NO_WAIT.on = True
+    try:
+        yield
+    finally:
+        _NO_WAIT.on = before
 
 
 def _throttle(url: str) -> None:
@@ -595,6 +619,8 @@ def _throttle(url: str) -> None:
                 return
             _HITS[host] = hits
             wait = 60.0 - (now - hits[0]) + 0.05
+        if getattr(_NO_WAIT, "on", False):
+            raise Throttled(f"{host}: this minute's request budget is used up")
         time.sleep(wait)
 
 

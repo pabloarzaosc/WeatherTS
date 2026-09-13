@@ -143,6 +143,8 @@ export interface ObsValue {
   text: string | null;
   /** The wind and the contoured variable at the same point: "SW 35 kt · 582 dam". */
   extra: string | null;
+  /** The product is not readable yet (its hour is still downloading). */
+  pending?: boolean;
   lat: number;
   lon: number;
 }
@@ -187,6 +189,33 @@ export async function fetchObsMeta(
   const res = await fetch(`${BASE}/api/obs/meta?${q}`, { signal });
   if (!res.ok) throw new Error(await detail(res));
   return res.json();
+}
+
+/** The part of one hour inside a box, for a zoomed-in view: sharp where the
+ *  whole-domain picture is about 6 km a pixel. */
+export function obsViewUrl(opts: {
+  source: string;
+  field: string;
+  key: string;
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+  width: number;
+  height: number;
+}): string {
+  const q = new URLSearchParams({
+    source: opts.source,
+    field: opts.field,
+    key: opts.key,
+    west: opts.west.toFixed(3),
+    south: opts.south.toFixed(3),
+    east: opts.east.toFixed(3),
+    north: opts.north.toFixed(3),
+    width: String(Math.round(opts.width)),
+    height: String(Math.round(opts.height)),
+  });
+  return `${BASE}/api/obs/view?${q}`;
 }
 
 /** A plain PNG URL: fetched and decoded by the map itself, and cacheable. */

@@ -30,13 +30,24 @@ export function useObsSample(): ObsSample | null {
   const source = useObsStore((s) => s.source);
   const field = useObsStore((s) => s.field);
   const frame = useObsStore(selectObsFrame);
+  const busy = useObsStore((s) => s.busy);
 
   const [sample, setSample] = useState<ObsSample | null>(null);
   const ctrl = useRef<AbortController | null>(null);
 
+  // A new product, source or hour clears the card at once. Kept until the next
+  // answer, the previous one sat under the pointer labelled "Significant
+  // Tornado Parameter" while the panel said 2m Temperature.
   useEffect(() => {
-    if (!visible || !cursor || !frame) {
-      setSample(null);
+    ctrl.current?.abort();
+    setSample(null);
+  }, [source, field, frame?.key]);
+
+  useEffect(() => {
+    // While the frame is still being drawn there is nothing to read yet; the
+    // server answers "pending" rather than downloading for a pointer move.
+    if (!visible || !cursor || !frame || busy) {
+      if (!visible || !cursor || !frame) setSample(null);
       return;
     }
     const timer = window.setTimeout(async () => {
@@ -49,6 +60,7 @@ export function useObsSample(): ObsSample | null {
           mine.signal,
         );
         if (mine.signal.aborted) return;
+        if (out.key !== frame.key || out.field !== field) return;
         setSample(
           out.value == null
             ? null
@@ -67,7 +79,7 @@ export function useObsSample(): ObsSample | null {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [visible, cursor, source, field, frame]);
+  }, [visible, cursor, source, field, frame, busy]);
 
   useEffect(() => () => ctrl.current?.abort(), []);
 

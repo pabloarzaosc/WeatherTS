@@ -46,7 +46,7 @@ from urllib.parse import urlsplit
 import numpy as np
 from matplotlib.figure import Figure
 from PIL import Image
-from scipy.ndimage import gaussian_filter
+from scipy.ndimage import gaussian_filter, map_coordinates
 from scipy.spatial import cKDTree
 
 import model_fields
@@ -258,7 +258,8 @@ def _discover_frames(source: str) -> list[dict]:
     def probe(host: str) -> Optional[datetime]:
         def there(when: datetime) -> bool:
             try:
-                return ms.has_idx(_url(source, host, when))
+                with ms.no_wait():
+                    return ms.has_idx(_url(source, host, when))
             except Exception:  # noqa: BLE001 - rate limits included: try the mirror
                 return False
         with ThreadPoolExecutor(max_workers=6) as pool:
@@ -469,7 +470,9 @@ def _values(source: str, key: str, match: str) -> tuple[np.ndarray, str]:
     for host in _hosts(source, key):
         url = _url(source, host, when)
         try:
-            got = ms.values_at(url, match)
+            # Never sleep on the NOMADS budget: the mirror has the same file.
+            with ms.no_wait():
+                got = ms.values_at(url, match)
         except ms.RateLimited as exc:
             last = exc
             continue
@@ -480,10 +483,15 @@ def _values(source: str, key: str, match: str) -> tuple[np.ndarray, str]:
             return got, url
         # A whole day NOMADS has let go of: do not ask it again for that day. Only
         # for hours a day old -- a recent hour missing is late, not pruned.
-        if (host == "nomads" and datetime.now(timezone.utc) - when > timedelta(hours=24)
-                and not ms.has_idx(url)):
-            with _LOCK:
-                _NOMADS_GONE.add((source, key[:8]))
+        if host == "nomads" and datetime.now(timezone.utc) - when > timedelta(hours=24):
+            try:
+                with ms.no_wait():
+                    gone = not ms.has_idx(url)
+            except ms.RateLimited:
+                gone = False
+            if gone:
+                with _LOCK:
+                    _NOMADS_GONE.add((source, key[:8]))
     detail = f" ({last})" if last else ""
     raise RuntimeError(f"{SOURCES[source]['label']} {when:%d %H:%MZ}: {match} is not available{detail}")
 
@@ -697,7 +705,7 @@ def _shade(source: str, pid: str, key: str) -> tuple[np.ndarray, np.ndarray, np.
     get = _Getter(source, key)
     with _LOCK:
         hit = _SHADES.get(sk)
-        mapped = source in _MAPS
+        mapped = _grid_id(source) in _MAPS
     if hit is not None and mapped:
         # Lines and barbs still read their variables through `get`, which
         # fetches any that were let go since.
@@ -805,6 +813,96 @@ def render(source: str = DEFAULT_SOURCE, field: str = DEFAULT_FIELD, key: str = 
     return out
 
 
+_VIEWS: "OrderedDict[tuple, bytes]" = OrderedDict()
+_VIEWS_MAX = 24
+
+
+def render_view(source: str, field: str, key: str, west: float, south: float, east: float, north: float,
+                width: int, height: int) -> bytes:
+    """The part of one hour inside a box, as a PNG exactly `width` x `height`.
+
+    The whole-domain picture is about 6 km a pixel: fine for a country, blocks
+    once you zoom to a county. This one spends the pixels on what is on screen
+    and interpolates the FIELD before colouring it -- blending dBZ, not already
+    coloured pixels, so a 45 dBZ core fades through the palette's own 44, 43, 42
+    instead of through whatever colours lie between two squares. It cannot add
+    detail the drawing grid does not hold; it removes the squares.
+
+    Categorical products (precipitation type) take the nearest value instead:
+    halfway between rain and snow is not a third kind of weather.
+    """
+    _check(source, field)
+    key = key or _newest_key(source)
+    width = max(64, min(int(width), 2048))
+    height = max(64, min(int(height), 2048))
+    north, south = min(north, 85.0), max(south, -85.0)
+    if not (east > west and north > south):
+        raise ValueError("empty box")
+    ck = (source, field, key, round(west, 3), round(south, 3), round(east, 3), round(north, 3), width, height)
+    with _LOCK:
+        hit = _VIEWS.get(ck)
+    if hit is not None:
+        return hit
+
+    lats, lons, values, _get = _shade(source, field, key)
+    step = SOURCES[source]["step"]
+    spec = PRODUCTS[field]
+
+    xs = np.linspace(west, east, width, endpoint=False) + (east - west) / (2 * width)
+    ys = np.linspace(_merc_y(north), _merc_y(south), height, endpoint=False)
+    ys = ys + (_merc_y(south) - _merc_y(north)) / (2 * height)
+    row_lats = np.degrees(2.0 * np.arctan(np.exp(ys)) - np.pi / 2.0)
+    jj = np.broadcast_to(((lats[0] - row_lats) / step)[:, None], (height, width))
+    ii = np.broadcast_to(((xs - lons[0]) / step)[None, :], (height, width))
+
+    # Only the rows and columns under the box (and a margin for the blur) are
+    # worked on: a county view is a few hundred cells, not the whole country.
+    pad = 4
+    j0 = int(max(0, np.floor(jj.min()) - pad))
+    j1 = int(min(values.shape[0], np.ceil(jj.max()) + pad + 1))
+    i0 = int(max(0, np.floor(ii.min()) - pad))
+    i1 = int(min(values.shape[1], np.ceil(ii.max()) + pad + 1))
+    if j1 <= j0 or i1 <= i0:
+        crop = np.full((1, 1), np.nan, dtype=np.float32)
+        j0 = i0 = 0
+    else:
+        crop = values[j0:j1, i0:i1]
+    jj, ii = jj - j0, ii - i0
+
+    good = np.isfinite(crop)
+    if spec.get("fmt") == "ptype":
+        out = map_coordinates(np.where(good, crop, np.nan), [jj, ii], order=0, mode="constant", cval=np.nan)
+    else:
+        # A light blur first: the drawing grid was filled by nearest neighbour,
+        # and interpolating those repeated cells straight left rectangular
+        # plateaus. Blurred as value-times-mask over mask, so the edge of the
+        # data does not bleed towards zero.
+        mask = good.astype(np.float32)
+        filled = np.where(good, crop, 0.0).astype(np.float32)
+        mask_s = gaussian_filter(mask, 0.6, mode="constant")
+        filled_s = gaussian_filter(filled, 0.6, mode="constant")
+        weight = map_coordinates(mask_s, [jj, ii], order=1, mode="constant", cval=0.0)
+        summed = map_coordinates(filled_s, [jj, ii], order=1, mode="constant", cval=0.0)
+        inside = map_coordinates(mask, [jj, ii], order=1, mode="constant", cval=0.0)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            out = np.where((inside > 0.5) & (weight > 1e-3), summed / weight, np.nan)
+
+    table, lo, hi = _lut_for(field)
+    ok = np.isfinite(out)
+    scaled = np.where(ok, (out - lo) / max(hi - lo, 1e-6), 0.0)
+    idx = np.clip((scaled * (table.shape[0] - 1)).astype(np.int32), 0, table.shape[0] - 1)
+    rgba = table[idx]
+    rgba[~ok] = 0
+    buf = io.BytesIO()
+    Image.fromarray(np.ascontiguousarray(rgba), mode="RGBA").save(buf, format="PNG", optimize=False, compress_level=1)
+    png = buf.getvalue()
+    with _LOCK:
+        _VIEWS[ck] = png
+        while len(_VIEWS) > _VIEWS_MAX:
+            _VIEWS.popitem(last=False)
+    return png
+
+
 def warm_newest(source: str, field: str, width: int = DEFAULT_WIDTH) -> None:
     """Start making the newest hour as soon as someone opens the panel.
 
@@ -875,11 +973,42 @@ def _fmt(v: float, decimals: int) -> str:
 _COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
 
 
+def _names_ready(source: str, key: str, names: set[str]) -> bool:
+    """Whether every raw variable is in memory or on disk -- readable without a download."""
+    for n in names:
+        if _vars_get((source, n, key)) is None and not _var_path(source, n, key).exists():
+            return False
+    return True
+
+
+def _ready(source: str, pid: str, key: str, names: Optional[list[str]] = None) -> bool:
+    if names is None:
+        with _LOCK:
+            if (source, pid, key) in _SHADES:
+                return True
+        need = _product_needs(source, pid) or set()
+    else:
+        need = set()
+        for n in names:
+            need |= needs(source, n) or set()
+    return _names_ready(source, key, need)
+
+
 def value_at(source: str, field: str, key: str, lat: float, lon: float) -> dict[str, Any]:
-    """The analysed value at one point, for the readout that follows the cursor."""
+    """The analysed value at one point, for the readout that follows the cursor.
+
+    Never downloads. Every pointer move is a request, and one that waited on a
+    cold hour's download held a server thread for as long as the download took:
+    moving the mouse while a frame loaded queued dozens of them, which starved
+    the requests drawing that very frame. Until the product is readable locally
+    the answer is "pending", and the readout simply waits for the map.
+    """
     _check(source, field)
     key = key or _newest_key(source)
     spec = PRODUCTS[field]
+    if not _ready(source, field, key):
+        return {"source": source, "field": field, "key": key, "unit": spec["unit"], "label": spec["label"],
+                "value": None, "text": None, "extra": None, "pending": True, "lat": lat, "lon": lon}
 
     lats, lons, values, get = _shade(source, field, key)
     j = int(np.argmin(np.abs(lats - lat)))
@@ -889,7 +1018,7 @@ def value_at(source: str, field: str, key: str, lat: float, lon: float) -> dict[
     ok = np.isfinite(v)
 
     extra: list[str] = []
-    if ok and spec["barbs"]:
+    if ok and spec["barbs"] and _ready(source, field, key, list(spec["barbs"])):
         u = float(get(spec["barbs"][0])[j, i])
         w = float(get(spec["barbs"][1])[j, i])
         if np.isfinite(u) and np.isfinite(w):
@@ -902,7 +1031,7 @@ def value_at(source: str, field: str, key: str, lat: float, lon: float) -> dict[
             else:
                 extra.append("Calm" if kt < 2.5 else f"{point} {round(kt)} kt")
     lines = spec["lines"]
-    if ok and lines and lines.get("var"):
+    if ok and lines and lines.get("var") and _ready(source, field, key, [lines["var"]]):
         lv = float(_convert(get(lines["var"])[j, i], lines.get("convert")))
         if np.isfinite(lv):
             extra.append(f"{round(lv)} {lines['unit']}")
