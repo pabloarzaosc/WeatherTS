@@ -96,9 +96,15 @@ export const OBS_WIDTH = 1200;
 
 /** Passing the field lets the server start on its newest hour before the layer
  *  is even switched on. */
-export async function fetchObsFrames(source: string, signal?: AbortSignal, field?: string): Promise<ObsFrame[]> {
+export async function fetchObsFrames(
+  source: string,
+  signal?: AbortSignal,
+  field?: string,
+  hours?: number,
+): Promise<ObsFrame[]> {
   const q = new URLSearchParams({ source });
   if (field) q.set("field", field);
+  if (hours) q.set("hours", String(hours));
   const res = await fetch(`${BASE}/api/obs/frames?${q}`, { signal });
   if (!res.ok) throw new Error(await detail(res));
   return (await res.json()).frames as ObsFrame[];
@@ -216,6 +222,58 @@ export function obsViewUrl(opts: {
     height: String(Math.round(opts.height)),
   });
   return `${BASE}/api/obs/view?${q}`;
+}
+
+/** Ask the backend to start making a loop of frames, in the order given. */
+export async function prefetchObsLoop(source: string, field: string, keys: string[]): Promise<void> {
+  await fetch(`${BASE}/api/obs/prefetch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source, field, keys }),
+  });
+}
+
+/** Skip the frames of the loop still waiting to be made. */
+export async function cancelObsLoop(): Promise<void> {
+  await fetch(`${BASE}/api/obs/cancel`, { method: "POST" });
+}
+
+/** Which frames of a loop the backend has finished, and which it could not make. */
+export async function fetchObsLoopStatus(
+  source: string,
+  field: string,
+  keys: string[],
+): Promise<{ ready: string[]; failed: string[] }> {
+  const res = await fetch(`${BASE}/api/obs/loop-status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source, field, keys }),
+  });
+  if (!res.ok) throw new Error(await detail(res));
+  return res.json();
+}
+
+export interface ObsPoints {
+  key: string;
+  field: string;
+  /** The product is not readable yet; values are all null until it is. */
+  pending: boolean;
+  /** One per point asked for: "91°", "63%", "2500", or null outside the data. */
+  values: (string | null)[];
+}
+
+export async function fetchObsPoints(
+  opts: { source: string; field: string; key: string; points: [number, number][] },
+  signal?: AbortSignal,
+): Promise<ObsPoints> {
+  const res = await fetch(`${BASE}/api/obs/points`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(opts),
+    signal,
+  });
+  if (!res.ok) throw new Error(await detail(res));
+  return res.json();
 }
 
 /** A plain PNG URL: fetched and decoded by the map itself, and cacheable. */

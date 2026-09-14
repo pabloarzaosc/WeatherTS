@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { useAppStore } from "../store/useAppStore";
 import { useNexradStore } from "../store/useNexradStore";
 import { usePaletteStore } from "../store/usePaletteStore";
+import { hcaKey } from "../lib/hca";
 import { palGradient, palTicks, parsePal } from "../lib/pal";
 import { useDragOffset } from "../lib/useDragOffset";
 import { unitFor, unitTicks } from "../lib/radarUnits";
@@ -67,6 +68,8 @@ export function RadarColorBar({ paneId }: { paneId?: string } = {}) {
       product: fam.label,
       label: mine?.label ?? palTables[pid]?.label ?? pid,
       custom: !!mine,
+      // Categories get a key of names, not a numbered ramp.
+      key: fam.kind === "hca" ? hcaKey(table) : null,
     };
   }, [fam, palTables, kindDefaults, overrides, custom]);
 
@@ -95,16 +98,29 @@ export function RadarColorBar({ paneId }: { paneId?: string } = {}) {
         )}
         {bar.custom && <span className="cbar__badge">custom</span>}
       </div>
-      <div className="cbar__bar" style={{ background: `linear-gradient(to right, ${bar.gradient})` }} />
-      <div className="cbar__ticks">
-        {(unit ? unitTicks(unit, bar.vmin, bar.vmax) : bar.ticks.map((v) => ({ label: String(v), native: v }))).map(
-          (t) => (
-            <span key={t.label} className="cbar__tick" style={{ left: `${pct(t.native)}%` }}>
-              {t.label}
+      {bar.key ? (
+        <div className="cbar__key">
+          {bar.key.map((c) => (
+            <span key={c.code} className="cbar__class" title={`${c.label} (${c.short})`}>
+              <i className="cbar__swatch" style={{ background: c.color }} />
+              {c.label}
             </span>
-          ),
-        )}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="cbar__bar" style={{ background: `linear-gradient(to right, ${bar.gradient})` }} />
+          <div className="cbar__ticks">
+            {(unit ? unitTicks(unit, bar.vmin, bar.vmax) : bar.ticks.map((v) => ({ label: String(v), native: v }))).map(
+              (t) => (
+                <span key={t.label} className="cbar__tick" style={{ left: `${pct(t.native)}%` }}>
+                  {t.label}
+                </span>
+              ),
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -12,7 +12,9 @@ import type { LayerSpecification, StyleSpecification } from "maplibre-gl";
  * Every source here is keyless and public; nothing in this file needs a token.
  */
 
-const VECTOR_SOURCE = "openmaptiles";
+export const VECTOR_SOURCE = "openmaptiles";
+/** The basemap's own place-name layers, for a product that draws names over itself. */
+export const BASEMAP_PLACE_LAYERS = ["place-country", "place-state", "place-city"];
 const GLYPHS = "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf";
 const OFM_ATTRIB = "© OpenFreeMap · OpenStreetMap";
 

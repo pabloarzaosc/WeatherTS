@@ -80,3 +80,43 @@ export async function fetchSatFrames(product: string, hours: number, signal?: Ab
 export function satTiles(product: SatProduct, frame: SatFrame): string {
   return product.tiles.replace("{time}", frame.time);
 }
+
+/** A box on the map and the picture size to draw it at. */
+export interface SatBox {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+  width: number;
+  height: number;
+}
+
+/** One frame for a box, served by the backend from its loop cache. A 204 from
+ *  it means the provider lists the time but has not published the picture. */
+export function satImageUrl(product: string, time: string, box: SatBox): string {
+  const q = new URLSearchParams({
+    product,
+    time,
+    west: box.west.toFixed(4),
+    south: box.south.toFixed(4),
+    east: box.east.toFixed(4),
+    north: box.north.toFixed(4),
+    width: String(box.width),
+    height: String(box.height),
+  });
+  return `${BASE}/api/sat/image?${q}`;
+}
+
+/** Ask the backend to start fetching a whole loop, in the order given. */
+/** Drop the frames still queued for the loop being loaded. */
+export async function cancelSatLoop(): Promise<void> {
+  await fetch(`${BASE}/api/sat/cancel`, { method: "POST" });
+}
+
+export async function prefetchSatLoop(product: string, times: string[], box: SatBox): Promise<void> {
+  await fetch(`${BASE}/api/sat/prefetch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ product, times, ...box }),
+  });
+}

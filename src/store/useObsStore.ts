@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import {
+  cancelObsLoop,
   fetchObsCatalog,
   fetchObsFrames,
   type ObsBar,
@@ -9,6 +10,7 @@ import {
   type ObsProduct,
   type ObsSource,
 } from "../lib/observations";
+import { describe, retrying, within } from "../lib/patience";
 
 /**
  * The analysis layer's state: which source, which product, and which hour.
@@ -25,7 +27,17 @@ const K_FIELD = "weatherts.obs.field";
 const K_LINES = "weatherts.obs.lines";
 const K_EDGE = "weatherts.obs.edge";
 const K_BARBS = "weatherts.obs.barbs";
+const K_PLACES = "weatherts.obs.places";
 const K_OPEN = "weatherts.obs.groups";
+const K_HOURS = "weatherts.obs.hours";
+
+/** How far back the timeline goes. Past two days every k-th hour is kept (the
+ *  backend picks k), so a week is a loop of some sixty frames, not 168. */
+export const OBS_LOOP_HOURS = [6, 12, 24, 48, 72, 168] as const;
+
+const CATALOG_TIMEOUT_MS = 10_000;
+const FRAMES_TIMEOUT_MS = 45_000;
+const CATALOG_TRIES = 6;
 
 interface ObsState {
   catalog: ObsCatalog | null;
@@ -47,24 +59,56 @@ interface ObsState {
   showEdge: boolean;
   /** Wind barbs, on the products that carry them. */
   showBarbs: boolean;
+  /** State, city and town names over the field, each with its value. */
+  showPlaces: boolean;
   /** How far apart the lines are, once one is drawn, and in what. */
   interval: number | null;
   linesUnit: string | null;
   /** Picker groups the user has opened, remembered across restarts. */
   openGroups: string[];
+  /** The timeline is playing the analyses: no zoom detail, frames made ahead. */
+  playing: boolean;
+  /** How many hours back the timeline goes. */
+  hours: number;
+  /** The frames of the loop being made ahead, and how many are ready on this machine. */
+  loopKeys: string[];
+  /** Which product and hours `loopKeys` belongs to. */
+  loopId: string;
+  /** Play was pressed: the whole loop downloads. Until then only the hour on
+   *  screen is made. Another product or length with nothing playing waits for
+   *  play again, and so does a stop from the loading card. */
+  loopArmed: boolean;
+  loopLoaded: number;
+  loopTotal: number;
+  /** Counts stops, so the timeline can pause on each one. */
+  loopStops: number;
 
   load: () => Promise<void>;
   setShowLines: (on: boolean) => void;
   setShowEdge: (on: boolean) => void;
   setShowBarbs: (on: boolean) => void;
+  setShowPlaces: (on: boolean) => void;
   toggleGroup: (group: string) => void;
-  loadFrames: () => Promise<void>;
+  /** Fetch the frame list. `keepPlace` keeps a scrubbed-back hour. */
+  loadFrames: (keepPlace?: boolean) => Promise<void>;
+  setHours: (h: number) => void;
+  armLoop: () => void;
+  /** Let go of the loop without it counting as a stop: the product changed, or
+   *  the layer went away. `disarm` also waits for play again. */
+  dropLoop: (disarm?: boolean) => void;
   setSource: (id: string) => void;
   setField: (id: string) => void;
   setIndex: (i: number) => void;
   /** Park on the frame nearest an instant — how another product's clock drives it. */
   goToUnix: (unix: number | null) => void;
-  setStatus: (s: Partial<Pick<ObsState, "busy" | "error" | "valid" | "bar" | "interval" | "linesUnit">>) => void;
+  setStatus: (
+    s: Partial<Pick<ObsState, "busy" | "error" | "valid" | "bar" | "interval" | "linesUnit" | "loopLoaded" | "loopTotal">>,
+  ) => void;
+  setPlaying: (on: boolean) => void;
+  /** Start making these frames ahead, for a loop about to play. */
+  prepareLoop: (keys: string[]) => void;
+  /** Stop making the loop: what is loaded stays, the rest is not fetched. */
+  stopLoop: () => void;
 }
 
 function read(key: string): string | null {
@@ -84,6 +128,7 @@ function write(key: string, value: string) {
 }
 
 let framesCtrl: AbortController | null = null;
+let catalogLoad: Promise<void> | null = null;
 
 /** The product stays put across a source change when the new source has it --
  *  swapping RTMA for the HRRR analysis should not throw away "dew point". */
@@ -126,8 +171,17 @@ export const useObsStore = create<ObsState>((set, get) => ({
   showLines: read(K_LINES) !== "0",
   showEdge: read(K_EDGE) !== "0",
   showBarbs: read(K_BARBS) !== "0",
+  showPlaces: read(K_PLACES) !== "0",
   interval: null,
   linesUnit: null,
+  playing: false,
+  hours: Number(read(K_HOURS)) || 24,
+  loopKeys: [],
+  loopId: "",
+  loopArmed: false,
+  loopLoaded: 0,
+  loopTotal: 0,
+  loopStops: 0,
   openGroups: readGroups(),
 
   setShowLines: (on) => {
@@ -142,6 +196,10 @@ export const useObsStore = create<ObsState>((set, get) => ({
     write(K_BARBS, on ? "1" : "0");
     set({ showBarbs: on });
   },
+  setShowPlaces: (on) => {
+    write(K_PLACES, on ? "1" : "0");
+    set({ showPlaces: on });
+  },
   toggleGroup: (group) => {
     const open = get().openGroups;
     const next = open.includes(group) ? open.filter((g) => g !== group) : [...open, group];
@@ -150,32 +208,69 @@ export const useObsStore = create<ObsState>((set, get) => ({
   },
 
   load: async () => {
-    if (get().catalog) return;
-    try {
-      const catalog = await fetchObsCatalog();
-      const source = catalog.sources.some((s) => s.id === get().source) ? get().source : catalog.defaultSource;
-      set({ catalog, source, field: fieldFor(catalog, source, get().field), error: null });
-    } catch (err) {
-      set({ error: err instanceof Error ? err.message : String(err) });
-      return;
+    if (!get().catalog) {
+      catalogLoad ??= (async () => {
+        try {
+          const catalog = await retrying(() => fetchObsCatalog(within(CATALOG_TIMEOUT_MS)), {
+            tries: CATALOG_TRIES,
+            firstWaitMs: 1_000,
+            maxWaitMs: 15_000,
+            onRetry: () => set({ error: "The analysis service is not answering yet, trying again…" }),
+          });
+          const source = catalog.sources.some((s) => s.id === get().source) ? get().source : catalog.defaultSource;
+          set({ catalog, source, field: fieldFor(catalog, source, get().field), error: null });
+        } catch (err) {
+          set({ error: describe(err, "The analysis service") });
+        }
+      })().finally(() => {
+        catalogLoad = null;
+      });
+      await catalogLoad;
     }
-    await get().loadFrames();
+    if (get().catalog && get().frames.length === 0) await get().loadFrames();
   },
 
-  loadFrames: async () => {
+  loadFrames: async (keepPlace = false) => {
     framesCtrl?.abort();
     const mine = new AbortController();
     framesCtrl = mine;
-    set({ busy: true, error: null });
+    const before = get();
+    const atNewest = before.index < 0 || before.index >= before.frames.length - 1;
+    const pinned = before.frames[before.index]?.key;
+    if (!keepPlace) set({ busy: true, error: null });
     try {
-      const frames = await fetchObsFrames(get().source, mine.signal, get().field);
+      const frames = await fetchObsFrames(
+        before.source,
+        within(FRAMES_TIMEOUT_MS, mine.signal),
+        before.field,
+        before.hours,
+      );
       if (mine.signal.aborted) return;
+      const unchanged =
+        frames.length === before.frames.length && frames.every((f, i) => f.key === before.frames[i]?.key);
+      if (unchanged) {
+        if (!keepPlace) set({ busy: false });
+        return;
+      }
       // The newest hour is where a chase day starts; scrub back from there.
-      set({ frames, index: frames.length - 1, busy: false });
+      let index = frames.length - 1;
+      if (keepPlace && !atNewest && pinned) {
+        const same = frames.findIndex((f) => f.key === pinned);
+        if (same >= 0) index = same;
+      }
+      set({ frames, index, ...(keepPlace ? {} : { busy: false }) });
     } catch (err) {
       if (mine.signal.aborted) return;
-      set({ busy: false, frames: [], index: -1, error: err instanceof Error ? err.message : String(err) });
+      if (keepPlace && before.frames.length) return;
+      set({ busy: false, frames: [], index: -1, error: describe(err, "The analysis service") });
     }
+  },
+
+  setHours: (h) => {
+    if (h === get().hours) return;
+    write(K_HOURS, String(h));
+    set({ hours: h, loopArmed: get().playing && get().loopArmed });
+    void get().loadFrames();
   },
 
   setSource: (id) => {
@@ -183,7 +278,7 @@ export const useObsStore = create<ObsState>((set, get) => ({
     write(K_SOURCE, id);
     const field = fieldFor(get().catalog, id, get().field);
     write(K_FIELD, field);
-    set({ source: id, field, frames: [], index: -1, valid: null });
+    set({ source: id, field, frames: [], index: -1, valid: null, loopArmed: get().playing && get().loopArmed });
     void get().loadFrames();
   },
 
@@ -198,12 +293,12 @@ export const useObsStore = create<ObsState>((set, get) => ({
       const other = sourceFor(catalog, id);
       if (other && other !== source) {
         write(K_SOURCE, other);
-        set({ source: other, field: id, frames: [], index: -1, valid: null });
+        set({ source: other, field: id, frames: [], index: -1, valid: null, loopArmed: get().playing && get().loopArmed });
         void get().loadFrames();
         return;
       }
     }
-    set({ field: id, valid: null });
+    set({ field: id, valid: null, loopArmed: get().playing && get().loopArmed });
   },
 
   setIndex: (i) => {
@@ -232,6 +327,28 @@ export const useObsStore = create<ObsState>((set, get) => ({
   },
 
   setStatus: (s) => set(s),
+  setPlaying: (on) => {
+    if (on !== get().playing) set({ playing: on });
+  },
+  prepareLoop: (keys) => {
+    const { source, field } = get();
+    const id = `${source}|${field}|${keys.join(",")}`;
+    if (id === get().loopId) return;
+    set({ loopKeys: keys, loopId: id, loopLoaded: 0, loopTotal: keys.length });
+  },
+  stopLoop: () => {
+    set({ loopKeys: [], loopId: "", loopLoaded: 0, loopTotal: 0, loopArmed: false, loopStops: get().loopStops + 1 });
+    void cancelObsLoop().catch(() => undefined);
+  },
+  armLoop: () => {
+    if (!get().loopArmed) set({ loopArmed: true });
+  },
+  dropLoop: (disarm = false) => {
+    if (disarm && get().loopArmed) set({ loopArmed: false });
+    if (!get().loopKeys.length) return;
+    set({ loopKeys: [], loopId: "", loopLoaded: 0, loopTotal: 0 });
+    void cancelObsLoop().catch(() => undefined);
+  },
 }));
 
 /** One empty list, not a new one per render: a selector that mints an array

@@ -36,6 +36,8 @@ export interface PolarScan {
     key: string;
     vcp?: number | null;
     mode?: string;
+    /** A product published empty -- "No precipitation detected since ..." */
+    note?: string;
   };
 }
 

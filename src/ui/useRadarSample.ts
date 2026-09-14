@@ -3,30 +3,9 @@ import { useMemo } from "react";
 import { sampleScan } from "../lib/radarMesh";
 import { useAppStore } from "../store/useAppStore";
 import { useNexradStore } from "../store/useNexradStore";
+import { HCA_CLASSES } from "../lib/hca";
 import { formatValue } from "../lib/radarUnits";
 
-/** WSR-88D hydrometeor classes. The raw byte IS the class code on these
- *  products (see nexrad_core._decode), spaced by ten. Names taken from the
- *  labels in palettes/HC.pal rather than guessed -- an earlier version had 100
- *  as "hail, possibly with rain" and left 110 and 120 unnamed, when they are
- *  the small / large / giant hail split. 130 is the one genuinely unassigned
- *  code, so it falls through to the numeric label. */
-const HCA_CLASSES: Record<number, string> = {
-  10: "Biological",
-  20: "Ground clutter / AP",
-  30: "Ice crystals",
-  40: "Dry snow",
-  50: "Wet snow",
-  60: "Light-moderate rain",
-  70: "Heavy rain",
-  80: "Big drops",
-  90: "Graupel",
-  100: "Small hail",
-  110: "Large hail",
-  120: "Giant hail",
-  140: "Unknown",
-  150: "Range folded",
-};
 
 const EARTH_KM = 6371;
 /** Standard refraction: the beam bends less than the earth curves, which the

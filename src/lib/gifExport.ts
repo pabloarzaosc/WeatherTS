@@ -18,6 +18,7 @@ import { getMap, getMapById, getActivePaneId } from "../map/mapInstance";
 import { useNexradStore } from "../store/useNexradStore";
 import { usePaletteStore } from "../store/usePaletteStore";
 import type { AnimFormat, GifArea } from "../store/useGifStore";
+import { hcaKey } from "./hca";
 import { buildLut, palTicks, parsePal, type PalTable } from "./pal";
 
 /** Widest single-pane export. A ~1280 view exports at native resolution; only
@@ -278,7 +279,7 @@ async function settled(map: MapLibreMap): Promise<void> {
 }
 
 /** The colour table for a product family, resolved the way the map resolves it. */
-function paletteFor(family: string): { table: PalTable; units: string; product: string } | null {
+function paletteFor(family: string): { table: PalTable; units: string; product: string; kind: string } | null {
   const s = useNexradStore.getState();
   const fam = s.grids.find((f) => f.id === family) ?? s.catalog.find((f) => f.id === family);
   if (!fam) return null;
@@ -291,7 +292,7 @@ function paletteFor(family: string): { table: PalTable; units: string; product: 
 
   const table = parsePal(text);
   if (table.entries.length < 2) return null;
-  return { table, units: fam.units || table.units || "", product: fam.label };
+  return { table, units: fam.units || table.units || "", product: fam.label, kind: fam.kind };
 }
 
 function fmtUtc(unix: number): { day: string; time: string } {
@@ -304,7 +305,8 @@ function fmtUtc(unix: number): { day: string; time: string } {
   };
 }
 
-/** The palette ramp, sampled straight from the LUT the map colours gates with. */
+/** The palette ramp, sampled straight from the LUT the map colours gates with.
+ *  Hydrometeor classes get one block per class with its NWS code under it. */
 function paintScale(
   ctx: CanvasRenderingContext2D,
   table: PalTable,
@@ -312,7 +314,12 @@ function paintScale(
   y: number,
   w: number,
   h: number,
+  kind = "",
 ): void {
+  if (kind === "hca") {
+    paintClasses(ctx, table, x, y, w, h);
+    return;
+  }
   const { lut, vmin, vmax } = buildLut(table, 256);
   for (let i = 0; i < w; i++) {
     const idx = Math.min(255, Math.round((i / Math.max(w - 1, 1)) * 255)) * 4;
@@ -339,6 +346,22 @@ function paintScale(
   }
 }
 
+function paintClasses(ctx: CanvasRenderingContext2D, table: PalTable, x: number, y: number, w: number, h: number): void {
+  const classes = hcaKey(table);
+  if (classes.length === 0) return;
+  const cell = w / classes.length;
+  ctx.font = "10px ui-monospace, Consolas, monospace";
+  ctx.textBaseline = "top";
+  classes.forEach((c, i) => {
+    const cx = x + i * cell;
+    ctx.fillStyle = c.color;
+    ctx.fillRect(Math.round(cx), y, Math.ceil(cell) - 1, h);
+    ctx.fillStyle = "rgba(232,238,246,0.65)";
+    const tw = ctx.measureText(c.short).width;
+    ctx.fillText(c.short, cx + (cell - tw) / 2, y + h + 4);
+  });
+}
+
 /** The caption strip under the map: what this is, when, and how far through. */
 function paintCaption(
   ctx: CanvasRenderingContext2D,
@@ -353,6 +376,7 @@ function paintCaption(
     frame: number;
     total: number;
     table: PalTable;
+    kind: string;
   },
 ): void {
   const h = captionHeight(w);
@@ -386,7 +410,7 @@ function paintCaption(
     const stamp = `${day.replace(/ \d{4}$/, "")} ${time}`;
     ctx.fillText(stamp, w - PAD - ctx.measureText(stamp).width, top + 30);
 
-    paintScale(ctx, info.table, PAD, top + 40, w - PAD * 2, 10);
+    paintScale(ctx, info.table, PAD, top + 40, w - PAD * 2, 10, info.kind);
     return;
   }
 
@@ -412,7 +436,7 @@ function paintCaption(
   const sw = ctx.measureText(stamp).width;
   ctx.fillText(stamp, w - PAD - cw - 14 - sw, top + 19);
 
-  paintScale(ctx, info.table, PAD, top + 30, w - PAD * 2, 12);
+  paintScale(ctx, info.table, PAD, top + 30, w - PAD * 2, 12, info.kind);
 }
 
 // ---- split-screen composition ----
@@ -432,7 +456,7 @@ function paintPaneStrip(
   x: number,
   y: number,
   w: number,
-  info: { product: string; units: string; tilt: string; table: PalTable },
+  info: { product: string; units: string; tilt: string; table: PalTable; kind: string },
 ): void {
   ctx.fillStyle = "#101d2e";
   ctx.fillRect(x, y, w, PANE_STRIP_H);
@@ -449,7 +473,7 @@ function paintPaneStrip(
     ctx.fillText(right, x + w - 6 - ctx.measureText(right).width, y + 13);
   }
 
-  paintScale(ctx, info.table, x + 6, y + 19, w - 12, 8);
+  paintScale(ctx, info.table, x + 6, y + 19, w - 12, 8, info.kind);
 }
 
 /** The frame delay for step n, holding the last frame a touch longer. */
@@ -545,6 +569,7 @@ async function exportPanes(
             units: t.pal.units,
             tilt: elev != null ? `${elev.toFixed(1)}°` : "",
             table: t.pal.table,
+            kind: t.pal.kind,
           });
         }
       });
@@ -669,6 +694,7 @@ export async function exportAnimation(
           frame: n + 1,
           total,
           table: pal.table,
+          kind: pal.kind,
         });
       }
 

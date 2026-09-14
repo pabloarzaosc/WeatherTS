@@ -3146,6 +3146,30 @@ html[data-reduce-motion="true"] *::after {
   border-radius: var(--radius-sm);
   box-shadow: inset 0 0 0 1px rgba(var(--wash-rgb), 0.1);
 }
+/* hydrometeor classes are categories, not a scale: a key of names, not a ramp */
+.cbar__key {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+  gap: 3px 10px;
+}
+.cbar__class {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cbar__swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(var(--wash-rgb), 0.18);
+}
 /* ticks are absolutely placed at their data value, so the row needs height */
 .cbar__ticks {
   position: relative;
@@ -3518,6 +3542,35 @@ html[data-reduce-motion="true"] *::after {
 .dayload__cancel:hover {
   border-color: var(--accent);
   color: var(--text);
+}
+
+/* ---- a satellite or analysis loop coming in: progress over the map, not blocking it ---- */
+.loopload {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--status-h) + var(--timeline-h) + 12px);
+  transform: translateX(-50%);
+  z-index: 46;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.loopload__card {
+  width: min(320px, calc(100vw - 32px));
+  padding: 12px 14px;
+  pointer-events: auto;
+}
+.loopload__text {
+  min-width: 0;
+}
+.loopload__sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.loopload__bar {
+  margin: 10px 0 8px;
 }
 .sfcobs__field input[type="date"] {
   width: 100%;
@@ -4314,6 +4367,15 @@ html[data-reduce-motion="true"] *::after {
   flex-wrap: wrap;
   gap: 3px;
   padding: 2px 10px 7px 48px;
+}
+.rpp__tilts--checking {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+/* a product the selected radar is not publishing */
+.rpp__item.is-unavailable .rpp__btn {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .rpp__tilt {
   padding: 2px 6px;

@@ -44,12 +44,11 @@ from typing import Any, Callable, Optional
 from urllib.parse import urlsplit
 
 import numpy as np
-from matplotlib.figure import Figure
+from contourpy import LineType, contour_generator
 from PIL import Image
 from scipy.ndimage import gaussian_filter, map_coordinates
 from scipy.spatial import cKDTree
 
-import model_fields
 import model_sources as ms
 
 from obs_products import CONVERT, FORMATS, NOMADS, PAIRS, PRODUCTS, SOURCES, needs, recipe
@@ -66,13 +65,19 @@ DEFAULT_WIDTH = 1200
 _LOCK = threading.Lock()
 _FRAMES: dict[str, tuple[float, list[dict]]] = {}
 _FRAMES_TTL = 300.0
+# A day's loop is 24 to 96 frames, and all of them are made before it plays:
+# a cache smaller than the loop throws away frames the timeline is about to ask
+# for. A picture is a few hundred KB of PNG, the lines their JSON, already
+# serialised.
 _RENDER: "OrderedDict[tuple, dict]" = OrderedDict()
-_RENDER_MAX = 16
-_VECTORS: "OrderedDict[tuple, dict]" = OrderedDict()
-_VECTORS_MAX = 8
+_RENDER_MAX = 120
+_VECTORS: "OrderedDict[tuple, bytes]" = OrderedDict()
+_VECTORS_MAX = 120
+# Work under way, so a second asker waits for it instead of doing it again.
+_INFLIGHT: dict[tuple, threading.Event] = {}
 # The product in display units on the drawing grid, for the hover readout.
 _SHADES: "OrderedDict[tuple, np.ndarray]" = OrderedDict()
-_SHADES_MAX = 6
+_SHADES_MAX = 12
 # Variables on the drawing grid, by bytes rather than by count: a RAP field is a
 # megabyte and an RTMA one four and a half.
 _VARS: "OrderedDict[tuple, np.ndarray]" = OrderedDict()
@@ -99,7 +104,8 @@ _TLS = threading.local()
 # never changes once published, and reading one back is a few hundredths of a
 # second where downloading it again is one to three seconds.
 _VAR_DIR = _MAP_DIR / "vars"
-_VAR_DISK_BUDGET = 900 * 1024 * 1024
+# A week of a three-field product is some 700 MB at ~1.4 MB a field-hour.
+_VAR_DISK_BUDGET = 3 * 1024 * 1024 * 1024
 _DISKER = ThreadPoolExecutor(max_workers=1, thread_name_prefix="obs-disk")
 _DISK_WRITES = 0
 
@@ -223,8 +229,27 @@ def frames(source: str = DEFAULT_SOURCE) -> list[dict]:
     return _discover_frames(source)
 
 
+# A loop longer than this many frames plays every k-th hour instead: a week of
+# RTMA-RU is 672 quarter-hours, and each one is several fields to download.
+MAX_LOOP_FRAMES = 72
+
+
+def frames_for(source: str, hours: float) -> list[dict]:
+    """The frames of the last `hours`, oldest first -- no more than
+    MAX_LOOP_FRAMES of them. Over a longer span it keeps every k-th, counted
+    back from the newest, so the newest hour is always in the loop."""
+    every = frames(source)
+    if not every:
+        return []
+    span = max(1.0, min(float(hours), SOURCES[source]["days"] * 24.0)) * 3600.0
+    newest = every[-1]["unix"]
+    inside = [f for f in every if f["unix"] > newest - span]
+    k = max(1, math.ceil(len(inside) / MAX_LOOP_FRAMES))
+    return inside[::-1][::k][::-1]
+
+
 def _frames_path(source: str) -> Path:
-    return _MAP_DIR / f"{source}-frames-v2.json"
+    return _MAP_DIR / f"{source}-frames-v3.json"
 
 
 def _read_saved_frames(source: str) -> Optional[list[dict]]:
@@ -458,7 +483,11 @@ def _hosts(source: str, key: str) -> list[str]:
         return ["aws"]
     room = ms.room(NOMADS_HOST)
     background = getattr(_TLS, "background", False)
-    if room >= (30 if background else 4):
+    # A loop someone pressed play on sits between the two: it may use NOMADS
+    # while it is well clear of the limit, and leaves the rest for the frame
+    # on screen.
+    need = 12 if getattr(_TLS, "loop", False) else 30 if background else 4
+    if room >= need:
         return ["nomads", "aws"]
     return ["aws", "nomads"]
 
@@ -686,6 +715,40 @@ def _prefetch(source: str, key: str, names: set[str]) -> None:
         list(pool.map(lambda u: _load_raw(source, u, key), todo))
 
 
+def _once(cache: "OrderedDict", limit: int, ck: tuple, make: Callable[[], Any]) -> Any:
+    """The cached value for `ck`, made at most once however many ask at a time.
+
+    Playing a loop asks for the same hour three ways at once -- the loop's
+    prefetch, the picture, and its lines -- and each made it from scratch,
+    fighting over the GIL. The first asker makes it; the rest wait and read it.
+    If the maker fails, the next waiter tries in its place.
+    """
+    while True:
+        with _LOCK:
+            hit = cache.get(ck)
+            if hit is not None:
+                cache.move_to_end(ck)
+                return hit
+            ev = _INFLIGHT.get(ck)
+            owner = ev is None
+            if owner:
+                ev = _INFLIGHT[ck] = threading.Event()
+        if not owner:
+            ev.wait(180)
+            continue
+        try:
+            out = make()
+            with _LOCK:
+                cache[ck] = out
+                while len(cache) > limit:
+                    cache.popitem(last=False)
+            return out
+        finally:
+            with _LOCK:
+                _INFLIGHT.pop(ck, None)
+            ev.set()
+
+
 def _convert(values: np.ndarray, how: Optional[str]) -> np.ndarray:
     return CONVERT[how](values) if how else values
 
@@ -711,15 +774,21 @@ def _shade(source: str, pid: str, key: str) -> tuple[np.ndarray, np.ndarray, np.
         # fetches any that were let go since.
         lats, lons = _grid_of(source)
         return lats, lons, hit, get
-    _prefetch(source, key, _product_needs(source, pid) or set())
+
+    def make() -> np.ndarray:
+        _prefetch(source, key, _product_needs(source, pid) or set())
+        grid = _convert(get(spec["shade"]), spec["convert"]).astype(np.float32)
+        if spec["smooth_km"]:
+            grid = _smooth(grid, spec["smooth_km"] / (111.0 * SOURCES[source]["step"]))
+        return grid
+
+    if hit is not None:
+        # Cached, but its grid mapping was let go since: make it again, which
+        # rebuilds the mapping on the way.
+        with _LOCK:
+            _SHADES.pop(sk, None)
+    grid = _once(_SHADES, _SHADES_MAX, sk, make)
     lats, lons = _grid_of(source)
-    grid = _convert(get(spec["shade"]), spec["convert"]).astype(np.float32)
-    if spec["smooth_km"]:
-        grid = _smooth(grid, spec["smooth_km"] / (111.0 * SOURCES[source]["step"]))
-    with _LOCK:
-        _SHADES[sk] = grid
-        while len(_SHADES) > _SHADES_MAX:
-            _SHADES.popitem(last=False)
     return lats, lons, grid, get
 
 
@@ -756,15 +825,15 @@ def render(source: str = DEFAULT_SOURCE, field: str = DEFAULT_FIELD, key: str = 
     key = key or _newest_key(source)
     width = max(400, min(int(width), 2400))
 
-    ck = (source, field, key, width)
-    with _LOCK:
-        hit = _RENDER.get(ck)
-    if hit is not None:
-        # A warmed frame landed on: keep the warm-up a step ahead of the scrub.
-        if warm:
-            _warm_neighbours(source, field, key, width)
-        return hit
+    out = _once(_RENDER, _RENDER_MAX, (source, field, key, width),
+                lambda: _make_render(source, field, key, width))
+    if warm:
+        # Keep the warm-up a step ahead of the scrub.
+        _warm_neighbours(source, field, key, width)
+    return out
 
+
+def _make_render(source: str, field: str, key: str, width: int) -> dict[str, Any]:
     lats, lons, values, _get = _shade(source, field, key)
     north, south = float(lats[0]), float(lats[-1])
     west, east = float(lons[0]), float(lons[-1])
@@ -804,12 +873,6 @@ def render(source: str = DEFAULT_SOURCE, field: str = DEFAULT_FIELD, key: str = 
         "height": height,
         "bar": colour_bar(field),
     }
-    with _LOCK:
-        _RENDER[ck] = out
-        while len(_RENDER) > _RENDER_MAX:
-            _RENDER.popitem(last=False)
-    if warm:
-        _warm_neighbours(source, field, key, width)
     return out
 
 
@@ -901,6 +964,74 @@ def render_view(source: str, field: str, key: str, west: float, south: float, ea
         while len(_VIEWS) > _VIEWS_MAX:
             _VIEWS.popitem(last=False)
     return png
+
+
+# Loops: a day of frames made ahead of the timeline playing it.
+_LOOP_POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix="obs-loop")
+_LOOP_GEN = {"n": 0}
+# Frames of a loop that could not be made, so the timeline stops waiting on them.
+_LOOP_FAILED: set[tuple] = set()
+
+
+def prefetch(source: str, field: str, keys: list[str]) -> dict[str, Any]:
+    """Make every frame of a loop -- picture and lines -- six at a time, in the
+    order given. A new loop outdates the one before: its frames still waiting
+    are skipped. Downloads are the limit, so a product already on disk plays at
+    once and a cold HRRR day takes as long as its fields take to arrive."""
+    _check(source, field)
+    _LOOP_GEN["n"] += 1
+    generation = _LOOP_GEN["n"]
+    keys = [k for k in keys if isinstance(k, str)][:200]
+    with _LOCK:
+        _LOOP_FAILED.difference_update((source, field, k) for k in keys)
+    for key in keys:
+        _LOOP_POOL.submit(_loop_one, source, field, key, generation)
+    return {"queued": len(keys), "generation": generation}
+
+
+def shutdown() -> None:
+    """Drop the loop and warm-up queues on the way out: a queued day of frames
+    kept the process alive long after the server had stopped."""
+    _LOOP_GEN["n"] += 1
+    _LOOP_POOL.shutdown(wait=False, cancel_futures=True)
+    _WARMER.shutdown(wait=False, cancel_futures=True)
+
+
+def cancel_loop() -> dict[str, Any]:
+    """Skip every frame of the loop still waiting to be made: someone closed it."""
+    _LOOP_GEN["n"] += 1
+    return {"generation": _LOOP_GEN["n"]}
+
+
+def loop_status(source: str, field: str, keys: list[str]) -> dict[str, list[str]]:
+    """Which frames of a loop are made -- picture and lines both -- and which
+    failed. The map pulls a frame only once it is ready: asking early held one
+    of the browser's six connections to this machine open for as long as the
+    download took, and the rest of the app queued behind them."""
+    _check(source, field)
+    ready: list[str] = []
+    failed: list[str] = []
+    with _LOCK:
+        for k in keys[:200]:
+            if (source, field, k) in _VECTORS and (source, field, k, DEFAULT_WIDTH) in _RENDER:
+                ready.append(k)
+            elif (source, field, k) in _LOOP_FAILED:
+                failed.append(k)
+    return {"ready": ready, "failed": failed}
+
+
+def _loop_one(source: str, field: str, key: str, generation: int) -> None:
+    if generation != _LOOP_GEN["n"]:
+        return
+    _TLS.loop = True
+    try:
+        render(source, field, key, DEFAULT_WIDTH, warm=False)
+        vectors(source, field, key)
+    except Exception:  # noqa: BLE001 - the timeline asks for it again when it gets there
+        with _LOCK:
+            _LOOP_FAILED.add((source, field, key))
+    finally:
+        _TLS.loop = False
 
 
 def warm_newest(source: str, field: str, width: int = DEFAULT_WIDTH) -> None:
@@ -1056,26 +1187,114 @@ def value_at(source: str, field: str, key: str, lat: float, lon: float) -> dict[
     }
 
 
+def _compact(spec: dict, v: float) -> str:
+    """A value short enough to sit under a town's name: 91°, 63%, 2500, Snow.
+    The unit is in the legend; only the ones that cost a character stay."""
+    if spec.get("fmt") == "ptype":
+        return FORMATS["ptype"](v).split(" · ")[0]
+    text = _fmt(v, spec["decimals"])
+    if spec["unit"] in ("°F", "°C"):
+        return f"{text}°"
+    if spec["unit"] == "%":
+        return f"{text}%"
+    return text
+
+
+def points_at(source: str, field: str, key: str, points: list[list[float]]) -> dict[str, Any]:
+    """The analysed value at many points at once, for the place labels.
+
+    Like value_at, it never downloads: until the product is readable locally it
+    answers "pending" and the labels show names alone. Nearest cell, as the
+    readout does; a point outside the analysis gets null.
+    """
+    _check(source, field)
+    key = key or _newest_key(source)
+    spec = PRODUCTS[field]
+    points = points[:2000]
+    if not _ready(source, field, key):
+        return {"key": key, "field": field, "pending": True, "values": [None] * len(points)}
+    lats, lons, values, _get = _shade(source, field, key)
+    if not points:
+        return {"key": key, "field": field, "pending": False, "values": []}
+    step = SOURCES[source]["step"]
+    arr = np.asarray(points, dtype=np.float64).reshape(-1, 2)
+    j = np.rint((lats[0] - arr[:, 0]) / step).astype(np.int64)
+    i = np.rint((arr[:, 1] - lons[0]) / step).astype(np.int64)
+    inside = (j >= 0) & (j < len(lats)) & (i >= 0) & (i < len(lons))
+    out: list[Optional[str]] = []
+    for k in range(len(arr)):
+        if not inside[k]:
+            out.append(None)
+            continue
+        v = float(values[j[k], i[k]])
+        out.append(_compact(spec, v) if np.isfinite(v) else None)
+    return {"key": key, "field": field, "pending": False, "values": out}
+
+
+def _chaikin(poly: np.ndarray, rounds: int = 2) -> np.ndarray:
+    """Round a traced line's corners (Chaikin's corner cutting).
+
+    Contours come off a regular grid, so every line is made of steps one cell
+    long; zoomed in they read as a staircase. Each round replaces a corner with
+    two points a quarter of the way along its segments. A closed ring stays
+    closed; an open line keeps its two ends where they were.
+    """
+    pts = np.asarray(poly, dtype=np.float64)
+    if len(pts) < 3:
+        return pts
+    closed = bool(np.abs(pts[0] - pts[-1]).max() < 1e-9)
+    for _ in range(rounds):
+        if closed:
+            ring = pts[:-1]
+            nxt = np.roll(ring, -1, axis=0)
+            q = 0.75 * ring + 0.25 * nxt
+            r = 0.25 * ring + 0.75 * nxt
+            body = np.empty((len(ring) * 2, 2))
+            body[0::2], body[1::2] = q, r
+            pts = np.vstack([body, body[:1]])
+        else:
+            a, b = pts[:-1], pts[1:]
+            q = 0.75 * a + 0.25 * b
+            r = 0.25 * a + 0.75 * b
+            body = np.empty((len(a) * 2, 2))
+            body[0::2], body[1::2] = q, r
+            pts = np.vstack([pts[:1], body, pts[-1:]])
+    return pts
+
+
+def _thin(pts: np.ndarray, spacing: float) -> np.ndarray:
+    """One point per `spacing` degrees travelled along the line, plus both ends.
+    Rounding corners quadruples the points; most of them are not needed to stay
+    round, and a day's loop carries every hour's lines. Done on whole arrays: a
+    Python loop over the points was most of the time a frame's lines took."""
+    if len(pts) < 3:
+        return pts
+    run = np.concatenate(([0.0], np.cumsum(np.abs(np.diff(pts, axis=0)).sum(axis=1))))
+    bucket = np.floor(run / spacing)
+    first = np.flatnonzero(np.diff(bucket, prepend=-1.0) > 0)
+    if first[-1] != len(pts) - 1:
+        first = np.append(first, len(pts) - 1)
+    return pts[first]
+
+
 def _lines(lons: np.ndarray, lats: np.ndarray, grid: np.ndarray, levels: list[float]) -> list[dict]:
     """Contour `grid` at `levels`, as GeoJSON lines carrying their value."""
     if len(levels) == 0:
         return []
-    fig = Figure()  # the OO API: no pyplot global state under the server
-    ax = fig.subplots()
-    cs = ax.contour(lons, lats, np.ma.masked_invalid(grid), levels=levels)
+    # contourpy directly, with matplotlib's own algorithm: the same lines
+    # without building a figure and an axes for every frame.
+    gen = contour_generator(lons, lats, np.ma.masked_invalid(grid), name="mpl2014",
+                            corner_mask=True, line_type=LineType.SeparateCode)
     out: list[dict] = []
-    for i, path in enumerate(cs.get_paths()):
-        if i >= len(cs.levels):
-            break
-        level = float(cs.levels[i])
-        for poly in model_fields._subpaths(path):  # noqa: SLF001 - one contour splitter for the app
+    for level in levels:
+        for poly in gen.lines(level)[0]:  # one array per line; its codes are not needed
             # Speckle: a ten-point ring around one warm parking lot is noise.
             if len(poly) < 10:
                 continue
-            line = [[round(float(x), 2), round(float(y), 2)] for x, y in poly]
+            line = np.round(_thin(_chaikin(poly), 0.05), 2).tolist()
             out.append({
                 "type": "Feature",
-                "properties": {"value": round(level, 1), "label": f"{level:g}"},
+                "properties": {"value": round(float(level), 1), "label": f"{float(level):g}"},
                 "geometry": {"type": "LineString", "coordinates": line},
             })
     return out
@@ -1116,7 +1335,7 @@ def _barbs(source: str, lats: np.ndarray, lons: np.ndarray, u: np.ndarray, v: np
     }
 
 
-def vectors(source: str = DEFAULT_SOURCE, field: str = DEFAULT_FIELD, key: str = "") -> dict[str, Any]:
+def vectors(source: str = DEFAULT_SOURCE, field: str = DEFAULT_FIELD, key: str = "") -> bytes:
     """Labelled contours, wind barbs, and the outline of the analysed area.
 
     The lines are traced on a coarsened, lightly blurred copy: at full
@@ -1127,12 +1346,13 @@ def vectors(source: str = DEFAULT_SOURCE, field: str = DEFAULT_FIELD, key: str =
     _check(source, field)
     key = key or _newest_key(source)
 
-    vk = (source, field, key)
-    with _LOCK:
-        cached = _VECTORS.get(vk)
-    if cached is not None:
-        return cached
+    return _once(_VECTORS, _VECTORS_MAX, (source, field, key), lambda: _make_vectors(source, field, key))
 
+
+def _make_vectors(source: str, field: str, key: str) -> bytes:
+    """vectors(), as the JSON the map reads: serialised once here rather than
+    walked by the web framework on every request -- a busy analysis is tens of
+    thousands of points."""
     spec = PRODUCTS[field]
     lats, lons, values, get = _shade(source, field, key)
     stride = max(1, int(round(0.1 / max(SOURCES[source]["step"], 1e-6))))
@@ -1184,8 +1404,4 @@ def vectors(source: str = DEFAULT_SOURCE, field: str = DEFAULT_FIELD, key: str =
         "edge": {"type": "FeatureCollection", "features": edge},
         "barbs": barbs,
     }
-    with _LOCK:
-        _VECTORS[vk] = out
-        while len(_VECTORS) > _VECTORS_MAX:
-            _VECTORS.popitem(last=False)
-    return out
+    return json.dumps(out, separators=(",", ":"), allow_nan=False).encode("utf-8")

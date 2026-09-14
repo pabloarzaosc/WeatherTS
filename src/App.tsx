@@ -23,6 +23,7 @@ import { RadarHud } from "./ui/RadarHud";
 import { RadarReadout } from "./ui/RadarReadout";
 import { ObsReadout } from "./ui/ObsReadout";
 import { DayLoadOverlay } from "./ui/DayLoadOverlay";
+import { LoopLoadCard } from "./ui/LoopLoadCard";
 import { AnimationModal } from "./ui/AnimationModal";
 import { UpdateBanner } from "./ui/UpdateBanner";
 import { QuickStart } from "./ui/QuickStart";
@@ -96,6 +97,8 @@ export default function App() {
         <FrontPopup />
         <MapTimeline />
         <DayLoadOverlay />
+        {/* a satellite or analysis loop loading, with a way to stop it */}
+        <LoopLoadCard />
         <UpdateBanner />
       </div>
       {/* map right-click menu (renders its own fixed overlay) */}

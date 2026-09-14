@@ -12,10 +12,16 @@ overlay. Palettes are selectable per product.
 from __future__ import annotations
 
 import io
+import json
 import math
 import re
+import tempfile
+import threading
 import time
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Optional
 
 import matplotlib
@@ -95,6 +101,8 @@ _ELEV = dict(TILT_SLOTS)
 
 # Products whose scale MetPy reads without the spec's x100 factor. See _value_lut.
 _ACCUM_X100 = {"DAA", "DTA"}
+
+_MS_TO_KT = 1.943844
 
 # Product Description Block halfword 8. The VCP number sits beside it and both
 # come free with every Level III scan, so the panel can name the scan strategy.
@@ -323,6 +331,199 @@ _SITES_CACHE: tuple[float, list[dict]] | None = None
 
 
 def list_sites() -> list[dict]:
+    """The radars there are to pick: IEM's list, minus the ones that are gone.
+
+    IEM keeps radars that no longer exist and calls them online -- KLIX (New
+    Orleans) among them, which stopped in 2023 when KHDC at Hammond replaced it.
+    So each site's standing comes from the archive itself: a reflectivity scan
+    today or yesterday is online, one in the last ninety days is a radar that
+    is down, and none in ninety days is a radar that is not there any more.
+    """
+    sites = [dict(s) for s in _iem_sites()]
+    status = _site_status([s["id"] for s in sites])
+    if not status:
+        # Not worked out yet (a first run, still probing): the ones known gone.
+        return [s for s in sites if s["id"] not in _KNOWN_GONE]
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+    out = []
+    for s in sites:
+        last = status.get(s["id"], "?")
+        if last is None:
+            continue
+        if last != "?":
+            s["online"] = last >= yesterday
+            s["lastScanDay"] = last
+        out.append(s)
+    return out
+
+
+# Found by probing the archive on 2026-09-13; used only until the probe has run.
+_KNOWN_GONE = {
+    "LIX",  # New Orleans: last Level III in 2023, replaced by KHDC (Hammond) in March 2024
+    "ODN",  # Kadena AB: no Level III in the archive for years
+}
+
+# Checks about the radars -- which exist, which are live -- get their own
+# connections, so they never make a scan being loaded wait for one.
+_PROBE_SESSION = requests.Session()
+_PROBE_SESSION.mount("https://", HTTPAdapter(pool_connections=16, pool_maxsize=16, max_retries=2))
+
+# sid -> the newest day with a reflectivity scan, or None for nothing in 90 days.
+_STATUS_PATH = Path(tempfile.gettempdir()) / "weatherts-radar" / "site-status.json"
+_STATUS: dict[str, Any] = {"at": 0.0, "last": {}}
+_STATUS_TTL = 6 * 3600
+_STATUS_LOCK = threading.Lock()
+_STATUS_BUSY = {"on": False}
+# Days back to look, sparsely: a radar down for maintenance is back within
+# weeks; one silent for three months has been taken down.
+_LOOK_BACK_DAYS = (0, 1, 3, 7, 14, 30, 60, 90)
+
+
+def newest_scan_unix(sid: str, code: str = "N0B") -> Optional[int]:
+    """When a product's newest scan was, listing only the last two hours of it."""
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(hours=2)
+    for day, after in ((now, f"{sid}_{code}_{since:%Y_%m_%d_%H_%M_%S}"), (since, f"{sid}_{code}_{since:%Y_%m_%d_%H_%M_%S}")):
+        r = _PROBE_SESSION.get(S3, params={"list-type": "2", "prefix": f"{sid}_{code}_{day:%Y_%m_%d}", "start-after": after},
+                               timeout=_HTTP_TIMEOUT)
+        keys = re.findall(r"<Key>([^<]+)</Key>", r.text)
+        if keys:
+            return key_time(keys[-1])
+    return None
+
+
+def _newest_scan_day(sid: str) -> Optional[str]:
+    today = datetime.now(timezone.utc)
+    for back in _LOOK_BACK_DAYS:
+        day = today - timedelta(days=back)
+        r = _PROBE_SESSION.get(S3, params={"list-type": "2", "prefix": f"{sid}_N0B_{day:%Y_%m_%d}", "max-keys": "1"},
+                               timeout=_HTTP_TIMEOUT)
+        if "<Key>" in r.text:
+            return day.strftime("%Y-%m-%d")
+    return None
+
+
+def _work_out_status(ids: list[str]) -> None:
+    try:
+        # Few at a time, on connections of its own: this runs as the app starts,
+        # which is exactly when someone opens their first radar.
+        with ThreadPoolExecutor(8) as pool:
+            found = dict(zip(ids, pool.map(_probe_or_unknown, ids)))
+        last = {k: v for k, v in found.items() if v != "?"}
+        with _STATUS_LOCK:
+            _STATUS["last"] = {**_STATUS["last"], **last}
+            _STATUS["at"] = time.time()
+        try:
+            _STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _STATUS_PATH.write_text(json.dumps(_STATUS), encoding="utf-8")
+        except OSError:
+            pass
+    finally:
+        _STATUS_BUSY["on"] = False
+
+
+def _probe_or_unknown(sid: str) -> Optional[str]:
+    try:
+        return _newest_scan_day(sid)
+    except Exception:  # noqa: BLE001 - a failed probe says nothing about the radar
+        return "?"
+
+
+def _site_status(ids: list[str]) -> dict[str, Optional[str]]:
+    """What is known, refreshed behind the answer once it is old. Never waits:
+    probing 160 radars is some fifteen seconds from here, and the site list is
+    what the radar layer needs first."""
+    with _STATUS_LOCK:
+        if not _STATUS["last"]:
+            try:
+                saved = json.loads(_STATUS_PATH.read_text(encoding="utf-8"))
+                if time.time() - float(saved.get("at", 0)) < 86400:
+                    _STATUS.update(saved)
+            except (OSError, ValueError):
+                pass
+        known, age = dict(_STATUS["last"]), time.time() - float(_STATUS["at"])
+        start = not _STATUS_BUSY["on"] and (not known or age > _STATUS_TTL)
+        if start:
+            _STATUS_BUSY["on"] = True
+    if start:
+        threading.Thread(target=_work_out_status, args=(ids,), daemon=True, name="radar-status").start()
+    return known
+
+
+def warm_site_status() -> None:
+    """Work out which radars are live in the background at start-up."""
+    def run() -> None:
+        try:
+            _site_status([s["id"] for s in _iem_sites()])
+        except Exception:  # noqa: BLE001 - the site list asks again
+            pass
+    threading.Thread(target=run, daemon=True, name="radar-status-warm").start()
+
+
+CHUNKS_BUCKET = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/"
+# Used only when the Level II bucket cannot be read.
+_ICAO_ABROAD = {"KJK": "RKJK", "KSG": "RKSG", "PLA": "LPLA", "ODN": "RODN"}
+_ICAO: dict[str, Any] = {"at": 0.0, "map": {}}
+
+
+def site_id(site: str) -> str:
+    """The 3-letter id Level III keys use, from either that or a 4-letter ICAO."""
+    s = (site or "").upper().strip()
+    return s[1:] if len(s) == 4 else s
+
+
+def icao_for(site: str) -> str:
+    """A radar's real 4-letter ICAO.
+
+    Not always K + id: the radars outside the lower 48 are TJUA (San Juan), PHKI
+    (Kauai), PGUA (Guam), PABC (Bethel), RKJK (Kunsan) and so on. Level II files are keyed by
+    the real name, so "KJUA" found no volume at all. Read once a day from the
+    Level II bucket's own top-level names.
+    """
+    sid = site_id(site)
+    if time.time() - float(_ICAO["at"]) > 86400:
+        try:
+            r = _SESSION.get(CHUNKS_BUCKET, params={"list-type": "2", "delimiter": "/"}, timeout=_HTTP_TIMEOUT)
+            names = [p.rstrip("/") for p in re.findall(r"<Prefix>([^<]+)</Prefix>", r.text)]
+            mapping: dict[str, str] = {}
+            # K (lower 48), P (Alaska, Hawaii, Guam), R (Korea), L (Azores) are
+            # WSR-88Ds; T is mostly the airport TDWRs, so it loses a tie.
+            rank = {"K": 0, "P": 1, "R": 2, "L": 3, "T": 4}
+            for name in names:
+                if len(name) == 4 and name.isalpha() and name[0] in rank:
+                    held = mapping.get(name[1:])
+                    if held is None or rank[name[0]] < rank[held[0]]:
+                        mapping[name[1:]] = name
+            if mapping:
+                _ICAO.update(at=time.time(), map=mapping)
+        except Exception:  # noqa: BLE001 - K + id is right for most radars meanwhile
+            pass
+    return _ICAO["map"].get(sid) or _ICAO_ABROAD.get(sid) or f"K{sid}"
+
+
+def l3_elevation(key: str) -> Optional[float]:
+    """The elevation a Level III product was cut at, from its header alone.
+
+    The product description block is never compressed; its dependent parameter
+    3 is the angle x10 for the elevation products. Reading 400 bytes instead of
+    a whole file is what makes checking every tilt of a radar affordable.
+    """
+    import struct as _struct
+    r = _SESSION.get(S3 + key, headers={"Range": "bytes=0-399"}, timeout=_HTTP_TIMEOUT)
+    b = r.content
+    i = 0
+    for _ in range(2):  # the WMO header: two CRLF-terminated lines
+        j = b.find(b"\r\r\n", i)
+        if j < 0:
+            return None
+        i = j + 3
+    pdb = i + 18  # past the 18-byte message header
+    if len(b) < pdb + 42 or _struct.unpack(">h", b[pdb:pdb + 2])[0] != -1:
+        return None
+    return _struct.unpack(">h", b[pdb + 40:pdb + 42])[0] / 10.0
+
+
+def _iem_sites() -> list[dict]:
     """NEXRAD sites (3-letter id matches the S3 key prefix)."""
     global _SITES_CACHE
     now = time.time()
@@ -339,7 +540,7 @@ def list_sites() -> list[dict]:
             continue
         sites.append({
             "id": sid,                 # 3-letter (S3 prefix)
-            "icao": f"K{sid}",         # display
+            "icao": icao_for(sid),     # display: TJUA, PHKI, ... not always K
             "name": p.get("sname") or sid,
             "lat": round(float(lat), 4),
             "lon": round(float(lon), 4),
@@ -572,6 +773,16 @@ def _value_lut(f: "Level3File", product: str) -> np.ndarray:
     # products/170 + /172 decoders (`scale: raf.readFloat() * 100`).
     if product in _ACCUM_X100:
         out /= 100.0
+
+    # Digital velocity arrives in m/s (MetPy's DigitalVelMapper, as the ICD
+    # defines products 99 and 154), and everything downstream -- the velocity
+    # tables, the readout, Level II's velocity, the storm motion SRV removes --
+    # is in knots. Unconverted, every speed read about half what it was: a
+    # 60 kt couplet drew in the colours of 30 kt, and the readout agreed.
+    # Checked on one KFWS volume: N0G |v| p90 was 8.0 against Level II's
+    # 15.6 kt, the m/s-to-knot ratio exactly.
+    if PRODUCTS.get(product, {}).get("kind") in ("vel", "srv"):
+        out *= _MS_TO_KT
     return out
 
 
@@ -643,7 +854,7 @@ def _srv_polar(site: str, product: str, src_product: str, key: Optional[str]) ->
     az = np.array(d["start_az"] + [d["end_az"][-1]], dtype=np.float32)
     rng = np.linspace(0, f.max_range, codes.shape[-1] + 1)
 
-    vals = _value_lut(f, src_product)[codes]  # kt, NaN where no data
+    vals = _value_lut(f, src_product)[codes]  # kt (converted there), NaN where no data
 
     # Remove the storm-motion component along each radial. A radial pointing
     # along the storm's heading sees the full speed; perpendicular sees none.
@@ -669,7 +880,7 @@ def _srv_polar(site: str, product: str, src_product: str, key: Optional[str]) ->
         "lut": lut,
         "codes": out_codes,
         "meta": {
-            "site": f"K{site}",
+            "site": icao_for(site),
             "siteLat": float(f.lat),
             "siteLon": float(f.lon),
             "product": product,
@@ -702,6 +913,54 @@ def _srv_polar(site: str, product: str, src_product: str, key: Optional[str]) ->
     while len(_POLAR_CACHE) > _POLAR_CACHE_MAX:
         _POLAR_CACHE.popitem(last=False)
     return out
+
+
+def _null_scan(site: str, product: str, key: str, f: "Level3File") -> dict:
+    """A product published with nothing in it -- a "null product".
+
+    With no rain the accumulations carry only a line of text ("No precipitation
+    detected since ...") and no gates at all, and the missing gate array was
+    read as an error: the panel said "'data'" and drew nothing. It is an empty
+    scan: nothing to draw, and the radar's own words to show.
+    """
+    spec = PRODUCTS[product]
+    pid = _resolve_palette(product, None)
+    _, vmin, vmax = get_cmap(pid)
+    texts = [str(p.get("text")).strip() for layer in (f.sym_block or []) for p in layer
+             if isinstance(p, dict) and p.get("text")]
+    note = texts[0] if texts else "Nothing to show in this product right now"
+    lut = np.full(256, np.nan, dtype=np.float32)
+    return {
+        "az": np.linspace(0, 360, 361, dtype=np.float32),
+        "lut": lut,
+        "codes": np.zeros((360, 1), dtype=np.uint8),
+        "meta": {
+            "site": icao_for(site),
+            "siteLat": float(f.lat),
+            "siteLon": float(f.lon),
+            "product": product,
+            "productLabel": spec["label"],
+            "units": spec["units"],
+            "kind": spec["kind"],
+            "family": spec.get("family"),
+            "tilt": spec.get("tilt"),
+            "elevation": None,
+            "defaultPalette": pid,
+            "vmin": vmin,
+            "vmax": vmax,
+            "nAz": 360,
+            "nGates": 1,
+            "rangeStartKm": 0.0,
+            "gateWidthKm": float(f.max_range),
+            "maxRangeKm": float(f.max_range),
+            "validUnix": _utc_unix(f.metadata.get("prod_time")) or key_time(key),
+            "scanUnix": key_time(key),
+            "key": key,
+            "note": note,
+            "vcp": int(f.prod_desc.vcp),
+            "mode": _OP_MODES.get(int(f.prod_desc.op_mode), f"Mode {f.prod_desc.op_mode}"),
+        },
+    }
 
 
 def polar_data(site: str, product: str, key: Optional[str] = None) -> dict:
@@ -739,7 +998,11 @@ def polar_data(site: str, product: str, key: Optional[str] = None) -> dict:
 
     raw = _SESSION.get(f"{S3}{key}", timeout=_HTTP_TIMEOUT).content
     f = Level3File(io.BytesIO(raw))
-    datadict = f.sym_block[0][0]
+    datadict = f.sym_block[0][0] if f.sym_block and f.sym_block[0] else {}
+    if "data" not in datadict:
+        out = _null_scan(site, product, key, f)
+        _POLAR_CACHE[cache_key] = out
+        return out
     codes = np.asarray(datadict["data"], dtype=np.uint8)
     az = np.array(datadict["start_az"] + [datadict["end_az"][-1]], dtype=np.float32)
     rng = np.linspace(0, f.max_range, codes.shape[-1] + 1)
@@ -752,7 +1015,7 @@ def polar_data(site: str, product: str, key: Optional[str] = None) -> dict:
         "lut": _value_lut(f, product),                # 256 floats
         "codes": codes,                               # naz x ngates, uint8
         "meta": {
-            "site": f"K{site}",
+            "site": icao_for(site),
             "siteLat": float(f.lat),
             "siteLon": float(f.lon),
             "product": product,
@@ -833,7 +1096,7 @@ def render(site: str, product: str, palette: Optional[str] = None, key: Optional
         "png": buf.getvalue(),
         "bounds": {"west": west, "south": south, "east": east, "north": north},
         "meta": {
-            "site": f"K{site}",
+            "site": icao_for(site),
             "siteLat": float(f.lat),
             "siteLon": float(f.lon),
             "product": product,

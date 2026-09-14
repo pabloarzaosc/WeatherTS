@@ -7,6 +7,9 @@ import {
   fetchNexradStorms,
   fetchPaletteTables,
   fetchScanData,
+  fetchSiteAvailability,
+  withAvailability,
+  type SiteAvailability,
   type StormReport,
   type NexradPalette,
   type NexradProduct,
@@ -352,7 +355,14 @@ interface NexradState {
   sites: NexradSite[];
   products: NexradProduct[];
   catalog: ProductFamily[]; // families + their tilt options, for the picker
-  grids: ProductGrids; // the merged product list, each moment on its best source
+  grids: ProductGrids; // the merged product list, each moment on its best source, with the site's low cut
+  /** The list as the backend sends it, before the selected radar is checked. */
+  baseGrids: ProductGrids;
+  /** What the selected radar is publishing now; null until checked. */
+  availability: SiteAvailability | null;
+  /** "loading" while the selected radar is being checked; "failed" falls back
+   *  to the catalogue's tilts. */
+  availabilityState: "idle" | "loading" | "ready" | "failed";
   /** Per-pane radar, keyed by pane id. The top-level product/scan/mesh mirror
    *  whichever pane is focused, so every existing reader keeps working. */
   paneRadar: Record<string, PaneRadar>;
@@ -440,11 +450,141 @@ interface NexradState {
  *  they share a single attempt instead of stampeding the backend. */
 let catalogInFlight: Promise<void> | null = null;
 
+/** VCPs change with the weather -- precipitation to clear air drops the 0.9
+ *  and 1.8 cuts -- so a selected radar is checked again this often. */
+const AVAILABILITY_REFRESH_MS = 5 * 60_000;
+let availabilityTimer: number | null = null;
+
+/**
+ * Each radar's last known tilts, kept across restarts. A radar's VCP rarely
+ * changes between visits, so the buttons show the moment it is picked and the
+ * check that follows only corrects them if it did.
+ */
+const AVAIL_KEY = "weatherts.radar.availability.v1";
+const AVAIL_KEEP_MS = 24 * 3600_000;
+const AVAIL_MAX_SITES = 60;
+const knownAvailability = new Map<string, SiteAvailability>(
+  (() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(AVAIL_KEY) || "{}") as Record<string, SiteAvailability>;
+      const cutoff = Date.now() - AVAIL_KEEP_MS;
+      return Object.entries(saved).filter(([, a]) => a && a.checkedAt * 1000 > cutoff);
+    } catch {
+      return [];
+    }
+  })(),
+);
+
+function rememberAvailability(site: string, avail: SiteAvailability): void {
+  knownAvailability.delete(site);
+  knownAvailability.set(site, avail);
+  while (knownAvailability.size > AVAIL_MAX_SITES) {
+    const oldest = knownAvailability.keys().next().value;
+    if (oldest === undefined) break;
+    knownAvailability.delete(oldest);
+  }
+  try {
+    window.localStorage.setItem(AVAIL_KEY, JSON.stringify(Object.fromEntries(knownAvailability)));
+  } catch {
+    /* only the next start is slower */
+  }
+}
+
+/**
+ * Check what the selected radar is flying and put it into the product list.
+ * A tilt the radar does not have moves to the nearest one it does, on every
+ * pane that was on it.
+ */
+function checkAvailability(site: string): void {
+  const store = useNexradStore;
+  // In archive playback, the tilts the radar flew then: a clear-air day stops
+  // at 6.4 deg where a storm day goes to 19.5.
+  const at = store.getState().archiveTime;
+  const current = () => store.getState().site === site && store.getState().archiveTime === at;
+  const fresh = store.getState().availabilityState !== "ready";
+  if (fresh) store.setState({ availabilityState: "loading" });
+  let full = false;
+  if (fresh) {
+    // Nothing known about this radar: its Level III tilts first, in well under
+    // a second, and Level II's when that check finishes.
+    void fetchSiteAvailability(site, true, at)
+      .then((quick) => {
+        if (!full && current()) applyAvailability(quick);
+      })
+      .catch(() => undefined);
+  }
+  void fetchSiteAvailability(site, false, at)
+    .then((avail) => {
+      full = true;
+      if (at === null) rememberAvailability(site, avail);
+      if (!current()) return;
+      // Unchanged since what is on screen: nothing to redo.
+      const shown = store.getState().availability;
+      if (shown && JSON.stringify(shown.families) === JSON.stringify(avail.families)) {
+        store.setState({ availability: avail, availabilityState: "ready" });
+        return;
+      }
+      applyAvailability(avail);
+    })
+    .catch(() => {
+      if (!current()) return;
+      // Unknown is not "none": keep what is known, or the catalogue's list.
+      if (store.getState().availabilityState !== "ready") store.setState({ availabilityState: "failed" });
+    });
+}
+
+/** Returns whether it moved a pane to another tilt or product -- which loads
+ *  that pane's scan, so the caller need not. */
+function applyAvailability(avail: SiteAvailability | null): boolean {
+  const store = useNexradStore;
+  const before = store.getState();
+  const grids = withAvailability(before.baseGrids, avail);
+  store.setState({ availability: avail, grids, availabilityState: avail ? "ready" : "idle" });
+  // Nothing moves on a partial answer: a tilt missing from it may be a Level II
+  // one (0.3, or velocity at 2.4) the full answer is about to confirm.
+  if (!avail || avail.level2Pending) return false;
+
+  const nearest = (family: string, tilt: string | null): string | null | undefined => {
+    const fam = grids.find((f) => f.id === family);
+    if (!fam || fam.unavailable || fam.tilts.some((t) => t.tilt === tilt)) return undefined; // nothing to move
+    const was = [...before.grids, ...before.baseGrids].find((f) => f.id === family)?.tilts.find((t) => t.tilt === tilt)?.elev;
+    if (was == null) return fam.tilts[0]?.tilt ?? null;
+    return [...fam.tilts].sort((a, b) => Math.abs((a.elev ?? 0) - was) - Math.abs((b.elev ?? 0) - was))[0]?.tilt ?? null;
+  };
+  // A product this radar is not publishing (Level II at a radar abroad): back
+  // to reflectivity rather than a map that stays empty.
+  const fallback = (family: string) =>
+    grids.find((f) => f.id === family)?.unavailable
+      ? (grids.find((f) => f.id === "B" && !f.unavailable) ?? grids.find((f) => !f.unavailable))?.id
+      : undefined;
+  const now = store.getState();
+  for (const [id, pane] of Object.entries(now.paneRadar)) {
+    if (id === getActivePaneId()) continue;
+    const other = fallback(pane.family);
+    if (other) now.setPaneFamily(id, other);
+    else if (nearest(pane.family, pane.tilt) !== undefined) now.setPaneFamily(id, pane.family);
+  }
+  const other = fallback(now.family);
+  if (other) {
+    now.setFamily(other);
+    return true;
+  }
+  const moveTo = nearest(now.family, now.tilt);
+  if (moveTo !== undefined && moveTo !== null && wireCode(grids.find((f) => f.id === now.family)!, moveTo) !== now.product) {
+    now.setTilt(moveTo);
+    return true;
+  }
+  return false;
+}
+
 export const useNexradStore = create<NexradState>((set, get) => ({
   sites: [],
   products: [],
   catalog: [],
   grids: [],
+  baseGrids: [],
+  availability: null,
+  availabilityState: "idle",
   paneRadar: {},
   palettes: [],
   archiveStart: "2022-03-01",
@@ -510,7 +650,8 @@ export const useNexradStore = create<NexradState>((set, get) => ({
             sites,
             products: meta.products,
             catalog: meta.catalog,
-            grids,
+            grids: withAvailability(grids, get().availability),
+            baseGrids: grids,
             palettes: meta.palettes,
             palTables: pals.palettes,
             kindDefaults: pals.kindDefaults,
@@ -549,11 +690,30 @@ export const useNexradStore = create<NexradState>((set, get) => ({
       site, scan: null, mesh: null, meshRev: get().meshRev + 1, scans: [], index: 0,
       error: null, storms: null, selectedCellId: null,
     });
+    if (availabilityTimer != null) window.clearInterval(availabilityTimer);
+    availabilityTimer = null;
     if (site) {
-      void get().refresh();
+      // What this radar was flying last time, if it has been seen: its buttons
+      // show now, and the check below corrects them if the VCP changed.
+      const known = get().archiveTime === null ? (knownAvailability.get(site) ?? null) : null;
+      let moved = applyAvailability(known);
+      // A low cut is the one tilt most radars do not have: with nothing known,
+      // leave it rather than fetch a Level II volume that may not exist.
+      if (!known && get().tilt === "L") {
+        get().setTilt("0");
+        moved = true;
+      }
+      // Moving the tilt already loads the scan; loading it again here was a
+      // second fetch of every frame on every radar switch.
+      if (!moved) void get().refresh();
       void get().loadStorms();
+      checkAvailability(site);
+      availabilityTimer = window.setInterval(() => {
+        if (get().site === site) checkAvailability(site);
+      }, AVAILABILITY_REFRESH_MS);
     }
     else {
+      applyAvailability(null);
       controller?.abort();
       controller = null;
     }
@@ -851,7 +1011,13 @@ export const useNexradStore = create<NexradState>((set, get) => ({
     set({ archiveTime, archiveDate: null, error: null, scan: null, mesh: null,
           meshRev: get().meshRev + 1, index: 0 });
     if (archiveTime !== null) get().stopAutoRefresh();
-    if (get().site) void get().refresh();
+    const { site } = get();
+    if (!site) return;
+    // Another moment, other tilts: what the radar flew then, or back to what it
+    // flies now. A tilt it did not have moves, and moving loads the scan.
+    const moved = applyAvailability(archiveTime === null ? (knownAvailability.get(site) ?? null) : null);
+    if (!moved) void get().refresh();
+    checkAvailability(site);
   },
 
   // Load the scan list for the current site/product. Live opens on the newest

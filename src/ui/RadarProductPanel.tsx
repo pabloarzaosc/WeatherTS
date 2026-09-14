@@ -19,19 +19,30 @@ function ProductItem({
   f,
   on,
   activeTilt,
+  tiltsKnown,
+  siteName,
   onPick,
   onTilt,
 }: {
   f: ProductFamily;
   on: boolean;
   activeTilt: string | null;
+  /** The selected radar's tilts have been checked (or could not be). */
+  tiltsKnown: boolean;
+  siteName: string;
   onPick: (id: string) => void;
   onTilt: (t: string) => void;
 }) {
   const tilts = f.tilts.filter((t) => t.tilt !== null);
   return (
-    <div className={`rpp__item${on ? " is-on" : ""}`}>
-      <button type="button" className="rpp__btn" onClick={() => onPick(f.id)}>
+    <div className={`rpp__item${on ? " is-on" : ""}${f.unavailable ? " is-unavailable" : ""}`}>
+      <button
+        type="button"
+        className="rpp__btn"
+        onClick={() => onPick(f.id)}
+        disabled={f.unavailable}
+        title={f.unavailable ? `${siteName} is not publishing ${f.label} right now` : undefined}
+      >
         <span className="rpp__code">{f.short ?? f.id}</span>
         <span className="rpp__label">{f.label}</span>
         {f.source === "level2" && <span className="rpp__l2">L2</span>}
@@ -39,7 +50,12 @@ function ProductItem({
       </button>
       {/* Elevations only for the selected product -- showing every tilt of every
           product at once was the wall of tiny controls this replaces. */}
-      {on && tilts.length > 1 && (
+      {on && (!tiltsKnown || f.checking) && (
+        <div className="rpp__tilts rpp__tilts--checking" aria-live="polite">
+          checking {siteName}'s tilts…
+        </div>
+      )}
+      {on && tiltsKnown && !f.checking && tilts.length > 1 && (
         <div className="rpp__tilts" role="group" aria-label="Elevation">
           {tilts.map((t) => (
             <button
@@ -49,7 +65,15 @@ function ProductItem({
                 t.superRes ? " is-sr" : ""
               }`}
               onClick={() => onTilt(t.tilt!)}
-              title={t.superRes ? `${t.elev}° — super-res (0.5°)` : `${t.elev}°`}
+              title={
+                t.lowCut
+                  ? `${t.elev}° — this radar's lowest cut, from Level II (slower to load)`
+                  : t.source === "level2" && f.source !== "level2"
+                    ? `${t.elev}° — only in Level II (slower to load)`
+                    : t.superRes
+                      ? `${t.elev}° — super-res (0.5°)`
+                      : `${t.elev}°`
+              }
             >
               {t.elev?.toFixed(1)}
             </button>
@@ -72,6 +96,8 @@ export function RadarProductPanel() {
   const activePane = useSyncExternalStore(subscribeMaps, getActivePaneId);
   const setFamily = useNexradStore((s) => s.setFamily);
   const setTilt = useNexradStore((s) => s.setTilt);
+  const availabilityState = useNexradStore((s) => s.availabilityState);
+  const siteName = useNexradStore((s) => s.sites.find((x) => x.id === s.site)?.icao ?? (s.site ? `K${s.site}` : "This radar"));
   // No alert-list dodge needed any more: the rail is a docked column, so
   // --map-right already keeps this panel clear of it.
   const [open, setOpen] = useState(true);
@@ -120,6 +146,8 @@ export function RadarProductPanel() {
               f={f}
               on={f.id === family}
               activeTilt={tilt}
+              tiltsKnown={availabilityState !== "loading"}
+              siteName={siteName}
               onPick={setFamily}
               onTilt={setTilt}
             />

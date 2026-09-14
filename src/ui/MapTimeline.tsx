@@ -420,7 +420,18 @@ export function MapTimeline() {
       read: () => { index: number; length: number; busy: boolean },
       go: (i: number) => void,
       dwell: number,
+      /** First frame of the loop; the end wraps back here. */
+      first = 0,
     ) {
+      // Pressing play on the newest frame means "play the loop", not "stop at
+      // once because this is the end": start from its first frame.
+      {
+        const { index, length } = read();
+        if (length > 0 && (index >= length - 1 || index < first)) {
+          go(first);
+          await wait(60);
+        }
+      }
       while (!cancelled) {
         await wait(dwell / speed);
         if (cancelled) return;
@@ -431,7 +442,7 @@ export function MapTimeline() {
           setPlaying(false);
           return;
         }
-        go(atEnd ? 0 : index + 1);
+        go(atEnd ? first : index + 1);
         await wait(60);
         for (let k = 0; k < 300 && read().busy; k++) {
           if (cancelled) return;
@@ -474,7 +485,9 @@ export function MapTimeline() {
               return { index: s.index, length: s.frames.length, busy: s.busy };
             },
             (i) => useObsStore.getState().setIndex(i),
-            500,
+            // The whole timeline is the loop now -- its length is picked in the
+            // panel -- and its frames are made ahead, so it steps like satellite.
+            400,
           )
       : isModel
         ? runModel()
@@ -487,6 +500,27 @@ export function MapTimeline() {
       cancelled = true;
     };
   }, [playing, speed, loop, canPlay, isRadar, isSat, isObs, isModel, isLsr, isFronts, gotoPlaybackHour, setPendingHour]);
+
+  // Stopping a loop's download from its loading card pauses the play: frames
+  // that will not arrive are not worth waiting on.
+  useEffect(() => {
+    const offSat = useSatStore.subscribe((s, prev) => {
+      if (s.loopStops !== prev.loopStops) setPlaying(false);
+    });
+    const offObs = useObsStore.subscribe((s, prev) => {
+      if (s.loopStops !== prev.loopStops) setPlaying(false);
+    });
+    return () => {
+      offSat();
+      offObs();
+    };
+  }, []);
+
+  // The analyses layer hides its zoom detail while a loop plays.
+  useEffect(() => {
+    useObsStore.getState().setPlaying(playing && isObs);
+    useSatStore.getState().setPlaying(playing && isSat);
+  }, [playing, isObs]);
 
   // Stop playing if the context can no longer play (e.g. viewer closed).
   useEffect(() => {
@@ -537,7 +571,13 @@ export function MapTimeline() {
       <button
         type="button"
         className="maptimeline__play"
-        onClick={() => setPlaying((v) => !v)}
+        onClick={() => {
+          // Play after a stopped download means "load it after all".
+          // Play is what downloads a loop: the area on screen, now.
+          if (!playing && isSat) useSatStore.getState().armLoop();
+          if (!playing && isObs) useObsStore.getState().armLoop();
+          setPlaying((v) => !v);
+        }}
         disabled={!canPlay}
         title={playing ? "Pause" : "Play"}
       >

@@ -517,7 +517,11 @@ def render_vwp_panel(
     show_map: bool = True,
 ) -> dict[str, Any]:
     """The whole VWP panel as one PNG, plus the numbers on it."""
-    site = (site or "").upper().strip().lstrip("K")
+    site = (site or "").upper().strip()
+    # Four letters is an ICAO (KTLX, RKJK): drop its first. Not lstrip("K") --
+    # that turned Kunsan's KJK into "JK".
+    if len(site) == 4:
+        site = site[1:]
     if len(site) != 3:
         raise ValueError("site must be the 3-letter radar id, e.g. 'JKL'")
     motion = motion if motion in MOTIONS else "right"

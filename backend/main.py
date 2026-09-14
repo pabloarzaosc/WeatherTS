@@ -8,8 +8,12 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import struct
+import sys
+import threading
 
+import anyio
 from fastapi import Body, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -28,6 +32,7 @@ import mrms_core
 import observations
 import satellite
 import nexrad_level2
+import nexrad_availability
 import nexrad_storms
 import storm_attributes
 import nexrad_vwp
@@ -50,6 +55,46 @@ app.add_middleware(
 # level 6, not the default 9: on a radar scan 9 costs ~600 ms of CPU to save
 # ~5% over 6, which takes ~20 ms.
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
+
+
+def _drop_queued_work() -> None:
+    """Background queues let go on shutdown, so the process can exit."""
+    satellite.shutdown()
+    observations.shutdown()
+
+
+app.router.on_shutdown.append(_drop_queued_work)
+
+
+def _exit_without_waiting() -> None:
+    """Leave as soon as the server has stopped.
+
+    Python joins every worker thread before it exits, and a loop's downloads
+    already under way can take minutes on a slow line. The server was done and
+    the process lingered -- in development the reloader waited on it with no
+    backend running at all. Nothing left in those threads is worth the wait:
+    finished frames are already on disk, half-done ones are fetched again.
+    """
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
+
+
+# Registered after concurrent.futures' own hook, and these run last-first, so
+# this one runs before the threads would be joined.
+if hasattr(threading, "_register_atexit"):
+    threading._register_atexit(_exit_without_waiting)  # noqa: SLF001
+
+
+def _roomier_thread_pool() -> None:
+    """Plain handlers run on a pool of forty threads, and several of them wait on
+    a download: a loop being made, the frame a timeline landed on. Forty such
+    waits and every endpoint queued -- the satellite panel then opened with no
+    catalogue at all. Threads that only wait cost next to nothing."""
+    anyio.to_thread.current_default_thread_limiter().total_tokens = 256
+
+
+app.router.on_startup.append(_roomier_thread_pool)
 
 
 @app.get("/health")
@@ -384,6 +429,26 @@ def nexrad_sites():
         raise HTTPException(status_code=502, detail=str(exc))
 
 
+@app.get("/api/nexrad/availability")
+def nexrad_availability_route(site: str = Query(...), quick: bool = Query(False), at: int = Query(0, ge=0)):
+    """Every product and tilt this radar is publishing now, at its real angle.
+    `quick` answers from Level III alone first (see nexrad_availability); `at`
+    asks what it had at that moment, for archive playback."""
+    try:
+        return nexrad_availability.site_availability(site, quick, at or None)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/nexrad/cuts")
+def nexrad_cuts(site: str = Query(...), at: int = Query(0, ge=0)):
+    """The elevations this radar is flying: every cut, and the one below 0.5 deg if it has one."""
+    try:
+        return nexrad_level2.site_cuts(site, at or None)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
 @app.get("/api/nexrad/meta")
 def nexrad_meta():
     return {
@@ -459,9 +524,9 @@ def nexrad_scans(
     start: int = Query(0, ge=0),
 ):
     try:
-        # Level II frames are whole volumes off the live chunk bucket, which
-        # keeps a few hundred of them. Each is ~7 MB, so the loop is capped
-        # tighter than the Level III one.
+        # Level II frames are whole volumes: live off the chunk bucket, which
+        # keeps about two days, and archive playback out of the archive. Each
+        # is 7-16 MB, so the loop is capped tighter than the Level III one.
         if product.upper().startswith("L2"):
             vols = nexrad_level2.list_volumes(site, min(limit or 30, nexrad_level2.MAX_LOOP),
                                               start=start or None)
@@ -560,6 +625,7 @@ def mrms_render(
 # The satellite services' capabilities are slow (EUMETView takes six seconds);
 # read them in the background now so the panel opens onto a frame list.
 satellite.warm()
+nexrad_core.warm_site_status()
 
 
 @app.get("/api/sat/catalog")
@@ -571,13 +637,57 @@ def sat_catalog():
 @app.get("/api/sat/frames")
 def sat_frames(
     product: str = Query(satellite.DEFAULT_PRODUCT),
-    hours: float = Query(3.0, ge=0.5, le=48.0, description="how long a loop, for the geostationary products"),
+    hours: float = Query(3.0, ge=0.5, le=24.0 * 7, description="how long a loop, for the geostationary products"),
 ):
     """The times one product has in the loop, oldest first."""
     try:
         return satellite.frames(product, hours)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/api/sat/image")
+async def sat_image(
+    product: str = Query(...),
+    time: str = Query(..., description="the frame's time, as the frame list gives it"),
+    west: float = Query(...),
+    south: float = Query(...),
+    east: float = Query(...),
+    north: float = Query(...),
+    width: int = Query(1280),
+    height: int = Query(800),
+):
+    """One frame of a loop for a box: the provider's picture, cached here."""
+    try:
+        body, ctype = await satellite.image(product, time, west, south, east, north, width, height)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+    if ctype == "empty":
+        # Listed but not published yet: nothing to draw, and not to be cached.
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
+    return Response(content=body, media_type=ctype, headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.post("/api/sat/prefetch")
+def sat_prefetch(payload: dict = Body(...)):
+    """Start fetching a whole loop: {product, times, west, south, east, north, width, height}."""
+    try:
+        return satellite.prefetch(
+            str(payload.get("product")),
+            [str(x) for x in (payload.get("times") or [])],
+            float(payload["west"]), float(payload["south"]), float(payload["east"]), float(payload["north"]),
+            int(payload.get("width", 1280)), int(payload.get("height", 800)),
+        )
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/sat/cancel")
+def sat_cancel():
+    """Stop fetching the loop being loaded."""
+    return satellite.cancel()
 
 
 @app.get("/api/obs/catalog")
@@ -590,10 +700,12 @@ def obs_catalog():
 def obs_frames(
     source: str = Query(observations.DEFAULT_SOURCE),
     field: str = Query("", description="the field about to be drawn — its newest hour starts warming"),
+    hours: float = Query(0, ge=0, le=24 * 7, description="only the last this many hours, thinned to a loop"),
 ):
-    """Every hour still on the server, oldest first — the timeline's frames."""
+    """The timeline's frames, oldest first: the last `hours` of them, or every
+    hour the source keeps."""
     try:
-        out = observations.frames(source)
+        out = observations.frames_for(source, hours) if hours > 0 else observations.frames(source)
         if field:
             observations.warm_newest(source, field)
         return {"frames": out}
@@ -628,11 +740,12 @@ def obs_vectors(
 ):
     """Labelled contours over the field, and the outline of the analysed area."""
     try:
-        return observations.vectors(source, field, key)
+        body = observations.vectors(source, field, key)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
+    return Response(content=body, media_type="application/json")
 
 
 @app.get("/api/obs/meta")
@@ -683,6 +796,55 @@ def obs_image(
     # An analysis hour never changes once published, so the browser may keep it.
     return Response(content=out["png"], media_type="image/png",
                     headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.post("/api/obs/prefetch")
+def obs_prefetch(payload: dict = Body(...)):
+    """Start making a loop of analysis frames: {source, field, keys}."""
+    try:
+        return observations.prefetch(
+            str(payload.get("source") or observations.DEFAULT_SOURCE),
+            str(payload.get("field") or observations.DEFAULT_FIELD),
+            [str(k) for k in (payload.get("keys") or [])],
+        )
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/obs/cancel")
+def obs_cancel():
+    """Stop making the loop being loaded."""
+    return observations.cancel_loop()
+
+
+@app.post("/api/obs/loop-status")
+def obs_loop_status(payload: dict = Body(...)):
+    """Which frames of a loop are made: {source, field, keys} -> {ready, failed}."""
+    try:
+        return observations.loop_status(
+            str(payload.get("source") or observations.DEFAULT_SOURCE),
+            str(payload.get("field") or observations.DEFAULT_FIELD),
+            [str(k) for k in (payload.get("keys") or [])],
+        )
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/obs/points")
+def obs_points(payload: dict = Body(...)):
+    """Values under a list of places: {source, field, key, points: [[lat, lon], ...]}."""
+    try:
+        points = [[float(a), float(b)] for a, b in (payload.get("points") or [])]
+        return observations.points_at(
+            str(payload.get("source") or observations.DEFAULT_SOURCE),
+            str(payload.get("field") or observations.DEFAULT_FIELD),
+            str(payload.get("key") or ""),
+            points,
+        )
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
 
 
 @app.get("/api/obs/view")

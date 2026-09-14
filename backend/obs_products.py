@@ -246,7 +246,7 @@ SOURCES: dict[str, dict[str, Any]] = {
             "nomads": NOMADS + "/hrrr/prod/hrrr.{ymd}/conus/hrrr.t{hh}z.wrfprsf00.grib2",
             "aws": "https://noaa-hrrr-bdp-pds.s3.amazonaws.com/hrrr.{ymd}/conus/hrrr.t{hh}z.wrfprsf00.grib2",
         },
-        "step": 0.05, "days": 3, "cadence": 60,
+        "step": 0.05, "days": 7, "cadence": 60,
         # The Lambert grid's centre meridian and tangent latitude: the winds are
         # given along the grid's axes and are turned to north by these.
         "lov": -97.5, "latin": 38.5,
@@ -266,7 +266,7 @@ SOURCES: dict[str, dict[str, Any]] = {
             "nomads": NOMADS + "/rap/prod/rap.{ymd}/rap.t{hh}z.awp130pgrbf00.grib2",
             "aws": "https://noaa-rap-pds.s3.amazonaws.com/rap.{ymd}/rap.t{hh}z.awp130pgrbf00.grib2",
         },
-        "step": 0.13, "days": 3, "cadence": 60,
+        "step": 0.13, "days": 7, "cadence": 60,
         "lov": -95.0, "latin": 25.0,
         # Absolute vorticity only at 500 mb in this file; the other levels are
         # worked out from the wind.
@@ -286,7 +286,7 @@ SOURCES: dict[str, dict[str, Any]] = {
         },
         # Drawn on a 0.05 degree grid (5 km): at any zoom a whole-country field is
         # read at, the eye cannot tell it from the 2.5 km original.
-        "step": 0.05, "days": 3, "cadence": 60,
+        "step": 0.05, "days": 7, "cadence": 60,
         "lov": -95.0, "latin": 25.0,
         "raw": _RTMA_RAW,
     },
@@ -297,7 +297,7 @@ SOURCES: dict[str, dict[str, Any]] = {
             "nomads": NOMADS + "/rtma/prod/rtma2p5_ru.{ymd}/rtma2p5_ru.t{hh}{mm}z.2dvaranl_ndfd.grb2",
             "aws": "https://noaa-rtma-pds.s3.amazonaws.com/rtma2p5_ru.{ymd}/rtma2p5_ru.t{hh}{mm}z.2dvaranl_ndfd.grb2",
         },
-        "step": 0.05, "days": 2, "cadence": 15,
+        "step": 0.05, "days": 7, "cadence": 15,
         # The same 2345 x 1597 Lambert grid as the hourly RTMA: one mapping serves both.
         "grid": "rtma2p5",
         "lov": -95.0, "latin": 25.0,

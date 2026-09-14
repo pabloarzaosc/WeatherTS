@@ -6,11 +6,14 @@ import {
   fetchObsVectors,
   obsImageUrl,
   obsViewUrl,
+  fetchObsLoopStatus,
+  prefetchObsLoop,
   type ObsBarbs,
   type ObsRender,
   type ObsVectors,
 } from "../../lib/observations";
 import { useObsStore } from "../../store/useObsStore";
+import { attachPlaces, PLACE_LAYER_IDS, placesFor } from "./obsPlaces";
 
 const SRC = "obs-src";
 const DETAIL_SRC = "obs-detail-src";
@@ -38,7 +41,8 @@ const BARB_BANDS = [
 const BARB_IDS = BARB_BANDS.map((b) => b.id);
 const BARB_IMAGE = "obsbarb-";
 
-const ALL = [LAYER, DETAIL, EDGE, LINE, ...BARB_IDS, LABEL];
+// Place names last: they are read over everything else this layer draws.
+const ALL = [LAYER, DETAIL, EDGE, LINE, ...BARB_IDS, LABEL, ...PLACE_LAYER_IDS];
 
 /**
  * From this zoom the whole-domain picture (about 6 km a pixel) shows its
@@ -85,17 +89,142 @@ const state = new WeakMap<MapLibreMap, PaneState>();
  * threads for one answer, and the second pane's request was the one a slow
  * hour kept waiting.
  */
-const inflight = new Map<string, Promise<[Pick<ObsRender, "coordinates" | "meta">, ObsVectors]>>();
-function frameData(args: { source: string; field: string; key: string }) {
+interface FrameEntry {
+  picture: Pick<ObsRender, "coordinates" | "meta">;
+  vectors: ObsVectors;
+  /** The picture already on this machine, so showing the frame needs no request. */
+  url: string;
+}
+
+/**
+ * Frames already made, kept in memory: stepping back through a loop that has
+ * played once is a swap of picture and lines, not three requests a frame.
+ * Kept to about three days of hourly frames of one product; the oldest go.
+ */
+const FRAME_CACHE_MAX = 80;
+const frames = new Map<string, Promise<FrameEntry>>();
+
+function frameData(args: { source: string; field: string; key: string }): Promise<FrameEntry> {
   const k = `${args.source}|${args.field}|${args.key}`;
-  let p = inflight.get(k);
-  if (!p) {
-    p = Promise.all([fetchObsMeta(args), fetchObsVectors(args)]);
-    inflight.set(k, p);
-    const drop = () => inflight.delete(k);
-    p.then(drop, drop);
+  const hit = frames.get(k);
+  if (hit) {
+    frames.delete(k);
+    frames.set(k, hit); // most recently used last
+    return hit;
+  }
+  const p = (async () => {
+    const [picture, vectors] = await Promise.all([fetchObsMeta(args), fetchObsVectors(args)]);
+    const res = await fetch(obsImageUrl(args));
+    if (!res.ok) throw new Error(`picture ${res.status}`);
+    const url = URL.createObjectURL(await res.blob());
+    return { picture, vectors, url };
+  })();
+  frames.set(k, p);
+  p.catch(() => frames.delete(k));
+  while (frames.size > FRAME_CACHE_MAX) {
+    const oldest = frames.keys().next().value as string;
+    const gone = frames.get(oldest);
+    frames.delete(oldest);
+    // Revoked later: a pane may be about to show it.
+    void gone?.then((e) => window.setTimeout(() => URL.revokeObjectURL(e.url), 10_000)).catch(() => undefined);
   }
   return p;
+}
+
+/**
+ * Loops: when the timeline starts playing the analyses, every frame of the loop
+ * is made ahead on the server, and each is pulled onto this machine as soon as
+ * it is finished -- so the play steps through pictures that are already here.
+ *
+ * Pulling only finished frames matters: a request for a frame still being made
+ * waits as long as its download, and the browser allows six connections to the
+ * backend, so four of those at once left the rest of the app queuing.
+ * One preloader for all panes: they show the same frames.
+ */
+const PULL_PARALLEL = 2;
+const POLL_MS = 250;
+/** A cold week of a many-field product is several hundred MB to download. */
+const LOOP_GIVE_UP_MS = 30 * 60_000;
+/** New analysis hours land about hourly; the list is looked at this often. */
+const REFRESH_MS = 5 * 60_000;
+let loopGeneration = 0;
+let panes = 0;
+let refreshTimer: number | null = null;
+
+/**
+ * The timeline's loop, made ahead once play is pressed -- not when the layer
+ * comes on or the product changes: an hour of HRRR is a megabyte or more per
+ * field, and nobody asked for a week of it by picking a product.
+ */
+function ensureLoop(): void {
+  const s = useObsStore.getState();
+  if (panes === 0 || !s.loopArmed || s.frames.length < 2) return;
+  s.prepareLoop(s.frames.map((f) => f.key));
+}
+
+function preloadLoop(keys: string[]): void {
+  const generation = ++loopGeneration;
+  const { source, field } = useObsStore.getState();
+  if (keys.length === 0) return;
+  const alive = () => generation === loopGeneration;
+  const waiting = new Set(keys);
+  const pull: string[] = [];
+  let loaded = 0;
+  let running = 0;
+
+  const done = () => {
+    loaded += 1;
+    if (alive()) useObsStore.getState().setStatus({ loopLoaded: loaded });
+  };
+  const next = () => {
+    while (alive() && running < PULL_PARALLEL && pull.length > 0) {
+      const key = pull.shift()!;
+      running += 1;
+      frameData({ source, field, key })
+        .catch(() => undefined)
+        .finally(() => {
+          running -= 1;
+          done();
+          next();
+        });
+    }
+  };
+
+  void (async () => {
+    // Frames this machine already holds need nothing from the server.
+    for (const key of keys) {
+      if (frames.has(`${source}|${field}|${key}`)) {
+        waiting.delete(key);
+        pull.push(key);
+      }
+    }
+    next();
+    if (waiting.size === 0) return;
+    try {
+      await prefetchObsLoop(source, field, [...waiting]);
+    } catch {
+      return; // the timeline still fetches each frame as it reaches it
+    }
+    const started = performance.now();
+    while (alive() && waiting.size > 0 && performance.now() - started < LOOP_GIVE_UP_MS) {
+      try {
+        const st = await fetchObsLoopStatus(source, field, [...waiting]);
+        if (!alive()) return;
+        // In loop order, so the frames about to play arrive first.
+        const ready = new Set(st.ready);
+        for (const key of keys) {
+          if (ready.has(key) && waiting.delete(key)) pull.push(key);
+        }
+        for (const key of st.failed) {
+          if (waiting.delete(key)) done();
+        }
+        next();
+      } catch {
+        /* the backend restarting: try again */
+      }
+      if (waiting.size > 0) await new Promise((r) => window.setTimeout(r, POLL_MS));
+    }
+  })();
 }
 
 function hideDetail(map: MapLibreMap, st: PaneState): void {
@@ -104,15 +233,28 @@ function hideDetail(map: MapLibreMap, st: PaneState): void {
   if (map.getLayer(DETAIL)) map.setLayoutProperty(DETAIL, "visibility", "none");
 }
 
+/** The detail picture a moment after a frame lands, and never while playing:
+ *  swapping between a sharp picture and the plain one on every step of a loop
+ *  read as a flicker. */
+function scheduleDetail(map: MapLibreMap): void {
+  const st = state.get(map);
+  if (!st) return;
+  if (st.moveTimer != null) window.clearTimeout(st.moveTimer);
+  st.moveTimer = window.setTimeout(() => {
+    st.moveTimer = null;
+    void refreshDetail(map);
+  }, DETAIL_SETTLE_MS);
+}
+
 async function refreshDetail(map: MapLibreMap): Promise<void> {
   const st = state.get(map);
   const src = map.getSource(DETAIL_SRC) as ImageSource | undefined;
   if (!st || !src || !map.getLayer(DETAIL)) return;
-  const { source, field, frames, index } = useObsStore.getState();
-  const frame = frames[index];
+  const { source, field, frames: list, index, playing } = useObsStore.getState();
+  const frame = list[index];
   const want = frame ? `${source}|${field}|${frame.key}` : "";
-  // Only over a frame that is already drawn, and only once zoomed in.
-  if (!frame || st.shown !== want || map.getZoom() < DETAIL_MIN_ZOOM) {
+  // Only over a frame that is already drawn, only once zoomed in, never mid-play.
+  if (!frame || st.shown !== want || playing || map.getZoom() < DETAIL_MIN_ZOOM) {
     hideDetail(map, st);
     return;
   }
@@ -311,16 +453,16 @@ async function draw(map: MapLibreMap): Promise<void> {
   try {
     // The picture and the numbers over it come from the same cached variables
     // on the server, so asking for both at once costs one download, not two.
-    const [picture, vectors] = await frameData(args);
+    const { picture, vectors, url } = await frameData(args);
     // A slower earlier frame must not paint over a newer one that already landed.
     if (seq !== st.seq || !map.getSource(SRC)) return;
-    // The meta call made the PNG; this URL is served straight from that cache.
-    image.updateImage({ url: obsImageUrl(args), coordinates: picture.coordinates as never });
+    image.updateImage({ url, coordinates: picture.coordinates as never });
     lines.setData(vectors.contours);
     edge.setData(vectors.edge);
     barbs.setData(barbFeatures(vectors.barbs));
     st.shown = want;
-    void refreshDetail(map);
+    scheduleDetail(map);
+    placesFor(map)?.refresh();
     useObsStore.getState().setStatus({
       busy: false,
       error: null,
@@ -357,6 +499,19 @@ function applyVisibility(map: MapLibreMap): void {
   }
 }
 
+useObsStore.subscribe((s, prev) => {
+  if (s.loopKeys !== prev.loopKeys) preloadLoop(s.loopKeys);
+  // A different product or source makes the loop being made useless -- now, not
+  // once the new source's hours have been listed.
+  if ((s.field !== prev.field || s.source !== prev.source) && !s.loopId.startsWith(`${s.source}|${s.field}|`)) {
+    s.dropLoop();
+  }
+  // A new hour in the list joins a loop that is playing; a paused one waits.
+  if ((s.frames !== prev.frames && s.playing) || s.field !== prev.field || s.loopArmed !== prev.loopArmed) {
+    ensureLoop();
+  }
+});
+
 /**
  * The hourly analyses as a filled field, with the numbers and the wind over it.
  *
@@ -369,7 +524,7 @@ export const obsLayer: LayerModule = {
   id: "observations",
   name: "Observations (analysis)",
   description:
-    "Surface, upper-air and severe-weather analyses on the hour — temperature, CAPE, helicity, the STP, 500 mb flow — scrubbable back through three days.",
+    "Surface, upper-air and severe-weather analyses on the hour — temperature, CAPE, helicity, the STP, 500 mb flow — scrubbable and looped back through a week.",
   category: "weather",
   source: "NOAA/NCEP RTMA, HRRR and RAP analyses",
   defaultVisible: false,
@@ -486,6 +641,7 @@ export const obsLayer: LayerModule = {
       });
     }
     applyVisibility(map);
+    attachPlaces(map);
 
     // The barb pictures are made when the map first asks for one: forty speeds
     // is forty canvases nobody needs until a product with wind is drawn.
@@ -503,6 +659,12 @@ export const obsLayer: LayerModule = {
       }
       if (s.showLines !== prev.showLines || s.showEdge !== prev.showEdge || s.showBarbs !== prev.showBarbs) {
         applyVisibility(map);
+      }
+      if (s.showPlaces !== prev.showPlaces) placesFor(map)?.applyVisibility();
+      if (s.playing !== prev.playing) {
+        const st = state.get(map);
+        if (s.playing && st) hideDetail(map, st);
+        else scheduleDetail(map);
       }
     });
     const onMove = () => {
@@ -530,6 +692,15 @@ export const obsLayer: LayerModule = {
       moveTimer: null,
     });
 
+    panes += 1;
+    if (refreshTimer == null) {
+      refreshTimer = window.setInterval(() => {
+        const s = useObsStore.getState();
+        if (!s.catalog || s.frames.length === 0) void s.load();
+        else void s.loadFrames(true);
+      }, REFRESH_MS);
+    }
+
     // The catalogue and the frame list may not be loaded yet -- the panel need
     // never have been opened.
     await useObsStore.getState().load();
@@ -548,7 +719,15 @@ export const obsLayer: LayerModule = {
       if (st.moveTimer != null) window.clearTimeout(st.moveTimer);
       if (st.detailUrl) URL.revokeObjectURL(st.detailUrl);
       state.delete(map);
+      panes = Math.max(0, panes - 1);
     }
+    if (panes === 0) {
+      if (refreshTimer != null) window.clearInterval(refreshTimer);
+      refreshTimer = null;
+      useObsStore.getState().dropLoop(true);
+    }
+    // Before the layers go: it also puts the basemap's own place names back.
+    placesFor(map)?.detach();
     for (const id of ALL) if (map.getLayer(id)) map.removeLayer(id);
     for (const id of [SRC, DETAIL_SRC, LINES_SRC, EDGE_SRC, BARBS_SRC]) if (map.getSource(id)) map.removeSource(id);
     useObsStore.getState().setStatus({ busy: false, error: null, valid: null, interval: null });

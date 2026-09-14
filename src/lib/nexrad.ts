@@ -13,6 +13,8 @@ export interface NexradSite {
   lon: number;
   country: string | null;
   online?: boolean;
+  /** Newest UTC day with a scan in the archive, once the backend has looked. */
+  lastScanDay?: string;
 }
 
 export interface NexradProduct {
@@ -31,6 +33,11 @@ export interface TiltOption {
   elev: number | null; // nominal VCP elevation for the label
   /** Level II only: this cut really is 0.5° (the low, split cuts). */
   superRes?: boolean;
+  /** The cut this radar flies below 0.5° -- served from Level II. */
+  lowCut?: boolean;
+  /** Where this tilt comes from at the selected radar: Level III, or a cut
+   *  only Level II has (below 0.5, above 3.1, velocity above 1.3). */
+  source?: "level2" | "level3";
 }
 
 /** A moment (reflectivity, velocity, ...) and the cuts it's published at. */
@@ -46,6 +53,10 @@ export interface ProductFamily {
   superResTilts?: string[];
   /** Toolbox button label, e.g. "REF", "SRM". */
   short?: string;
+  /** The selected radar is not publishing this product at the moment. */
+  unavailable?: boolean;
+  /** Still being checked at the selected radar. */
+  checking?: boolean;
   source?: "level2" | "level3";
 }
 
@@ -110,6 +121,48 @@ export async function fetchScanData(
     throw new Error(detail);
   }
   return r.arrayBuffer();
+}
+
+/** What one radar is publishing right now: for each product, the tilts it has,
+ *  at the angles it flies them. See backend/nexrad_availability.py. */
+export interface SiteAvailability {
+  site: string;
+  newestScan: number | null;
+  cuts: number[];
+  families: Record<string, TiltOption[]>;
+  level2: boolean;
+  /** Only Level III has been checked so far; Level II's answer follows. */
+  level2Pending?: boolean;
+  /** The archive moment this answer is for; null for now. */
+  at?: number | null;
+  checkedAt: number;
+}
+
+/** `at` (unix seconds): what the radar had at that moment, for archive playback. */
+export async function fetchSiteAvailability(site: string, quick = false, at: number | null = null): Promise<SiteAvailability> {
+  const r = await fetch(
+    `${BASE}/api/nexrad/availability?site=${encodeURIComponent(site)}${quick ? "&quick=1" : ""}${at ? `&at=${at}` : ""}`,
+  );
+  if (!r.ok) throw new Error(`availability ${r.status}`);
+  return r.json();
+}
+
+/**
+ * The product list as this radar has it: each product's tilts replaced by the
+ * ones the radar is publishing, labelled with the angle it flies -- 0.3 where
+ * it has a cut that low, 0.4 where its lowest is 0.4, no 0.9 or 1.8 in clear
+ * air -- and a product it is not publishing at all marked unavailable.
+ * With nothing checked yet the list stays as the catalogue has it.
+ */
+export function withAvailability(grids: ProductGrids, avail: SiteAvailability | null): ProductGrids {
+  if (!avail) return grids;
+  return grids.map((f) => {
+    // Level II not checked yet: its products stay as they are, marked checking.
+    if (avail.level2Pending && f.source === "level2") return { ...f, checking: true };
+    const tilts = avail.families[f.id];
+    if (!tilts) return f;
+    return { ...f, tilts, unavailable: tilts.length === 0 };
+  });
 }
 
 export async function fetchNexradSites(): Promise<NexradSite[]> {

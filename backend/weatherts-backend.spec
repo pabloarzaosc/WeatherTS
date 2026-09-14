@@ -59,6 +59,7 @@ a = Analysis(
         'uvicorn.loops.uvloop',
         'uvicorn.Config',
         'uvicorn.main',
+        'nexrad_availability',
         'fastapi',
         'fastapi.applications',
         'fastapi.routing',

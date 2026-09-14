@@ -169,6 +169,15 @@ function sample(entries: PalEntry[], v: number, out: Uint8Array, off: number): v
   out[off + 3] = lerp(e.c1.a, end.a, t);
 }
 
+/** The table's colour at one exact value -- no LUT rounding, for keys that
+ *  name a single value (a class code) rather than draw a ramp. */
+export function colorAt(table: PalTable, v: number): RGBA {
+  const px = new Uint8Array(4);
+  if (table.entries.length === 0) return rgba(0, 0, 0, 0);
+  sample(table.entries, v, px, 0);
+  return rgba(px[0], px[1], px[2], px[3]);
+}
+
 export function buildLut(table: PalTable, steps = 256): PalLut {
   const { entries } = table;
   if (entries.length === 0) throw new Error("empty palette");

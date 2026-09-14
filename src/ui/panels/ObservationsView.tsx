@@ -5,7 +5,14 @@ import { useAppStore } from "../../store/useAppStore";
 import { LayerPower } from "../LayerPower";
 import { Select } from "../Select";
 import type { ObsCatalog, ObsProduct } from "../../lib/observations";
-import { selectObsFrame, selectObsProduct, selectObsProducts, useObsStore } from "../../store/useObsStore";
+import {
+  OBS_LOOP_HOURS,
+  selectObsFrame,
+  selectObsProduct,
+  selectObsProducts,
+  useObsStore,
+} from "../../store/useObsStore";
+import { spanLabel, stepLabel } from "../../store/useSatStore";
 
 const LAYER = "observations";
 
@@ -149,6 +156,11 @@ export function ObservationsView() {
   const frames = useObsStore((s) => s.frames);
   const index = useObsStore((s) => s.index);
   const busy = useObsStore((s) => s.busy);
+  const loopLoaded = useObsStore((s) => s.loopLoaded);
+  const loopTotal = useObsStore((s) => s.loopTotal);
+  const loopArmed = useObsStore((s) => s.loopArmed);
+  const hours = useObsStore((s) => s.hours);
+  const setHours = useObsStore((s) => s.setHours);
   const error = useObsStore((s) => s.error);
   const valid = useObsStore((s) => s.valid);
   const bar = useObsStore((s) => s.bar);
@@ -160,6 +172,8 @@ export function ObservationsView() {
   const setShowLines = useObsStore((s) => s.setShowLines);
   const setShowEdge = useObsStore((s) => s.setShowEdge);
   const setShowBarbs = useObsStore((s) => s.setShowBarbs);
+  const showPlaces = useObsStore((s) => s.showPlaces);
+  const setShowPlaces = useObsStore((s) => s.setShowPlaces);
   const setSource = useObsStore((s) => s.setSource);
   const setIndex = useObsStore((s) => s.setIndex);
   const product = useObsStore(selectObsProduct);
@@ -170,6 +184,7 @@ export function ObservationsView() {
   }, []);
 
   const src = catalog?.sources.find((s) => s.id === source);
+  const step = useMemo(() => stepLabel(frames.map((f) => f.unix)), [frames]);
   const productLabel = product?.label ?? "";
   const span =
     frames.length >= 2
@@ -188,7 +203,11 @@ export function ObservationsView() {
       />
 
       <div className={`sfx__status${error ? " is-error" : ""}`}>
-        {busy ? (
+        {enabled && loopArmed && loopTotal > 0 && loopLoaded < loopTotal ? (
+          <>
+            <Loader2 size={13} className="sfx__status-spin" /> Loading loop {loopLoaded}/{loopTotal}
+          </>
+        ) : busy ? (
           <>
             <Loader2 size={13} className="sfx__status-spin" /> Drawing {productLabel}…
           </>
@@ -263,6 +282,15 @@ export function ObservationsView() {
           </button>
           <button
             type="button"
+            className={`sfx__chip${showPlaces ? " is-on" : ""}`}
+            aria-pressed={showPlaces}
+            title="State, city and town names over the field, with the value at each"
+            onClick={() => setShowPlaces(!showPlaces)}
+          >
+            Places and values
+          </button>
+          <button
+            type="button"
             className={`sfx__chip${showEdge ? " is-on" : ""}`}
             aria-pressed={showEdge}
             onClick={() => setShowEdge(!showEdge)}
@@ -305,6 +333,35 @@ export function ObservationsView() {
           </div>
         </div>
       )}
+
+      <div className="sfx__block">
+        <div className="sfx__head">
+          <span>Loop</span>
+          <b>
+            {spanLabel(hours)}
+            {step ? ` · every ${step}` : ""}
+          </b>
+        </div>
+        <div className="sfx__chips">
+          {OBS_LOOP_HOURS.map((h) => (
+            <button
+              key={h}
+              type="button"
+              className={`sfx__chip${h === hours ? " is-on" : ""}`}
+              aria-pressed={h === hours}
+              onClick={() => setHours(h)}
+            >
+              {spanLabel(h)}
+            </button>
+          ))}
+        </div>
+        <div className="sfx__ends">
+          <span>
+            Press play to download the loop. Longer loops skip frames to stay near seventy: a week of every hour is
+            hundreds of MB.
+          </span>
+        </div>
+      </div>
 
       <div className="sfx__block">
         <div className="sfx__head">

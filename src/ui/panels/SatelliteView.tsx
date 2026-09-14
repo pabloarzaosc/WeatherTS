@@ -8,6 +8,8 @@ import { Select } from "../Select";
 import type { SatProduct } from "../../lib/satellite";
 import {
   LOOP_HOURS,
+  spanLabel,
+  stepLabel,
   selectSatFrame,
   selectSatProduct,
   selectSatSatellite,
@@ -39,6 +41,9 @@ export function SatelliteView() {
   const index = useSatStore((s) => s.index);
   const stale = useSatStore((s) => s.stale);
   const busy = useSatStore((s) => s.busy);
+  const loopLoaded = useSatStore((s) => s.loopLoaded);
+  const loopTotal = useSatStore((s) => s.loopTotal);
+  const loopArmed = useSatStore((s) => s.loopArmed);
   const error = useSatStore((s) => s.error);
   const setProduct = useSatStore((s) => s.setProduct);
   const setHours = useSatStore((s) => s.setHours);
@@ -74,6 +79,10 @@ export function SatelliteView() {
   };
 
   const latest = frames.length ? frames[frames.length - 1].unix : null;
+  const step = useMemo(() => stepLabel(frames.map((f) => f.unix)), [frames]);
+  // nowCOAST keeps hours, not days: a week asked of it is the few hours it has.
+  const kept = frames.length >= 2 ? (frames[frames.length - 1].unix - frames[0].unix) / 3600 : 0;
+  const shortArchive = !product?.daily && frames.length >= 2 && hours >= 12 && kept < hours * 0.6;
   const span =
     frames.length >= 2 ? `${frames[0].label} → ${frames[frames.length - 1].label}` : frames[0]?.label ?? "—";
 
@@ -89,6 +98,10 @@ export function SatelliteView() {
         ) : error ? (
           <>
             <AlertTriangle size={13} /> {error}
+          </>
+        ) : enabled && frame && loopArmed && loopTotal > 0 && loopLoaded < loopTotal ? (
+          <>
+            <Loader2 size={13} className="sfx__status-spin" /> {frame.label} · loading loop {loopLoaded}/{loopTotal}
           </>
         ) : enabled && frame ? (
           <>
@@ -173,7 +186,10 @@ export function SatelliteView() {
       <div className={`sfx__block${product?.daily ? " is-dim" : ""}`}>
         <div className="sfx__head">
           <span>Loop</span>
-          <b>{product?.daily ? "last 10 days" : `${hours} h`}</b>
+          <b>
+            {product?.daily ? "last 10 days" : spanLabel(hours)}
+            {!product?.daily && step ? ` · every ${step}` : ""}
+          </b>
         </div>
         <div className="sfx__chips">
           {LOOP_HOURS.map((h) => (
@@ -185,13 +201,22 @@ export function SatelliteView() {
               disabled={product?.daily}
               onClick={() => setHours(h)}
             >
-              {h} h
+              {spanLabel(h)}
             </button>
           ))}
         </div>
-        {stale && (
+        {stale ? (
           <div className="sfx__ends">
-            <span>Nothing in the last {hours} h — showing the latest frames there are.</span>
+            <span>Nothing in the last {spanLabel(hours)} — showing the latest frames there are.</span>
+          </div>
+        ) : shortArchive ? (
+          <div className="sfx__ends">
+            <span>This source keeps only about the last {spanLabel(Math.max(1, Math.round(kept)))}.</span>
+          </div>
+        ) : null}
+        {!product?.daily && (
+          <div className="sfx__ends">
+            <span>Press play to download the loop for the area on screen.</span>
           </div>
         )}
       </div>

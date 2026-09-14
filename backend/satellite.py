@@ -407,6 +407,9 @@ def _fmt_time(spec: dict, when: datetime) -> str:
 
 
 MAX_FRAMES = 300
+# Loops over a day or more keep every k-th frame: a week of GOES at ten minutes
+# is a thousand pictures, and a minute of looping at any speed.
+MAX_LOOP_FRAMES = 150
 
 
 def _times(spec: dict, since: datetime, now: datetime) -> list[datetime]:
@@ -443,7 +446,7 @@ def frames(product: str, hours: float = 3.0) -> dict[str, Any]:
     spec = PRODUCTS.get(product)
     if spec is None:
         raise ValueError(f"Unknown satellite product: {product}")
-    hours = max(0.5, min(float(hours), 48.0), float(spec.get("min_hours") or 0.0))
+    hours = max(0.5, min(float(hours), 24.0 * 7), float(spec.get("min_hours") or 0.0))
     now = datetime.now(timezone.utc)
     since = now - (timedelta(days=10) if spec["daily"] else timedelta(hours=hours))
     ordered = _times(spec, since, now)
@@ -451,7 +454,8 @@ def frames(product: str, hours: float = 3.0) -> dict[str, Any]:
     if not ordered and not spec["daily"]:
         ordered = _times(spec, now - timedelta(days=3), now)[-12:]
         stale = bool(ordered)
-    ordered = ordered[-MAX_FRAMES:]
+    k = max(1, math.ceil(len(ordered) / MAX_LOOP_FRAMES))
+    ordered = ordered[::-1][::k][::-1]
     label = "%b %d" if spec["daily"] else "%d %H:%MZ"
     out = [{"time": _fmt_time(spec, t), "unix": int(t.timestamp()), "label": t.strftime(label)} for t in ordered]
     return {
@@ -461,3 +465,287 @@ def frames(product: str, hours: float = 3.0) -> dict[str, Any]:
         # True when these are older than the loop asked for (see above).
         "stale": stale,
     }
+
+
+
+# ---------------------------------------------------------------------------
+# Loops as one picture per frame
+# ---------------------------------------------------------------------------
+# Tiles are the right answer for looking at one frame and the wrong one for a
+# loop: a day of GOES is 144 frames, each a dozen tiles, and a browser opens six
+# connections to a server -- so a day took minutes. One picture per frame for
+# the area on screen, fetched here 32 at a time, is 144 requests: measured
+# 9.6 s for a day of GOES-East infrared at 1280x800 (17 MB as JPEG), 10.3 s
+# for MTG-I. The app then reads the finished pictures off this machine.
+
+import asyncio  # noqa: E402
+import hashlib  # noqa: E402
+import math  # noqa: E402
+import os  # noqa: E402
+from concurrent.futures import Future, ThreadPoolExecutor  # noqa: E402
+
+GIBS_WMS = "https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi"
+
+# Products drawn over other things, which need their transparency. Everything
+# else is a full picture of the disk and goes as JPEG, a sixth of the bytes.
+_OVERLAY_KINDS = {"Lightning", "Derived", "Precipitation"}
+_OVERLAY_IDS = {"msg-fire", "iodc-fire", "mtg-frp"}
+
+_IMG_DIR = _DIR / "img"
+_IMG_BUDGET = 600 * 1024 * 1024
+_IMG_POOL = ThreadPoolExecutor(max_workers=32, thread_name_prefix="sat-img")
+_IMG_FUTURES: dict[str, Future] = {}
+_IMG_LOCK = threading.Lock()
+_IMG_WRITES = 0
+# Each new loop outdates the frames still queued for the last one.
+_GENERATION = {"n": 0}
+# Frames that came back as one flat colour, and until when to believe it.
+# GIBS lists its newest time before the picture is in: asked for, it answers
+# with a black rectangle, which in a loop is a flash to black. Kept in memory
+# only and briefly, because the picture turns up a few minutes later.
+_EMPTY: dict[str, float] = {}
+_EMPTY_S = 120.0
+
+
+def _is_flat(body: bytes, ctype: str) -> bool:
+    """A JPEG that is one colour edge to edge. PNG overlays are left alone: a
+    transparent lightning picture is a real answer (no lightning)."""
+    if ctype != "image/jpeg" or len(body) > 40_000:
+        return False
+    try:
+        from PIL import Image
+        import io as _io
+        img = Image.open(_io.BytesIO(body))
+        img.draft("L", (img.width // 8, img.height // 8))
+        lo, hi = img.convert("L").getextrema()
+        return hi - lo <= 3
+    except Exception:  # noqa: BLE001 - unreadable is not the same as empty
+        return False
+
+
+def _is_overlay(spec: dict) -> bool:
+    return spec["kind"] in _OVERLAY_KINDS or spec["id"] in _OVERLAY_IDS
+
+
+def _merc(lon: float, lat: float) -> tuple[float, float]:
+    r = 6378137.0
+    lat = max(-85.0, min(85.0, lat))
+    return r * math.radians(lon), r * math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
+
+
+def _image_url(spec: dict, when: str, west: float, south: float, east: float, north: float,
+               width: int, height: int) -> str:
+    x0, y0 = _merc(west, south)
+    x1, y1 = _merc(east, north)
+    bbox = f"{x0:.1f},{y0:.1f},{x1:.1f},{y1:.1f}"
+    overlay = _is_overlay(spec)
+    fmt = "image/png" if overlay else "image/jpeg"
+    if spec["provider"] == "gibs":
+        return (f"{GIBS_WMS}?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS={spec['layer']}&STYLES="
+                f"&CRS=EPSG:3857&BBOX={bbox}&WIDTH={width}&HEIGHT={height}&FORMAT={fmt}"
+                f"&TRANSPARENT={'TRUE' if overlay else 'FALSE'}&TIME={when}")
+    base = EUMETVIEW if spec["provider"] == "eumetview" else NOWCOAST
+    return (f"{base}?service=WMS&request=GetMap&version=1.3.0&layers={spec['layer']}&styles="
+            f"&format={fmt}&transparent={'true' if overlay else 'false'}&crs=EPSG:3857"
+            f"&width={width}&height={height}&bbox={bbox}&time={when}")
+
+
+def _box(west: float, south: float, east: float, north: float) -> str:
+    # Rounded the same way wherever a frame is named, so the frame the app asks
+    # for is the frame the prefetch made.
+    return f"{west:.4f},{south:.4f},{east:.4f},{north:.4f}"
+
+
+def _image_key(product: str, when: str, box: str, width: int, height: int) -> str:
+    return hashlib.sha1(f"{product}|{when}|{box}|{width}x{height}".encode()).hexdigest()
+
+
+def _trim_images() -> None:
+    try:
+        files = sorted(_IMG_DIR.glob("*.img"), key=lambda f: f.stat().st_mtime, reverse=True)
+    except OSError:
+        return
+    total = 0
+    for f in files:
+        try:
+            total += f.stat().st_size
+            if total > _IMG_BUDGET:
+                f.unlink()
+        except OSError:
+            pass
+
+
+def _read_cached(path: Path) -> Optional[tuple[bytes, str]]:
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return None
+    head, _, body = raw.partition(b"\n")
+    if not body:
+        return None
+    try:
+        os.utime(path)
+    except OSError:
+        pass
+    return body, head.decode(errors="replace")
+
+
+def _fetch_image(spec: dict, when: str, west: float, south: float, east: float, north: float,
+                 width: int, height: int, path: Path) -> tuple[bytes, str]:
+    global _IMG_WRITES
+    url = _image_url(spec, when, west, south, east, north, width, height)
+    last: Optional[Exception] = None
+    for attempt in range(3):
+        try:
+            r = _SESSION.get(url, timeout=45)
+            ctype = r.headers.get("content-type", "").split(";")[0]
+            if r.status_code == 200 and ctype.startswith("image/"):
+                if _is_flat(r.content, ctype):
+                    with _IMG_LOCK:
+                        _EMPTY[path.stem] = time.time() + _EMPTY_S
+                    return b"", "empty"
+                try:
+                    _IMG_DIR.mkdir(parents=True, exist_ok=True)
+                    tmp = path.with_suffix(".tmp")
+                    tmp.write_bytes(ctype.encode() + b"\n" + r.content)
+                    os.replace(tmp, path)
+                    _IMG_WRITES += 1
+                    if _IMG_WRITES % 50 == 0:
+                        _trim_images()
+                except OSError:
+                    pass
+                return r.content, ctype
+            last = RuntimeError(f"{PROVIDERS[spec['provider']]['label']} answered {r.status_code} ({ctype or 'no type'})")
+        except requests.RequestException as exc:
+            last = exc
+        time.sleep(0.4 * (attempt + 1))
+    raise RuntimeError(str(last))
+
+
+def _submit(product: str, when: str, west: float, south: float, east: float, north: float,
+            width: int, height: int, generation: Optional[int]) -> Future:
+    spec = PRODUCTS[product]
+    key = _image_key(product, when, _box(west, south, east, north), width, height)
+    path = _IMG_DIR / f"{key}.img"
+    with _IMG_LOCK:
+        fut = _IMG_FUTURES.get(key)
+        if fut is not None:
+            return fut
+        fut = Future()
+        _IMG_FUTURES[key] = fut
+
+    def run() -> None:
+        try:
+            cached = _read_cached(path)
+            if cached is not None:
+                fut.set_result(cached)
+            elif generation is not None and generation != _GENERATION["n"]:
+                # Queued for a loop the app has since moved away from.
+                fut.set_exception(RuntimeError("superseded"))
+            else:
+                fut.set_result(_fetch_image(spec, when, west, south, east, north, width, height, path))
+        except BaseException as exc:  # noqa: BLE001 - handed to whoever waits
+            if not fut.done():
+                fut.set_exception(exc)
+        finally:
+            with _IMG_LOCK:
+                if _IMG_FUTURES.get(key) is fut:
+                    _IMG_FUTURES.pop(key, None)
+
+    _IMG_POOL.submit(run)
+    return fut
+
+
+def _check_box(product: str, west: float, south: float, east: float, north: float, width: int, height: int) -> None:
+    if product not in PRODUCTS:
+        raise ValueError(f"Unknown satellite product: {product}")
+    if not (-180.0 <= west < east <= 180.0 and -85.0 <= south < north <= 85.0):
+        raise ValueError("box outside the map")
+    if not (16 <= width <= 3200 and 16 <= height <= 3200):
+        raise ValueError("picture size out of range")
+
+
+def _settled(fut: Future) -> "asyncio.Future[Any]":
+    """An asyncio future that takes the outcome of `fut`.
+
+    Not asyncio.wrap_future: cancelling what that returns cancels the source,
+    and a frame's Future is shared by everyone waiting for the same picture.
+    """
+    loop = asyncio.get_running_loop()
+    out: asyncio.Future[Any] = loop.create_future()
+
+    def settle(f: Future) -> None:
+        if out.done():
+            return
+        exc = f.exception()
+        if exc is not None:
+            out.set_exception(exc)
+        else:
+            out.set_result(f.result())
+
+    fut.add_done_callback(lambda f: loop.call_soon_threadsafe(settle, f))
+    return out
+
+
+async def image(product: str, when: str, west: float, south: float, east: float, north: float,
+                width: int, height: int) -> tuple[bytes, str]:
+    """One frame of one product for a box, as the provider's own picture.
+
+    Waits without holding a thread. The web server runs plain handlers on a
+    pool of forty, and a map that moves drops the requests for pictures it no
+    longer needs -- the connection closes, the handler does not: each went on
+    waiting for its download. A few quick pans filled the pool, and every
+    endpoint in the app, the frame lists included, queued behind them.
+    """
+    _check_box(product, west, south, east, north, width, height)
+    key = _image_key(product, when, _box(west, south, east, north), width, height)
+    cached = await asyncio.get_running_loop().run_in_executor(None, _read_cached, _IMG_DIR / f"{key}.img")
+    if cached is not None:
+        return cached
+    with _IMG_LOCK:
+        until = _EMPTY.get(key)
+        if until is not None and until < time.time():
+            _EMPTY.pop(key, None)
+            until = None
+    if until is not None:
+        return b"", "empty"
+    for _ in range(2):
+        # Asked for directly: never dropped as superseded, even if a prefetch
+        # queued it for a loop that has since been replaced.
+        fut = _submit(product, when, west, south, east, north, width, height, None)
+        try:
+            return await asyncio.wait_for(_settled(fut), timeout=90)
+        except RuntimeError as exc:
+            if str(exc) != "superseded":
+                raise
+    raise RuntimeError("frame could not be fetched")
+
+
+def shutdown() -> None:
+    """Drop the queue on the way out. Hundreds of frames queued for a loop kept
+    the process alive after the server stopped -- in development that left the
+    reloader waiting and no backend at all -- and nobody is waiting for them."""
+    _GENERATION["n"] += 1
+    _IMG_POOL.shutdown(wait=False, cancel_futures=True)
+
+
+def cancel() -> dict[str, Any]:
+    """Drop every frame still queued for the loop being loaded: someone closed
+    it. Pictures already on their way are kept -- they land in the cache."""
+    _GENERATION["n"] += 1
+    return {"generation": _GENERATION["n"]}
+
+
+def prefetch(product: str, times: list[str], west: float, south: float, east: float, north: float,
+             width: int, height: int) -> dict[str, Any]:
+    """Start fetching every frame of a loop, in the order given, 32 at a time.
+
+    A new loop outdates the one before: frames still queued for it are dropped
+    rather than fetched for a view nobody is on any more.
+    """
+    _check_box(product, west, south, east, north, width, height)
+    _GENERATION["n"] += 1
+    generation = _GENERATION["n"]
+    for when in times[:MAX_FRAMES]:
+        _submit(product, when, west, south, east, north, width, height, generation)
+    return {"queued": min(len(times), MAX_FRAMES), "generation": generation}

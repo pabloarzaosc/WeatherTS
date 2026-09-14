@@ -12,7 +12,10 @@ Access notes (measured 2026-07-19, the earlier "not viable" call was wrong):
   * The GCP mirror `gcp-public-data-nexrad-l2` lists fine but lags ~5 days.
   * `unidata-nexrad-level2-chunks` IS live -- newest volume ~2 min old. It
     delivers a volume as ~70 numbered chunks (S start, I middle, E end) that
-    concatenate into something MetPy's Level2File reads directly.
+    concatenate into something MetPy's Level2File reads directly. It keeps
+    about two days, and its oldest volumes are already losing chunks.
+  * `unidata-nexrad-level2` is the whole archive, one file per volume, listed
+    by day. Archive playback reads from there.
 
 Cost: a volume is ~7 MB / ~70 chunks, 4-25 s to pull in parallel and ~1 s to
 decode -- versus ~1 s for a 178 KB Level III product. That's why this is opt-in
@@ -22,7 +25,10 @@ and *every* tilt until the next volume lands.
 from __future__ import annotations
 
 import io
+import logging
 import math
+import re
+import struct
 import time
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
@@ -36,6 +42,8 @@ from metpy.io import Level2File
 from requests.adapters import HTTPAdapter
 
 from nexrad_core import (
+    icao_for,
+    site_id,
     TILT_SLOTS,
     _KIND_DEFAULT_PALETTE,
     _mean_storm_motion,
@@ -67,6 +75,33 @@ L2_MOMENTS: dict[str, dict[str, Any]] = {
 }
 
 _ELEV = dict(TILT_SLOTS)
+# The cut some radars fly below 0.5 deg -- 0.3 at KHDC, 0.2 at KLGX, 0.0 at KMUX
+# and KMTX. Level III never publishes it (its lowest product is the 0.5 cut at
+# every site), so it is served from Level II under its own slot. The number is
+# only a label: the sweep is picked as whatever is below LOW_CUT_MAX.
+_ELEV["L"] = 0.3
+LOW_CUT_MAX = 0.4
+# Cuts above 3.1 deg. Level III stops at 3.1; the VCPs go on to 6.4 (clear air)
+# or 19.5, and Level II has every one of them, under these slots. VCP 215's
+# 12.0 / 14.0 / 16.7 land on 12.5 / 14.0 / 15.6 -- nearest, and the label shows
+# the angle flown, not the slot's.
+UPPER_SLOTS: list[tuple[str, float]] = [
+    ("4", 4.0), ("5", 5.1), ("6", 6.4), ("7", 8.0), ("8", 10.0),
+    ("9", 12.5), ("C", 14.0), ("D", 15.6), ("F", 19.5),
+]
+_ELEV.update(UPPER_SLOTS)
+
+# Which moments a sweep carries, by the waveform the VCP flies it with. From a
+# decoded KHDC volume: the split low cuts are a surveillance sweep (reflectivity
+# and dual-pol) and a Doppler one (reflectivity, velocity, width); the batch and
+# upper Doppler cuts carry everything.
+_WAVEFORM_MOMENTS = {
+    "Contiguous Surveillance": "BCXPF",
+    "Contig. Doppler with Ambiguity Res.": "BGW",
+    "Contig. Doppler without Ambiguity Res.": "BGWCXPF",
+    "Batch": "BGWCXPF",
+    "Staggered Pulse Pair": "BGWCXPF",
+}
 
 # A DECODED volume is enormous (17 sweeps x ~700 radials x ~5 moments of
 # float32 -- hundreds of MB), so it is never cached. What gets cached is the
@@ -109,6 +144,23 @@ def _stamp_unix(stamp: str) -> int:
                .replace(tzinfo=_dt.timezone.utc).timestamp())
 
 
+def _chunk_num(key: str) -> int:
+    """KIND/629/20260914-165037-012-I -> 12."""
+    return int(key.rsplit("-", 2)[1])
+
+
+def _whole(ch: list[tuple[str, int]]) -> bool:
+    """Every chunk of a volume is there: its start, its end and each in between.
+
+    An end chunk alone does not make a volume. The bucket deletes chunks as they
+    age, first ones first: KIND's volume 167, 42 hours old, still had its end
+    and chunks 40-55 but none of 1-39 -- the 0.5 deg sweeps -- and a CC loop
+    that reached it failed with "not cut at 0.5deg in this volume".
+    """
+    ends = [k for k, _ in ch if k.endswith("-E")]
+    return bool(ends) and any(k.endswith("-S") for k, _ in ch) and len(ch) == _chunk_num(ends[0])
+
+
 def _newest_vol_num(site: str) -> Optional[int]:
     """The volume number currently being written.
 
@@ -126,12 +178,54 @@ def _newest_vol_num(site: str) -> Optional[int]:
     if hint:
         found = scan([((hint - 3 + i) % 999) + 1 for i in range(12)])
     if not found:
-        found = scan(range(1, 1000))
-    if not found:
-        return None
+        vol = _search_newest_vol(site)
+        if vol is not None:
+            _VOL_HINT[site] = vol
+        return vol
     _, vol = max(found)
     _VOL_HINT[site] = vol
     return vol
+
+
+def _dir_stamp(site: str, vol: int) -> Optional[str]:
+    """When a volume directory was written: its first chunk's name, one key."""
+    import re as _re
+    r = _SESSION.get(f"{CHUNKS}?list-type=2&prefix={site}/{vol}/&max-keys=1", timeout=10)
+    m = _re.search(r"<Key>[^/<]+/\d+/(\d{8}-\d{6})", r.text)
+    return m.group(1) if m else None
+
+
+def _search_newest_vol(site: str) -> Optional[int]:
+    """The newest volume directory without opening all 999 of them.
+
+    The directories that exist come back from one listing. Numbered in order,
+    their times rise until the number wraps from the newest back to the oldest.
+    So a first pass times thirty-odd directories spread across them; the newest
+    lies between the latest of those and the next one along, and a second pass
+    times only that stretch. About sixty small requests where the old way was
+    999 -- which from here was 13 s at best and a minute and a half with the
+    timeouts, the first time Level II was opened at a radar.
+    """
+    import re as _re
+    r = _SESSION.get(f"{CHUNKS}?list-type=2&prefix={site}/&delimiter=/&max-keys=1000", timeout=15)
+    nums = sorted({int(n) for n in _re.findall(rf"<Prefix>{site}/(\d+)/</Prefix>", r.text)})
+    if not nums:
+        return None
+
+    def stamps(vols: list[int]) -> dict[int, str]:
+        with ThreadPoolExecutor(32) as ex:
+            got = list(ex.map(lambda v: (v, _dir_stamp(site, v)), vols))
+        return {v: st for v, st in got if st}
+
+    step = max(1, len(nums) // 32)
+    first = stamps(nums[::step])
+    if not first:
+        return None
+    best = max(first, key=lambda v: first[v])
+    i = nums.index(best)
+    stretch = [nums[(i + k) % len(nums)] for k in range(1, step + 1)]
+    second = {**first, **stamps(stretch)}
+    return max((v for v in [best, *stretch] if v in second), key=lambda v: second[v])
 
 
 def list_volumes(site: str, limit: int = 30, start: Optional[int] = None) -> list[dict]:
@@ -140,59 +234,93 @@ def list_volumes(site: str, limit: int = 30, start: Optional[int] = None) -> lis
     Volumes are numbered sequentially as they're written, so once the newest is
     known the previous ones are just N-1, N-2, ... (wrapping at 1). No need to
     rescan every directory.
+
+    `start` is archive playback, which the archive answers (`archive_volumes`).
     """
-    site = site.upper().strip()
-    if not site.startswith("K"):
-        site = "K" + site
+    if start is not None:
+        return archive_volumes(site, limit, start)
+    site = icao_for(site)
     now = time.time()
     hit = _LIST_CACHE.get(site)
     cached = hit[1] if hit and now - hit[0] < _LIST_TTL else None
-    if cached is not None and start is None and len(cached) >= limit:
+    if cached is not None and len(cached) >= limit:
         _LIST_CACHE.move_to_end(site)
         return cached[-limit:]
 
     newest = _newest_vol_num(site)
     if newest is None:
         return []
-    # A few extra candidates absorb incomplete/missing slots. Archive playback
-    # has to reach further back than the loop length, so it sweeps every slot --
-    # the bucket only holds ~48 h, and that ceiling is what limits how far back
-    # Level II can go at all.
-    span = 999 if start is not None else limit + 8
-    cands = [((newest - 1 - i) % 999) + 1 for i in range(span)]
+    # A few extra candidates absorb incomplete/missing slots.
+    cands = [((newest - 1 - i) % 999) + 1 for i in range(limit + 8)]
     with ThreadPoolExecutor(24) as ex:
         got = list(ex.map(lambda v: (v, _chunks_for(site, v)), cands))
 
     out: list[dict] = []
     for v, ch in got:
-        if not ch or not any(k.endswith("-E") for k, _ in ch):
-            continue  # still being written
+        if not _whole(ch):
+            continue  # still being written, or old enough to be losing chunks
         st = _stamp(ch)
         out.append({"vol": v, "stamp": st, "time": _stamp_unix(st),
                     "key": f"L2:{v}:{st}"})
     out.sort(key=lambda d: d["time"])
-    _LIST_CACHE[site] = (now, out[-limit:])
-    if start is not None:
-        # archive playback: the first `limit` volumes at or after the instant.
-        # The chunk bucket only holds ~48 h, so anything older simply isn't here.
-        out = [v for v in out if v["time"] >= start][:limit]
-    else:
-        out = out[-limit:]
+    out = out[-limit:]
+    _LIST_CACHE[site] = (now, out)
     while len(_LIST_CACHE) > 8:
         _LIST_CACHE.popitem(last=False)
     return out
 
 
+# The last few volumes as downloaded -- compressed, 5-16 MB each. A decoded
+# volume is far too big to keep, but with these another tilt of the same frame
+# costs a decode, a couple of seconds, instead of the whole download again.
+_RAW: "OrderedDict[tuple, bytes]" = OrderedDict()
+_RAW_BUDGET = 96 * 1024 * 1024
+_RAW_LOCK = threading.Lock()
+
+
+def _kept(key: tuple, fetch) -> bytes:
+    with _RAW_LOCK:
+        hit = _RAW.get(key)
+        if hit is not None:
+            _RAW.move_to_end(key)
+            return hit
+    raw = fetch()
+    with _RAW_LOCK:
+        _RAW[key] = raw
+        while len(_RAW) > 1 and sum(map(len, _RAW.values())) > _RAW_BUDGET:
+            _RAW.popitem(last=False)
+    return raw
+
+
 def _decode_volume(site: str, vol: int) -> tuple[Any, str]:
-    """Fetch a specific volume's chunks and decode it. Never cached -- the
-    caller extracts what it needs and lets the volume go."""
+    """Fetch a specific volume's chunks and decode it. The decoded volume is
+    never cached -- the caller extracts what it needs and lets it go."""
     ch = _chunks_for(site, vol)
     if not ch:
         raise RuntimeError(f"Level II volume {vol} missing for {site}.")
-    ch.sort(key=lambda kv: int(kv[0].split("/")[2].split("-")[1]))
-    with ThreadPoolExecutor(24) as ex:
-        parts = list(ex.map(lambda kv: _SESSION.get(CHUNKS + kv[0], timeout=_TIMEOUT).content, ch))
-    return Level2File(io.BytesIO(b"".join(parts))), _stamp(ch)
+    ch.sort(key=lambda kv: _chunk_num(kv[0]))
+    stamp = _stamp(ch)
+
+    def fetch() -> bytes:
+        with ThreadPoolExecutor(24) as ex:
+            return b"".join(ex.map(lambda kv: _SESSION.get(CHUNKS + kv[0], timeout=_TIMEOUT).content, ch))
+
+    return Level2File(io.BytesIO(_kept((site, vol, stamp), fetch))), stamp
+
+
+def _sweep_angle(f: Any, sweep: list) -> float:
+    """The elevation a sweep was commanded to fly, from the scan strategy.
+
+    Looked up by the radials' elevation number, not read off the first radial:
+    the antenna's own reading is still settling there, by as much as 0.2 deg.
+    At KHDC the 0.3 deg cut's first radial read 0.5 -- which filed that sweep,
+    dual-pol and all, under 0.5 -- and the 0.9 cut's read 0.75.
+    """
+    vcp = getattr(f, "vcp_info", None)
+    num = int(sweep[0][0].el_num)
+    if vcp is not None and 1 <= num <= len(vcp.els):
+        return float(vcp.els[num - 1].el_angle)
+    return float(np.median([r[0].el_angle for r in sweep]))
 
 
 def _sweeps_with(f: Any, src: bytes) -> list[tuple[int, float, int, int]]:
@@ -206,7 +334,7 @@ def _sweeps_with(f: Any, src: bytes) -> list[tuple[int, float, int, int]]:
         if not sw or src not in sw[0][4]:
             continue
         blk = sw[0][4][src][0]
-        out.append((i, float(sw[0][0].el_angle), len(sw), int(blk.num_gates)))
+        out.append((i, _sweep_angle(f, sw), len(sw), int(blk.num_gates)))
     return out
 
 
@@ -220,8 +348,8 @@ def available_tilts(f: Any, fam: str) -> list[dict]:
     src = L2_MOMENTS[fam]["src"]
     cand = _sweeps_with(f, src)
     tilts = []
-    for slot, nominal in TILT_SLOTS:
-        best = _pick(cand, nominal)
+    for slot, nominal in [("L", _ELEV["L"]), *TILT_SLOTS, *UPPER_SLOTS]:
+        best = _pick(cand, nominal, slot)
         if best is None:
             continue
         _, elev, nrad, ngates = best
@@ -230,18 +358,24 @@ def available_tilts(f: Any, fam: str) -> list[dict]:
     return tilts
 
 
-def _pick(cand: list[tuple[int, float, int, int]], nominal: float):
+def _pick(cand: list[tuple[int, float, int, int]], nominal: float, slot: str = ""):
     """The best sweep for a nominal elevation.
 
-    RANGE FIRST, then radials, then closeness in angle. The VCPs split the low
-    cuts into a *surveillance* sweep (REF + dual-pol, full 458 km) and a
-    *doppler* sweep (REF + VEL/SW, range-folded to ~298 km). Both report ~0.5
-    deg, and picking purely by nearest angle handed reflectivity the doppler
-    cut -- which paints a hard circular edge where its range simply stops.
+    First the ANGLE: only the sweeps at the elevation nearest the one asked for.
+    At a radar with a 0.3 deg cut, "0.5" used to accept the 0.3 sweep too -- it
+    is within the tolerance -- and the range-first sort below could then serve
+    it under the 0.5 label. The low slot takes only what is under LOW_CUT_MAX.
+
+    Then RANGE, then radials. The VCPs split the low cuts into a *surveillance*
+    sweep (REF + dual-pol, full 458 km) and a *doppler* sweep (REF + VEL/SW,
+    range-folded to ~298 km). Both report the same angle, and picking the
+    doppler one for reflectivity paints a hard circular edge where its range
+    simply stops.
     """
-    if not cand:
-        return None
-    near = [c for c in cand if abs(c[1] - nominal) <= 0.45]
+    # Only the sweeps whose cut belongs to this slot: at VCP 31's 1.5 deg cut the
+    # "1.8" slot would otherwise take 1.5 as the nearest thing it has.
+    wanted = dict(slots_for_cuts(sorted({round(c[1], 2) for c in cand}))).get(slot)
+    near = [c for c in cand if wanted is not None and abs(c[1] - wanted) <= 0.1]
     if not near:
         return None
     return sorted(near, key=lambda c: (-c[3], -c[2], abs(c[1] - nominal)))[0]
@@ -250,7 +384,7 @@ def _pick(cand: list[tuple[int, float, int, int]], nominal: float):
 def _extract(f: Any, fam: str, slot: str, site: str, stamp: str) -> Optional[dict]:
     """One moment out of an already-decoded volume, in the polar wire format."""
     spec = L2_MOMENTS[fam]
-    chosen = _pick(_sweeps_with(f, spec["src"]), _ELEV[slot])
+    chosen = _pick(_sweeps_with(f, spec["src"]), _ELEV[slot], slot)
     if chosen is None:
         return None
     idx, elev, _, _ = chosen
@@ -304,7 +438,7 @@ def _extract(f: Any, fam: str, slot: str, site: str, stamp: str) -> Optional[dic
         "lut": lut,
         "codes": codes,
         "meta": {
-            "site": f"K{site}",
+            "site": icao_for(site),
             "siteLat": float(vol_hdr.lat),
             "siteLon": float(vol_hdr.lon),
             "product": f"L2{fam}{slot}",
@@ -341,21 +475,24 @@ def polar_data_l2(site: str, product: str, key: str = "") -> dict:
     """A Level II moment in the same wire format as `nexrad_core.polar_data`.
 
     `product` is `L2<fam><slot>` (e.g. `L2C0` = correlation coefficient at 0.5
-    deg); `key` is `L2:<vol>:<stamp>` from `list_volumes`, or empty for newest.
+    deg); `key` is `L2:<vol>:<stamp>` from `list_volumes`, `L2A:<file name>`
+    for an archive volume, or empty for newest.
 
     One volume download is ~7 MB, so when a volume is decoded EVERY Level II
     moment at that tilt is extracted and cached, not just the one asked for.
     Scrubbing a 30-frame CC loop and then switching to ZDR costs no new traffic.
     """
-    site = (site or "").upper().strip().lstrip("K")
+    site = site_id(site)
     if not product.startswith("L2") or len(product) < 4:
         raise RuntimeError(f"Not a Level II product: {product}")
     fam, slot = product[2], product[3]
     if fam not in L2_MOMENTS or slot not in _ELEV:
         raise RuntimeError(f"Unknown Level II product: {product}")
 
-    vol: Optional[int] = None
-    if key.startswith("L2:"):
+    vol: Optional[int | str] = None
+    if key.startswith("L2A:"):
+        vol = key[4:]  # an archive volume, by its file name
+    elif key.startswith("L2:"):
         bits = key.split(":")
         if len(bits) >= 3 and bits[1].isdigit():
             vol = int(bits[1])
@@ -363,9 +500,9 @@ def polar_data_l2(site: str, product: str, key: str = "") -> dict:
         # The newest volume number is the one still being WRITTEN -- decoding it
         # yields a couple of sweeps and a truncated elevation ladder. Take the
         # newest volume that has its end chunk instead.
-        recent = list_volumes(f"K{site}", 1)
+        recent = list_volumes(site, 1)
         if not recent:
-            raise RuntimeError(f"No complete Level II volume for K{site}.")
+            raise RuntimeError(f"No complete Level II volume for {icao_for(site)}.")
         vol = int(recent[-1]["key"].split(":")[1])
 
     cache_key = (site, fam, slot, vol)
@@ -380,7 +517,10 @@ def polar_data_l2(site: str, product: str, key: str = "") -> dict:
         if hit is not None:
             _GRID_CACHE.move_to_end(cache_key)
             return hit
-        f, stamp = _decode_volume(f"K{site}", vol)
+        if isinstance(vol, str):
+            f, stamp = _decode_archive(vol)
+        else:
+            f, stamp = _decode_volume(icao_for(site), vol)
         _VOL_ELEVS[(site, stamp)] = volume_elevations(f)
         while len(_VOL_ELEVS) > 8:
             _VOL_ELEVS.pop(next(iter(_VOL_ELEVS)))
@@ -394,26 +534,375 @@ def polar_data_l2(site: str, product: str, key: str = "") -> dict:
             _GRID_CACHE.move_to_end(k)
             if other == fam:
                 wanted = grid
+        if wanted is None:
+            wanted = _not_scanned(f, fam, slot, site, stamp)
+            _GRID_CACHE[cache_key] = wanted
         del f  # release the decoded volume before returning
         while len(_GRID_CACHE) > _GRID_MAX:
             _GRID_CACHE.popitem(last=False)
-
-    if wanted is None:
-        raise RuntimeError(f"{L2_MOMENTS[fam]['label']} not cut at {_ELEV[slot]}deg in this volume.")
     return wanted
+
+
+def _not_scanned(f: Any, fam: str, slot: str, site: str, stamp: str) -> dict:
+    """An empty frame for a volume with no sweep of this moment at this tilt.
+
+    A radar changes scan strategy with the weather, so across a loop some
+    volumes have an elevation and some do not: clear air stops at 6.4 deg, and
+    before 2013 there was no dual-pol at all. One such frame used to turn the
+    whole radar panel into an error. It is an empty frame that says why.
+    """
+    first = next((sw[0] for sw in f.sweeps if sw), None)
+    if first is None:
+        raise RuntimeError(f"Level II volume {stamp} for {icao_for(site)} has no sweeps.")
+    spec = L2_MOMENTS[fam]
+    pid = _KIND_DEFAULT_PALETTE.get(spec["kind"], "REF")
+    _, vmin, vmax = get_cmap(pid)
+    vcp = int(getattr(first[1], "vcp", 0)) or None
+    unix = _stamp_unix(stamp)
+    return {
+        "az": np.linspace(0, 360, 361, dtype=np.float32),
+        "lut": np.full(256, np.nan, dtype=np.float32),
+        "codes": np.zeros((360, 1), dtype=np.uint8),
+        "meta": {
+            "site": icao_for(site),
+            "siteLat": float(first[1].lat),
+            "siteLon": float(first[1].lon),
+            "product": f"L2{fam}{slot}",
+            "productLabel": spec["label"],
+            "units": spec["units"],
+            "kind": spec["kind"],
+            "family": fam,
+            "tilt": slot,
+            "elevation": None,
+            "defaultPalette": pid,
+            "vmin": vmin,
+            "vmax": vmax,
+            "nAz": 360,
+            "nGates": 1,
+            "rangeStartKm": 0.0,
+            "gateWidthKm": 460.0,
+            "maxRangeKm": 460.0,
+            "validUnix": unix,
+            "scanUnix": unix,
+            "key": f"L2:{stamp}",
+            "source": "level2",
+            "superRes": False,
+            "vcp": vcp,
+            "elevations": _VOL_ELEVS.get((site, stamp), []),
+            "note": f"Not scanned at {_ELEV[slot]}° in this volume" + (f" (VCP {vcp})" if vcp else ""),
+        },
+    }
 
 
 # Which nominal cuts come back super-res. The VCPs run *split cuts* at the three
 # lowest elevations -- a surveillance sweep (REF + dual-pol) and a doppler sweep
 # (VEL/SW), both at 720 radials. From 1.8 deg up the cuts merge and drop to 360,
 # which is no better than Level III, so the picker says so.
-_SUPER_RES_SLOTS = {"0", "A", "1"}
+_SUPER_RES_SLOTS = {"L", "0", "A", "1"}
+SUPER_RES_SLOTS = _SUPER_RES_SLOTS
+
+
+def slots_for_cuts(cuts: list[float]) -> list[tuple[str, float]]:
+    """Which tilt slot each of a radar's cuts is, lowest first.
+
+    A cut goes to its NEAREST slot, and a slot takes only the cut nearest to it:
+    so VCP 31's 0.5 / 1.5 / 2.5 / 3.5 fill the 0.5, 1.3, 2.4 and 3.1 slots and
+    leave 0.9 and 1.8 empty -- those tilts do not exist in that mode -- where a
+    tolerance alone would put the 1.5 cut under both 1.3 and 1.8. A cut below
+    the 0.5 one is the low slot; the upper ones go to UPPER_SLOTS.
+    """
+    ladder = [(slot, nominal) for slot, nominal in [*TILT_SLOTS, *UPPER_SLOTS]]
+    best: dict[str, float] = {}
+    distinct: list[float] = []
+    for a in sorted(cuts):
+        # 0.05, not 0.1: KBMX flies 0.40 AND 0.48, and merging them lost a tilt.
+        if not distinct or a - distinct[-1] > 0.05:
+            distinct.append(a)
+    has_half = any(0.45 <= a <= 0.6 for a in distinct)
+    for a in distinct:
+        # Below 0.35 is always the low cut; 0.35-0.45 is the low cut only when the
+        # radar also flies a 0.5 one (KBMX), and otherwise simply its 0.5 slot.
+        if a < 0.35 or (a < 0.45 and has_half):
+            best.setdefault("L", a)
+            continue
+        slot, nominal = min(ladder, key=lambda sn: abs(sn[1] - a))
+        # The ladder spreads out as it climbs: 0.4 deg apart at the bottom,
+        # 4 deg at the top, so the tolerance grows with it.
+        if abs(nominal - a) > max(0.45, 0.15 * nominal):
+            continue
+        if slot not in best or abs(nominal - a) < abs(nominal - best[slot]):
+            best[slot] = a
+    order = ["L"] + [slot for slot, _ in ladder]
+    return [(slot, best[slot]) for slot in order if slot in best]
 
 # The nominal elevation ladder NEXRAD VCPs are cut at. Measured angles drift
 # from these (a "0.5 deg" cut comes back as 0.44-0.67 depending on where in the
 # volume it was flown), so sweeps are snapped to the nearest rung for labelling.
 _ELEV_LADDER = [0.5, 0.9, 1.3, 1.8, 2.4, 3.1, 4.0, 5.1, 6.4, 8.0,
                 10.0, 12.5, 14.0, 15.6, 19.5]
+
+
+ARCHIVE = "https://unidata-nexrad-level2.s3.amazonaws.com/"
+_ARCHIVE_NAME = re.compile(r"/([A-Z]{4})(\d{8})_(\d{6})(_V\d{2})?(\.gz)?$")
+_ARCHIVE_LISTS: "OrderedDict[tuple, tuple[float, list[dict]]]" = OrderedDict()
+_ARCHIVE_CUTS: "OrderedDict[str, dict]" = OrderedDict()
+# The start of a bzip2 stream, which is how every Level II record begins.
+_BZ_MAGIC = b"BZh91AY&SY"
+
+
+def _archive_path(name: str) -> str:
+    """KIND20260727_202449_V06 -> 2026/07/27/KIND/KIND20260727_202449_V06."""
+    return f"{name[4:8]}/{name[8:10]}/{name[10:12]}/{name[:4]}/{name}"
+
+
+def archive_volumes(site: str, limit: int, start: int) -> list[dict]:
+    """The first `limit` volumes at or after `start`, from the Level II archive.
+
+    Archive playback used to sweep the chunk bucket, which keeps two days:
+    asked for KIND on July 27th it handed back the oldest thing it had -- a
+    volume from two days ago with its first 39 chunks already deleted.
+    """
+    import datetime as _dt
+
+    icao = icao_for(site)
+    ck = (icao, int(start), limit)
+    hit = _ARCHIVE_LISTS.get(ck)
+    if hit and time.time() - hit[0] < _LIST_TTL:
+        return hit[1]
+    t0 = _dt.datetime.fromtimestamp(start, _dt.timezone.utc)
+    today = _dt.datetime.now(_dt.timezone.utc).date()
+    out: list[dict] = []
+    for d in range(3):  # a loop that starts late in the day runs on into the next
+        day = t0.date() + _dt.timedelta(days=d)
+        if day > today:
+            break
+        params = {"list-type": "2", "prefix": f"{day:%Y/%m/%d}/{icao}/"}
+        if d == 0:
+            params["start-after"] = f"{day:%Y/%m/%d}/{icao}/{icao}{t0:%Y%m%d_%H%M%S}"
+        r = _SESSION.get(ARCHIVE, params=params, timeout=_TIMEOUT)
+        r.raise_for_status()
+        for key in re.findall(r"<Key>([^<]+)</Key>", r.text):
+            m = _ARCHIVE_NAME.search(key)
+            if not m:
+                continue  # the _MDM metadata files
+            stamp = f"{m.group(2)}-{m.group(3)}"
+            out.append({"vol": None, "stamp": stamp, "time": _stamp_unix(stamp),
+                        "key": f"L2A:{key.rsplit('/', 1)[1]}"})
+        if len(out) >= limit:
+            break
+    out = out[:limit]
+    _ARCHIVE_LISTS[ck] = (time.time(), out)
+    while len(_ARCHIVE_LISTS) > 16:
+        _ARCHIVE_LISTS.popitem(last=False)
+    return out
+
+
+def _archive_get(path: str) -> bytes:
+    """One archive volume, ~16 MB, pulled in parallel ranges: S3 serves a big
+    object several times faster in pieces -- 8 s here where one stream took 36."""
+    part = 1024 * 1024
+    first = _SESSION.get(ARCHIVE + path, headers={"Range": f"bytes=0-{part - 1}"}, timeout=_TIMEOUT)
+    if first.status_code == 404:
+        raise RuntimeError(f"Level II volume {path.rsplit('/', 1)[-1]} is not in the archive.")
+    first.raise_for_status()
+    total = int(first.headers.get("Content-Range", "/0").rsplit("/", 1)[-1] or 0)
+    if not total or len(first.content) >= total:
+        return first.content
+
+    def piece(lo: int) -> bytes:
+        hi = min(lo + part, total) - 1
+        r = _SESSION.get(ARCHIVE + path, headers={"Range": f"bytes={lo}-{hi}"}, timeout=_TIMEOUT)
+        r.raise_for_status()
+        if len(r.content) != hi - lo + 1:
+            raise RuntimeError(f"Level II volume {path.rsplit('/', 1)[-1]} came back short.")
+        return r.content
+
+    with ThreadPoolExecutor(16) as ex:
+        rest = list(ex.map(piece, range(part, total, part)))
+    return first.content + b"".join(rest)
+
+
+def _decode_archive(name: str) -> tuple[Any, str]:
+    """An archive volume by file name, decoded, and its stamp."""
+    raw = _kept(("archive", name), lambda: _archive_get(_archive_path(name)))
+    return Level2File(io.BytesIO(raw)), f"{name[4:12]}-{name[13:19]}"
+
+
+def _last_el_num(head: bytes, tail: bytes) -> Optional[int]:
+    """The last elevation a volume reached, from its first record and its last."""
+    quiet = logging.getLogger("metpy.io.nexrad")
+    level = quiet.level
+    quiet.setLevel(logging.ERROR)  # it complains about the records in between, rightly
+    try:
+        part = Level2File(io.BytesIO(head + tail))
+        nums = [int(r[0].el_num) for sw in part.sweeps for r in sw]
+        return max(nums) if nums else None
+    finally:
+        quiet.setLevel(level)
+
+
+def _archive_ends(path: str) -> tuple[Any, Optional[int]]:
+    """An archive volume's scan strategy and how far it got, from its two ends:
+    the first record is the VCP, the last one holds the final elevation. About
+    100 KB of a 16 MB file."""
+    size = struct.unpack(">i", _SESSION.get(ARCHIVE + path, headers={"Range": "bytes=24-27"},
+                                            timeout=_TIMEOUT).content[:4])[0]
+    head = _SESSION.get(ARCHIVE + path, headers={"Range": f"bytes=0-{28 + abs(size) - 1}"}, timeout=_TIMEOUT).content
+    vcp = Level2File(io.BytesIO(head)).vcp_info
+    for span in (400_000, 3_000_000):
+        tail = _SESSION.get(ARCHIVE + path, headers={"Range": f"bytes=-{span}"}, timeout=_TIMEOUT).content
+        i = tail.rfind(_BZ_MAGIC)
+        # The last record runs exactly to the end of the file; anything else is
+        # not a record boundary (or an old gzip-wrapped file with none to find).
+        if i >= 4 and abs(struct.unpack(">i", tail[i - 4:i])[0]) == len(tail) - i:
+            return vcp, _last_el_num(head, tail[i - 4:])
+    return vcp, None
+
+
+def _archive_cuts(site: str, at: int) -> dict:
+    """What the radar flew at `at`: the first archive volume from then on."""
+    vols = archive_volumes(site, 1, at)
+    if not vols:
+        raise RuntimeError(f"No Level II volume for {site} from that time.")
+    name = vols[0]["key"][4:]
+    hit = _ARCHIVE_CUTS.get(name)
+    if hit is not None:
+        return hit
+    vcp, flown = _archive_ends(_archive_path(name))
+    if vcp is None:
+        raise RuntimeError(f"{site}'s volume {name} carries no scan strategy.")
+    out = _cuts_summary(site, vcp, flown, vols[0]["key"], vols[0]["time"])
+    _ARCHIVE_CUTS[name] = out
+    while len(_ARCHIVE_CUTS) > 64:
+        _ARCHIVE_CUTS.popitem(last=False)
+    return out
+
+
+_CUTS_CACHE: dict[str, tuple[float, dict]] = {}
+# The volume list itself is cached two minutes; the cuts follow it.
+_CUTS_TTL = 2 * 60
+
+
+def _newest_archive_key(site: str) -> Optional[str]:
+    """The newest complete volume in the Level II archive, listing only its tail.
+
+    A day's directory is ~250 volumes; `start-after` a key from 40 minutes ago
+    brings back the last few instead, which is most of the difference between
+    a tilt check that takes seconds and one that takes a fraction of one.
+    """
+    import datetime as _dt
+    import re as _re
+
+    now = _dt.datetime.now(_dt.timezone.utc)
+    since = now - _dt.timedelta(minutes=40)
+    tries = [(since, f"{since:%Y/%m/%d}/{site}/{site}{since:%Y%m%d_%H%M%S}")]
+    if since.date() != now.date():
+        tries.append((now, None))
+    # Nothing that recent: the radar is down or the archive is behind -- look at
+    # the whole of today and yesterday before saying so.
+    tries += [(now, None), (now - _dt.timedelta(days=1), None)]
+    for day, after in tries:
+        params = {"list-type": "2", "prefix": f"{day:%Y/%m/%d}/{site}/"}
+        if after:
+            params["start-after"] = after
+        r = _SESSION.get(ARCHIVE, params=params, timeout=_TIMEOUT)
+        keys = [k for k in _re.findall(r"<Key>([^<]+)</Key>", r.text) if not k.endswith("_MDM")]
+        if keys:
+            return keys[-1]
+    return None
+
+
+def site_cuts(site: str, at: Optional[int] = None) -> dict:
+    """The elevations this radar is flying, and which moments each cut carries.
+
+    Every radar's tilts are its own: KHDC flies 0.3 deg below the 0.5 cut, KLGX
+    0.2, KMUX and KMTX 0.0; clear air stops at 6.4 deg where storm modes go to
+    19.5. The VCP -- the list of cuts -- sits in the first chunk of a volume,
+    about 2 KB.
+
+    Read from the newest complete volume in the chunk bucket, the very volume a
+    Level II tilt then loads. It was read from the archive, which runs minutes
+    behind: KLGX changed mode in between, and the list offered 8.0 to 19.5 deg
+    cuts the volume on screen did not have. The archive is only the fallback.
+
+    `at` asks what it flew then instead, for archive playback.
+    """
+    site = icao_for(site)
+    if at is not None:
+        return _archive_cuts(site, at)
+    hit = _CUTS_CACHE.get(site)
+    if hit and time.time() - hit[0] < _CUTS_TTL:
+        return hit[1]
+
+    vcp = None
+    volume = volume_unix = None
+    flown = None  # how many of the VCP's elevations the volume actually got through
+    vols = list_volumes(site, 1)
+    if vols:
+        newest = vols[-1]
+        chunks = sorted(_chunks_for(site, newest["vol"]), key=lambda kv: _chunk_num(kv[0]))
+        if chunks and chunks[0][0].endswith("-S"):
+            head = _SESSION.get(CHUNKS + chunks[0][0], timeout=_TIMEOUT).content
+            vcp = Level2File(io.BytesIO(head)).vcp_info
+            volume, volume_unix = newest["key"], newest["time"]
+            # The radar ends a volume early when there is nothing up high
+            # (AVSET): KLGX's VCP runs to 19.5 deg and the volume stopped at 6.4.
+            # The last chunk carries the last elevation it reached.
+            if chunks[-1][0].endswith("-E"):
+                tail = _SESSION.get(CHUNKS + chunks[-1][0], timeout=_TIMEOUT).content
+                flown = _last_el_num(head, tail)
+    if vcp is None:
+        key = _newest_archive_key(site)
+        if key is None:
+            raise RuntimeError(f"No Level II volume for {site} today or yesterday.")
+        vcp, flown = _archive_ends(key)
+        volume, volume_unix = key.rsplit("/", 1)[-1], _volume_unix(key)
+    if vcp is None:
+        raise RuntimeError(f"{site}'s newest volume carries no scan strategy.")
+    out = _cuts_summary(site, vcp, flown, volume, volume_unix)
+    _CUTS_CACHE[site] = (time.time(), out)
+    return out
+
+
+def _cuts_summary(site: str, vcp: Any, flown: Optional[int], volume: Optional[str],
+                  volume_unix: Optional[int]) -> dict:
+    """A volume's cuts, as flown, and the moments each one carries."""
+    els = list(vcp.els)[:flown] if flown else list(vcp.els)
+    angles = sorted({round(float(e.el_angle), 2) for e in els})
+    cuts: list[float] = []
+    for a in angles:
+        if not cuts or a - cuts[-1] > 0.05:
+            cuts.append(a)
+    # The moments each cut carries, across every sweep flown at it.
+    moments: dict[float, set[str]] = {c: set() for c in cuts}
+    for e in els:
+        cut = min(cuts, key=lambda c: abs(c - float(e.el_angle)))
+        moments[cut] |= set(_WAVEFORM_MOMENTS.get(str(e.waveform), "BGWCXPF"))
+    low = dict(slots_for_cuts(cuts)).get("L")
+    out = {
+        "site": site,
+        # As flown, to a tenth: 0.48 is the 0.5 cut, 0.31 the 0.3 one.
+        "cuts": [round(a, 1) for a in cuts],
+        "exact": cuts,
+        "low": None if low is None else round(low, 1),
+        "volume": volume,
+        "volumeUnix": volume_unix,
+        "moments": {str(c): "".join(sorted(m)) for c, m in moments.items()},
+        "elevationsFlown": flown,
+        "elevationsPlanned": len(vcp.els),
+    }
+    return out
+
+
+def _volume_unix(key: str) -> Optional[int]:
+    """KHDC20260914_002938_V06 -> its start time."""
+    import datetime as _dt
+    name = key.rsplit("/", 1)[-1]
+    try:
+        stamp = _dt.datetime.strptime(name[4:19], "%Y%m%d_%H%M%S").replace(tzinfo=_dt.timezone.utc)
+    except ValueError:
+        return None
+    return int(stamp.timestamp())
 
 
 def volume_elevations(f: Any) -> list[dict]:
@@ -426,7 +915,7 @@ def volume_elevations(f: Any) -> list[dict]:
         volume, so the raw sweep order is NOT ascending.
     Group anything within 0.25 deg, then snap to the nominal ladder.
     """
-    els = sorted({round(float(sw[0][0].el_angle), 2) for sw in f.sweeps if sw})
+    els = sorted({round(_sweep_angle(f, sw), 2) for sw in f.sweeps if sw})
     groups: list[float] = []
     for e in els:
         if not groups or e - groups[-1] > 0.25:

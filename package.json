@@ -1,7 +1,7 @@
 {
   "name": "weatherts",
   "private": true,
-  "version": "1.4.1",
+  "version": "1.4.2",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
@@ -14,7 +14,8 @@
     "dev:all": "node scripts/dev-all.mjs",
     "backend": "cd backend && .venv\\Scripts\\python -m uvicorn main:app --port 8787",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "release:announce": "node scripts/announce-release.mjs"
   },
   "dependencies": {
     "@fontsource-variable/recursive": "^5.3.0",

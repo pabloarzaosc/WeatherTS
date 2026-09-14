@@ -307,6 +307,11 @@ export function RadarView() {
               {scan.meta.units}
             </span>
           </div>
+          {scan.meta.note && (
+            <div className="sfcobs__row">
+              <span style={{ color: "var(--text-faint)", fontSize: 11 }}>{scan.meta.note}</span>
+            </div>
+          )}
           <div className="sfcobs__row">
             <span style={{ color: "var(--text-faint)", fontSize: 11 }}>
               {scans.length} scans — scrub/play on the timeline
