@@ -6,6 +6,7 @@ import { buildBasemapStyle } from "./basemaps";
 import { registerMap, setActivePane, allMaps, subscribeMaps, getActivePaneId, PRIMARY_PANE } from "./mapInstance";
 import { LayerManager } from "../layers/manager";
 import { attachSettings } from "../settings/mapStyle";
+import { useSettingsStore } from "../settings/useSettingsStore";
 import { useAppStore } from "../store/useAppStore";
 import { useNexradStore } from "../store/useNexradStore";
 import { RadarColorBar } from "../ui/RadarColorBar";
@@ -171,11 +172,20 @@ export function MapPane({ id }: { id: string }) {
      * layer twice is a no-op in every module, and the manager catches an add
      * that lands too early, so re-running the reconcile here is free.
      */
-    map.on("styledata", () => {
+    //
+    // Once per task: a burst of style writes (a module adding five layers, a
+    // filter per step of the timeline) is one reconcile, not five.
+    let styleSync: ReturnType<typeof setTimeout> | 0 = 0;
+    const onStyleData = () => {
       styleReady = true;
       pendingSync = false;
-      void manager.sync(store.getState());
-    });
+      if (styleSync) return;
+      styleSync = setTimeout(() => {
+        styleSync = 0;
+        void manager.sync(store.getState());
+      }, 0);
+    };
+    map.on("styledata", onStyleData);
 
     // Only the primary pane drives the status-bar readout; every pane shares
     // the camera, so the numbers would be identical anyway.
@@ -212,6 +222,9 @@ export function MapPane({ id }: { id: string }) {
 
     const unsubLayers = store.subscribe((s) => s.layers, syncLayers);
     const unsubOrder = store.subscribe((s) => s.layerOrder, syncLayers);
+    // Fill strengths in Settings are part of each module's opacity, which the
+    // manager pushes on every reconcile.
+    const unsubSettings = useSettingsStore.subscribe((s) => s.values, syncLayers);
     const unsubProjection = store.subscribe(
       (s) => s.projection,
       (projection) => map.setProjection({ type: projection }),
@@ -240,8 +253,11 @@ export function MapPane({ id }: { id: string }) {
     return () => {
       ro.disconnect();
       detachSettings();
+      if (styleSync) clearTimeout(styleSync);
+      map.off("styledata", onStyleData);
       unsubLayers();
       unsubOrder();
+      unsubSettings();
       unsubProjection();
       unsubBasemap();
       map.off("move", onMove);

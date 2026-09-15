@@ -93,13 +93,14 @@ export class LayerManager {
   }
 
   private applyOrder(order: string[]): void {
+    const moves: string[] = [];
     // order is bottom -> top; moving each to the top in turn rebuilds the stack.
     for (const id of order) {
       if (!this.added.has(id)) continue;
       const module = getLayerModule(id);
       if (!module) continue;
       for (const layerId of module.getLayerIds()) {
-        if (this.map.getLayer(layerId)) this.map.moveLayer(layerId);
+        if (this.map.getLayer(layerId)) moves.push(layerId);
       }
     }
     // Then lift the always-on-top ids. Ordering is per module, so this is the
@@ -117,8 +118,26 @@ export class LayerManager {
     lifted.sort((a, b) => (a.topPriority ?? 0) - (b.topPriority ?? 0));
     for (const module of lifted) {
       for (const layerId of module.topLayerIds?.() ?? []) {
-        if (this.map.getLayer(layerId)) this.map.moveLayer(layerId);
+        if (this.map.getLayer(layerId)) moves.push(layerId);
       }
     }
+
+    // Only when the stack would actually change.
+    //
+    // moveLayer marks the style changed even for a layer already where it is
+    // asked to go, a changed style fires styledata on the next frame, and the
+    // pane re-runs this reconcile on styledata. Moving unconditionally kept the
+    // map redrawing every frame with nobody touching it -- a full label
+    // placement each time, and every styledata listener run again on top.
+    const current = this.map.getLayersOrder();
+    const next = current.slice();
+    for (const layerId of moves) {
+      const at = next.indexOf(layerId);
+      if (at < 0) continue;
+      next.splice(at, 1);
+      next.push(layerId);
+    }
+    if (next.every((layerId, i) => layerId === current[i])) return;
+    for (const layerId of moves) this.map.moveLayer(layerId);
   }
 }

@@ -13,6 +13,7 @@ import {
   CIG_COLORS,
 } from "../../lib/outlooks";
 import { useOutlookStore } from "../../store/useOutlookStore";
+import { getSetting } from "../../settings/useSettingsStore";
 
 const ALERT_BEFORE_IDS = ["alerts-fill", "alerts-outline"];
 
@@ -168,8 +169,11 @@ function createGeoOutlookLayer(id: string, name: string, description: string, lo
     },
 
     setOpacity(map, opacity) {
-      if (map.getLayer(fillId)) map.setPaintProperty(fillId, "fill-opacity", 0.32 * opacity);
-      if (map.getLayer(hatchId)) map.setPaintProperty(hatchId, "fill-opacity", opacity);
+      // Fill and hatching strengths are outlooks.fill (0.32) and outlooks.hatch (1) in Settings.
+      const fill = +(getSetting<number>("outlooks.fill") * opacity).toFixed(4);
+      const hatch = +(getSetting<number>("outlooks.hatch") * opacity).toFixed(4);
+      if (map.getLayer(fillId)) map.setPaintProperty(fillId, "fill-opacity", fill);
+      if (map.getLayer(hatchId)) map.setPaintProperty(hatchId, "fill-opacity", hatch);
       if (map.getLayer(lineId)) map.setPaintProperty(lineId, "line-opacity", opacity);
     },
 

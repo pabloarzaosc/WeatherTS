@@ -4,6 +4,7 @@ import type { LayerModule } from "../types";
 import { BACKEND_BASE } from "../../lib/apiConfig";
 import { useMesoscaleStore, type MesoscaleMD } from "../../store/useMesoscaleStore";
 import { useAlertStore } from "../../store/useAlertStore";
+import { getSetting } from "../../settings/useSettingsStore";
 
 const SRC = "spc-md";
 const FILL = "spc-md-fill";
@@ -243,7 +244,8 @@ export const mesoscaleLayer: LayerModule = {
   setOpacity(map, opacity) {
     // Scaled from the same bases the layer is built with, so the slider thins
     // the outline from what is on screen rather than from a stale figure.
-    if (map.getLayer(FILL)) map.setPaintProperty(FILL, "fill-opacity", 0.13 * opacity);
+    // The fill strength is md.fill in Settings (0.13).
+    if (map.getLayer(FILL)) map.setPaintProperty(FILL, "fill-opacity", +(getSetting<number>("md.fill") * opacity).toFixed(4));
     if (map.getLayer(LINE)) map.setPaintProperty(LINE, "line-opacity", 0.85 * opacity);
     if (map.getLayer(LABEL)) map.setPaintProperty(LABEL, "text-opacity", opacity);
   },

@@ -92,7 +92,8 @@ const sortKey: ExpressionSpecification = ["to-number", ["get", "priority"], 0];
 // screen the complaint is the same either way: an alert that is in force is in
 // force, and a polygon that looks half-lit reads as one that is half-over.
 // Colour already says which product it is; opacity now only says "here".
-const ALERT_FILL = 0.1;
+// The fill strength itself is alerts.warningFill in Settings (0.1).
+//
 // Bright enough to read over reflectivity, which is the background this line
 // actually has to survive. Dimming it was what kept it from shouting before,
 // but that only worked over a pale basemap -- over a red core the line simply
@@ -111,15 +112,18 @@ const CASING_COLOR = "rgba(6,10,16,0.75)";
 const CASING_EXTRA_PX = 1.6;
 
 // The one exception, and it is about tier rather than strength: the tiers above
-// draw no outline at all, so their fill has to carry the whole shape alone.
-const NO_LINE_FILL = 0.14;
-
-const fillOpacity = (opacity: number): ExpressionSpecification => [
-  "case",
-  NO_OUTLINE,
-  NO_LINE_FILL * opacity,
-  ALERT_FILL * opacity,
-];
+// draw no outline at all, so their fill has to carry the whole shape alone
+// (alerts.areaFill, 0.14) -- unless Settings outlines them too.
+//
+// Written here and only here. The Settings styler used to write its own
+// version of this over the top, the manager wrote this one back on the next
+// reconcile, and the two traded places every frame; being data-driven, each
+// write also re-tiled every alert polygon.
+const fillOpacity = (opacity: number): ExpressionSpecification | number => {
+  const warning = +(getSetting<number>("alerts.warningFill") * opacity).toFixed(4);
+  if (getSetting<boolean>("alerts.outlineWatches")) return warning;
+  return ["case", NO_OUTLINE, +(getSetting<number>("alerts.areaFill") * opacity).toFixed(4), warning];
+};
 
 const lineOpacity = (opacity: number): number => ALERT_LINE * opacity;
 

@@ -2,7 +2,8 @@ import type { ExpressionSpecification, Map as MapLibreMap } from "maplibre-gl";
 
 import { getLayerModules } from "../layers/registry";
 import { holdBasemapLabels } from "../map/basemapLabels";
-import { useAppStore } from "../store/useAppStore";
+import { useAcarsStore } from "../store/useAcarsStore";
+import { useLsrStore } from "../store/useLsrStore";
 import { ALERT_COLOR_EVENTS, alertColorKey } from "./schema";
 import { getSetting, useSettingsStore } from "./useSettingsStore";
 
@@ -19,6 +20,11 @@ import { getSetting, useSettingsStore } from "./useSettingsStore";
  * Each property is written only when it differs from what the layer already
  * has. That is also what ends the echo: writing a property fires another style
  * change, which finds nothing left to write.
+ *
+ * Never a property a module writes itself. Opacity belongs to the modules (the
+ * layer manager pushes it on every reconcile, and a reconcile runs on every
+ * style change), so a fill strength from Settings is read by the module inside
+ * its own setOpacity. Writing it here as well made the two take turns forever.
  */
 
 type Props = Record<string, unknown>;
@@ -32,7 +38,6 @@ const num = (key: string) => getSetting<number>(key);
 const on = (key: string) => getSetting<boolean>(key);
 const color = (key: string) => getSetting<string>(key);
 const visibility = (key: string) => (on(key) ? "visible" : "none");
-const layerOpacity = (id: string, fallback: number) => useAppStore.getState().layers[id]?.opacity ?? fallback;
 
 /** A zoom ramp with every stop multiplied by k. */
 const zoomRamp = (k: number, ...stops: number[]): ExpressionSpecification => {
@@ -137,19 +142,14 @@ function radarRules(): Rule[] {
   ];
 }
 
-/** Watches and advisories: drawn as colour only unless outlined in Settings. */
-const NO_LINE_KINDS = ["watch", "advisory"];
-const kindOf: ExpressionSpecification = ["coalesce", ["get", "kind"], "other"];
 const priority: ExpressionSpecification = ["coalesce", ["get", "priority"], 0];
 
 function alertRules(): Rule[] {
-  const op = layerOpacity("nws-alerts", 0.86);
   const lw = num("alerts.lineWidth");
   const match: unknown[] = ["match", ["downcase", ["coalesce", ["get", "event"], ""]]];
   for (const e of ALERT_COLOR_EVENTS) match.push(e.event, color(alertColorKey(e.event)));
   match.push(["get", "color"]);
   const colorExpr = match as ExpressionSpecification;
-  const outlineAll = on("alerts.outlineWatches");
   // Same ranking as the module draws, scaled.
   const strokeWidth: ExpressionSpecification = [
     "*",
@@ -158,36 +158,24 @@ function alertRules(): Rule[] {
     ["case", ["coalesce", ["get", "convective"], false], 1.3, 1],
     ["interpolate", ["linear"], priority, 0, 0.5, 350, 0.65, 650, 0.85, 900, 1.1, 1200, 1.4],
   ];
-  const areaFill = num("alerts.areaFill");
-  const warningFill = num("alerts.warningFill");
   return [
-    {
-      layers: ["alerts-fill"],
-      paint: {
-        "fill-color": colorExpr,
-        "fill-opacity": outlineAll
-          ? +(warningFill * op).toFixed(4)
-          : ["match", kindOf, NO_LINE_KINDS, +(areaFill * op).toFixed(4), +(warningFill * op).toFixed(4)],
-      },
-    },
+    { layers: ["alerts-fill"], paint: { "fill-color": colorExpr } },
     {
       layers: ["alerts-casing"],
       layout: { visibility: visibility("alerts.casing") },
-      paint: { "line-width": ["+", strokeWidth, 1.6], "line-opacity": +(0.85 * op).toFixed(4) },
+      paint: { "line-width": ["+", strokeWidth, 1.6] },
     },
     {
       layers: ["alerts-outline"],
       paint: {
         "line-color": ["case", ["get", "isEmergency"], color("alerts.emergencyColor"), colorExpr],
         "line-width": strokeWidth,
-        "line-opacity": +(0.85 * op).toFixed(4),
       },
     },
   ];
 }
 
 function productRules(): Rule[] {
-  const mdOp = layerOpacity("spc-md", 0.9);
   const hazard: ExpressionSpecification = [
     "match",
     ["get", "hazard"],
@@ -197,23 +185,20 @@ function productRules(): Rule[] {
   ];
   const outlookRules = getLayerModules()
     .filter((m) => m.category === "outlooks")
-    .map((m): Rule[] => {
-      const op = layerOpacity(m.id, 0.72);
-      return [
-        { layers: [`${m.id}-fill`], paint: { "fill-opacity": +(num("outlooks.fill") * op).toFixed(4) } },
-        { layers: [`${m.id}-hatch`], paint: { "fill-opacity": +(num("outlooks.hatch") * op).toFixed(4) } },
-        { layers: [`${m.id}-line`], paint: { "line-width": num("outlooks.lineWidth") } },
-      ];
-    })
-    .flat();
+    .map((m): Rule => ({ layers: [`${m.id}-line`], paint: { "line-width": num("outlooks.lineWidth") } }));
   const mslpBand = (low: string, high: string): ExpressionSpecification => ["case", ["==", ["get", "band"], "low"], low, high];
   const mslpSize = num("mslp.labelSize");
   const thickSize = num("thickness.labelSize");
   const li = num("lsr.iconScale");
   return [
     { layers: ["lsr-icons"], layout: { "icon-size": zoomRamp(li, 3, 0.55, 6, 0.7, 10, 0.9) } },
-    { layers: ["lsr-labels"], layout: { visibility: visibility("lsr.labels") }, paint: { "text-color": color("lsr.labelColor") } },
-    { layers: ["spc-md-fill"], paint: { "fill-color": hazard, "fill-opacity": +(num("md.fill") * mdOp).toFixed(4) } },
+    // The report panel has its own labels switch; shown only when both agree.
+    {
+      layers: ["lsr-labels"],
+      layout: { visibility: on("lsr.labels") && useLsrStore.getState().showLabels ? "visible" : "none" },
+      paint: { "text-color": color("lsr.labelColor") },
+    },
+    { layers: ["spc-md-fill"], paint: { "fill-color": hazard } },
     { layers: ["spc-md-line"], paint: { "line-color": hazard, "line-width": num("md.lineWidth") } },
     { layers: ["spc-md-label"], layout: { visibility: visibility("md.labels") }, paint: { "text-color": hazard } },
     ...outlookRules,
@@ -239,7 +224,11 @@ function productRules(): Rule[] {
     },
     { layers: ["raob-dots"], paint: { "circle-radius": zoomRamp(num("markers.raobScale"), 1, 2.2, 4, 3.2, 8, 5.5) } },
     { layers: ["acars-dots"], paint: { "circle-radius": zoomRamp(num("markers.acarsScale"), 2, 3, 5, 5.5, 9, 8) } },
-    { layers: ["acars-label"], layout: { visibility: visibility("markers.acarsLabels") } },
+    // Likewise the ACARS panel's labels switch.
+    {
+      layers: ["acars-label"],
+      layout: { visibility: on("markers.acarsLabels") && useAcarsStore.getState().showLabels ? "visible" : "none" },
+    },
     { layers: ["vwp-dots"], paint: { "circle-radius": zoomRamp(num("markers.vwpScale"), 2, 3, 5, 5, 9, 7) } },
     { layers: ["vwp-label"], layout: { visibility: visibility("markers.vwpLabels") } },
     { layers: ["chasers-label"], layout: { visibility: visibility("chasers.labels") } },
@@ -249,23 +238,63 @@ function productRules(): Rule[] {
 
 const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
 
+/**
+ * The rules for the current settings, built once per change rather than on
+ * every style change: the alert colours alone are a 27-way expression.
+ */
+let built: { values: unknown; lsrLabels: boolean; acarsLabels: boolean; rules: Rule[] } | null = null;
+function currentRules(): Rule[] {
+  const values = useSettingsStore.getState().values;
+  const lsrLabels = useLsrStore.getState().showLabels;
+  const acarsLabels = useAcarsStore.getState().showLabels;
+  if (!built || built.values !== values || built.lsrLabels !== lsrLabels || built.acarsLabels !== acarsLabels) {
+    built = { values, lsrLabels, acarsLabels, rules: [...mapRules(), ...radarRules(), ...alertRules(), ...productRules()] };
+  }
+  return built.rules;
+}
+
+/**
+ * Per map, what each property read as the last time it was found right.
+ *
+ * MapLibre hands back the same object until the property is written again, so
+ * a property still holding that exact value needs no comparison at all, and a
+ * pass over an unchanged map costs a lookup per property instead of turning
+ * every expression into JSON. Dropped whenever the rules are rebuilt.
+ */
+const checked = new WeakMap<MapLibreMap, { rules: Rule[]; seen: Map<string, unknown> }>();
+
 function apply(map: MapLibreMap): void {
   // The basemap's own names have their holders (products that cover the map);
   // Settings is one more, so a hide from here and a hide from a product never
   // undo each other.
   holdBasemapLabels(map, "settings", !on("map.placeLabels"));
 
-  for (const rule of [...mapRules(), ...radarRules(), ...alertRules(), ...productRules()]) {
+  const rules = currentRules();
+  let memo = checked.get(map);
+  if (!memo || memo.rules !== rules) {
+    memo = { rules, seen: new Map() };
+    checked.set(map, memo);
+  }
+  const { seen } = memo;
+
+  for (const rule of rules) {
     for (const id of rule.layers) {
       if (!map.getLayer(id)) continue;
       for (const [prop, value] of Object.entries(rule.paint ?? {})) {
-        if (!same(map.getPaintProperty(id, prop), value)) map.setPaintProperty(id, prop, value as never);
+        const key = `${id}|paint|${prop}`;
+        const current = map.getPaintProperty(id, prop);
+        if (current !== undefined && seen.get(key) === current) continue;
+        if (!same(current, value)) map.setPaintProperty(id, prop, value as never);
+        seen.set(key, map.getPaintProperty(id, prop));
       }
       for (const [prop, value] of Object.entries(rule.layout ?? {})) {
+        const key = `${id}|layout|${prop}`;
         const current = map.getLayoutProperty(id, prop);
+        if (current !== undefined && seen.get(key) === current) continue;
         // An unset visibility reads as undefined and means visible.
         if (prop === "visibility" && value === "visible" && current === undefined) continue;
         if (!same(current, value)) map.setLayoutProperty(id, prop, value as never);
+        seen.set(key, map.getLayoutProperty(id, prop));
       }
     }
   }
@@ -292,13 +321,19 @@ export function attachSettings(map: MapLibreMap): () => void {
   };
   map.on("styledata", schedule);
   const unsubSettings = useSettingsStore.subscribe((s) => s.values, schedule);
-  const unsubLayers = useAppStore.subscribe((s) => s.layers, schedule);
+  // This store has no selector subscriptions; a pass with nothing changed is a
+  // few lookups, and currentRules only rebuilds when the switch moved.
+  const unsubLsr = useLsrStore.subscribe((s, prev) => {
+    if (s.showLabels !== prev.showLabels) schedule();
+  });
+  const unsubAcars = useAcarsStore.subscribe((s) => s.showLabels, schedule);
   schedule();
   return () => {
     alive = false;
     if (frame) clearTimeout(frame);
     map.off("styledata", schedule);
     unsubSettings();
-    unsubLayers();
+    unsubLsr();
+    unsubAcars();
   };
 }
