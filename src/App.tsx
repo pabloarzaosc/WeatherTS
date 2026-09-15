@@ -5,6 +5,7 @@ import { DataPanel } from "./ui/DataPanel";
 import { StatusBar } from "./ui/StatusBar";
 import { ZoomControls } from "./ui/ZoomControls";
 import { MeasureTool } from "./ui/MeasureTool";
+import { DrawTool } from "./ui/DrawTool";
 import { AlertController } from "./ui/AlertController";
 import { AlertPanel } from "./ui/AlertPanel";
 import { OutlookLegend } from "./ui/OutlookLegend";
@@ -74,6 +75,7 @@ export default function App() {
         <BasemapPicker />
         <DataPanel />
         <MeasureTool />
+        <DrawTool />
         <OutlookLegend />
         <MslpLegend />
         <AlertPanel />

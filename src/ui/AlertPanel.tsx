@@ -19,6 +19,7 @@ import {
 } from "../lib/nwsAlerts";
 import { useNexradStore } from "../store/useNexradStore";
 import { useAppStore } from "../store/useAppStore";
+import { useSettingsStore } from "../settings/useSettingsStore";
 import { getMap } from "../map/mapInstance";
 import { haversine, formatDistance } from "../lib/measure";
 import type { NexradSite } from "../lib/nexrad";
@@ -530,6 +531,9 @@ function AlertList({
  * closing is the top bar's job, the same as the left side panel.
  */
 export function AlertPanel() {
+  // Colours come from eventColor(), which reads Settings: subscribing here
+  // repaints the list and the detail the moment one is changed.
+  useSettingsStore((s) => s.values);
   const selectedId = useAlertStore((s) => s.selectedId);
   const selectedIds = useAlertStore((s) => s.selectedIds);
   const allFeatures = useAlertStore((s) => s.features);

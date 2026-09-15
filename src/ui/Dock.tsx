@@ -15,6 +15,7 @@ import {
   LogIn,
   Map as MapIcon,
   Maximize,
+  PenLine,
   Ruler,
   Settings,
   Square,
@@ -24,6 +25,7 @@ import {
 import { useAppStore, type DataView } from "../store/useAppStore";
 import { selectRailOpen, useAlertStore } from "../store/useAlertStore";
 import { useGifStore } from "../store/useGifStore";
+import { useDrawStore } from "../store/useDrawStore";
 import { useAccountGate } from "../store/useAccountGate";
 import { useAuthStore } from "../store/useAuthStore";
 import { getMap } from "../map/mapInstance";
@@ -213,6 +215,7 @@ export function Dock() {
   const projection = useAppStore((s) => s.projection);
   const toggleProjection = useAppStore((s) => s.toggleProjection);
   const measureMode = useAppStore((s) => s.measureMode);
+  const drawActive = useDrawStore((s) => s.active);
   const setMeasureMode = useAppStore((s) => s.setMeasureMode);
   const paneCount = useAppStore((s) => s.paneCount);
   const setPaneCount = useAppStore((s) => s.setPaneCount);
@@ -343,7 +346,17 @@ export function Dock() {
         on={measureMode !== "off"}
         onClick={() => {
           setFly(null);
+          if (measureMode === "off") useDrawStore.getState().setActive(false);
           setMeasureMode(measureMode === "off" ? "distance" : "off");
+        }}
+      />
+      <DockButton
+        icon={<PenLine size={18} />}
+        label="Draw"
+        on={drawActive}
+        onClick={() => {
+          setFly(null);
+          useDrawStore.getState().setActive(!drawActive);
         }}
       />
 

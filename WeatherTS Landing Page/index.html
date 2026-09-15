@@ -1,554 +1,518 @@
+<!doctype html>
+<html lang="en">
+<head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-<!-- apply theme before first paint (avoids flash); also set lang -->
+<!-- The theme before first paint. Dark unless the visitor picked otherwise:
+     the app's own look, sign blue at night. "auto" follows the app's rule,
+     light from 6am to 7pm on the visitor's clock. -->
 <script>
-  try {
-    document.documentElement.lang = 'en';
-    var t = localStorage.getItem('weatherts_theme')
-      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    document.documentElement.setAttribute('data-theme', t);
-  } catch (e) { document.documentElement.setAttribute('data-theme', 'light'); }
+  (function () {
+    var mode = "dark";
+    try { mode = localStorage.getItem("weatherts_theme") || "dark"; } catch (e) {}
+    var h = new Date().getHours();
+    var theme = mode === "auto" ? (h >= 6 && h < 19 ? "light" : "dark") : mode;
+    document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.setAttribute("data-theme-mode", mode);
+    // Content that animates in starts hidden only when the script that
+    // reveals it is going to run.
+    document.documentElement.classList.add("js");
+  })();
 </script>
 
-<title>WeatherTS — a free meteorology platform</title>
+<title>WeatherTS — radar, satellite and analyses on one map</title>
 
-<meta name="description" content="A meteorology platform with global coverage — satellite, radar, NWP models, ensembles, soundings, alerts and observations for anywhere in the world, in one interface. Free, and built for meteorologists. Demo out now." />
+<meta name="description" content="A free desktop weather workstation. NEXRAD Level II and III with each radar's real tilts, satellite loops from 13 satellites, HRRR, RAP and RTMA analyses, SHARPpy soundings, NWS alerts and SPC outlooks on one map and one timeline." />
 <meta name="color-scheme" content="light dark" />
-<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)" />
-<meta name="theme-color" content="#0B121A" media="(prefers-color-scheme: dark)" />
+<meta name="theme-color" content="#e3eaf3" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#202020" media="(prefers-color-scheme: dark)" />
 
-<!-- Open Graph -->
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="WeatherTS" />
-<meta property="og:title" content="WeatherTS — a free meteorology platform" />
-<meta property="og:description" content="Global coverage: satellite, radar, models, ensembles, soundings, outlooks, alerts and observations for anywhere in the world, in one interface. Free and open. Demo out now." />
-<!-- TODO: generate a 1200×630 og-image.png and drop it in the root. See README.md -->
+<meta property="og:title" content="WeatherTS — radar, satellite and analyses on one map" />
+<meta property="og:description" content="A free desktop weather workstation: NEXRAD radar, 96 satellite products, 103 analysis products, soundings, alerts and outlooks on one timeline." />
+<!-- TODO: generate a 1200×630 og-image.png and drop it in the root. -->
 <meta property="og:image" content="og-image.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta property="og:url" content="https://weatherts.app/" />
-
-<!-- Twitter/X -->
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="WeatherTS — a free meteorology platform" />
-<meta name="twitter:description" content="Global coverage: satellite, radar, models, soundings, outlooks, alerts and observations in one interface. Free and open. Demo out now." />
+<meta name="twitter:title" content="WeatherTS — radar, satellite and analyses on one map" />
+<meta name="twitter:description" content="A free desktop weather workstation: NEXRAD radar, satellite loops, HRRR/RAP/RTMA analyses, soundings, alerts and outlooks on one timeline." />
 <meta name="twitter:image" content="og-image.png" />
 
 <link rel="icon" href="favicon.png" type="image/png" sizes="512x512" />
 
+<!-- Overpass, the open descendant of Highway Gothic -- the lettering on US
+     interstate signs, to go with the app's night-sign blue -- and its mono. -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;500;600;700;800;900&family=Overpass+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
 <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
 
-<a class="skip-link" href="#conteudo">Skip to content</a>
+<!-- Lucide icons, the set the app draws with, defined once. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" x2="9" y1="3" y2="18"/><line x1="15" x2="15" y1="6" y2="21"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+  <symbol id="i-radar" viewBox="0 0 24 24"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"/><path d="M4 6h.01"/><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"/><path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"/><path d="M12 18h.01"/><path d="M17.99 11.66A6 6 0 0 1 15.77 16.67"/><circle cx="12" cy="12" r="2"/><path d="m13.41 10.59 5.66-5.66"/></symbol>
+  <symbol id="i-satellite" viewBox="0 0 24 24"><path d="M13 7 9 3 5 7l4 4"/><path d="m17 11 4 4-4 4-4-4"/><path d="m8 12 4 4 6-6-4-4Z"/><path d="m16 8 3-3"/><path d="M9 21a6 6 0 0 0-6-6"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-thermo" viewBox="0 0 24 24"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 12h18"/><path d="M12 3v18"/></symbol>
+  <symbol id="i-github" viewBox="0 0 16 16"><path class="fill" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.34c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.18-.89-1.18-.73-.5.05-.49.05-.49.81.06 1.23.83 1.23.83.72 1.23 1.88.87 2.34.67.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.83-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.22 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.52.56.83 1.28.83 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></symbol>
+  <symbol id="i-discord" viewBox="0 0 24 24"><path class="fill" d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.2.4a13.6 13.6 0 0 1 4.2 2.1A18.9 18.9 0 0 0 12 4.4c-2.6 0-5 .4-7.4 1.1A13.6 13.6 0 0 1 8.8 3.4L8.6 3a19.8 19.8 0 0 0-4.9 1.4C1 8.9.3 13.3.6 17.6a19.9 19.9 0 0 0 6 3l1.2-1.7c-.9-.3-1.8-.8-2.6-1.3l.6-.5a14.2 14.2 0 0 0 12.4 0l.6.5c-.8.5-1.7 1-2.6 1.3l1.2 1.7a19.9 19.9 0 0 0 6-3c.4-5-.7-9.3-3.1-13.2ZM8.5 15c-1.2 0-2.1-1.1-2.1-2.4S7.3 10.2 8.5 10.2s2.2 1.1 2.2 2.4S9.7 15 8.5 15Zm7 0c-1.2 0-2.1-1.1-2.1-2.4s.9-2.4 2.1-2.4 2.2 1.1 2.2 2.4S16.7 15 15.5 15Z"/></symbol>
+</svg>
 
-<!-- ─────────────────────────  NAV  ───────────────────────── -->
-<header class="nav" id="topo">
-  <div class="wrap nav__inner">
-    <a class="brand" href="#topo" aria-label="WeatherTS, home">
-      <img class="brand__logo" src="assets/logo.png" width="33" height="26" alt="WeatherTS logo" />
-      <span>Weather<span class="brand__ts">TS</span></span>
+<a class="skip-link" href="#today">Skip to content</a>
+
+<!-- ─────────────  TOP BAR  ─────────────
+     The page's navigation: each section by icon and name, drawn like the
+     app's chrome, with a lit bar under the section on screen. -->
+<header class="topbar">
+  <div class="topbar__inner">
+    <a class="topbar__brand" href="#top" aria-label="WeatherTS, top of the page">
+      <img src="assets/logo.png" width="30" height="24" alt="" />
+      <span>Weather<b>TS</b></span>
     </a>
-
-    <nav class="nav__links" aria-label="Sections">
-      <a href="#download">Download</a>
-      <a href="#recursos">Features</a>
-      <a href="#how">How it works</a>
-      <a href="#roadmap">Roadmap</a>
-      <a href="#faq">FAQ</a>
+    <nav class="topbar__nav" aria-label="Sections">
+      <a class="topbar__link" href="#today" data-spy="today"><svg class="ic"><use href="#i-layers"/></svg><span>What works today</span></a>
+      <a class="topbar__link" href="#next" data-spy="next"><svg class="ic"><use href="#i-map"/></svg><span>In development</span></a>
+      <a class="topbar__link" href="#download" data-spy="download"><svg class="ic"><use href="#i-download"/></svg><span>Download</span></a>
+      <a class="topbar__link" href="#faq" data-spy="faq"><svg class="ic"><use href="#i-help"/></svg><span>Questions</span></a>
+      <a class="topbar__link" href="#credits" data-spy="credits"><svg class="ic"><use href="#i-users"/></svg><span>Credits</span></a>
     </nav>
-
-    <div class="nav__right">
-      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">
-        <svg class="theme-toggle__sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>
-        <svg class="theme-toggle__moon" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+    <div class="topbar__end">
+      <button class="topbar__link topbar__theme" id="theme-btn" type="button" aria-label="Theme: Auto">
+        <svg class="ic ic--auto"><use href="#i-clock"/></svg>
+        <svg class="ic ic--light"><use href="#i-sun"/></svg>
+        <svg class="ic ic--dark"><use href="#i-moon"/></svg>
+        <span id="theme-label">Auto</span>
       </button>
-      <a class="btn btn--solid nav__cta js-dl" href="https://github.com/pabloarzaosc/WeatherTS/releases/latest" target="_blank" rel="noopener">Download</a>
+      <a class="topbar__link" href="https://github.com/pabloarzaosc/WeatherTS" target="_blank" rel="noopener"><svg class="ic ic--fill"><use href="#i-github"/></svg><span>GitHub</span></a>
     </div>
   </div>
 </header>
 
-<main id="conteudo">
+<div class="page">
 
-  <!-- ─────────────────────────  HERO  ───────────────────────── -->
-  <section class="hero">
-    <div class="wrap hero__grid hero__grid--solo">
-
+  <!-- ─────────────  HERO  ───────────── -->
+  <header class="hero" id="top">
+    <!-- Isobars around a low, drawn by main.js: the pressure chart as a backdrop. -->
+    <div class="isobars" aria-hidden="true"></div>
+    <div class="wrap hero__grid">
       <div class="hero__copy">
-        <p class="hero__eyebrow"><span class="pill pill--live" id="demo-pill">Demo</span></p>
+        <div class="chips">
+          <span class="chip chip--on">Public beta</span>
+          <!-- Filled in by main.js from the newest GitHub release. -->
+          <span class="chip" id="hero-version">Free · Windows</span>
+        </div>
 
-        <h1 class="hero__title">
-          Satellite, radar, models and soundings<br class="br-desk">
-          <span class="grad">in one platform, worldwide.</span>
+        <h1 class="hero__title" aria-label="Radar, satellite, analyses and soundings on one map.">
+          <span class="w" style="--i:0" aria-hidden="true">Radar,</span>
+          <span class="w" style="--i:1" aria-hidden="true">satellite,</span>
+          <span class="w" style="--i:2" aria-hidden="true">analyses</span>
+          <span class="w" style="--i:3" aria-hidden="true">and</span>
+          <span class="w" style="--i:4" aria-hidden="true">soundings</span>
+          <span class="w" style="--i:5" aria-hidden="true">on</span>
+          <span class="w" style="--i:6" aria-hidden="true">one</span>
+          <span class="w w--lit" style="--i:7" aria-hidden="true">map.</span>
         </h1>
 
         <p class="hero__sub">
-          WeatherTS brings the core meteorological tools — satellite, radar, numerical models,
-          soundings, outlooks and alerts — into one interface, with global coverage. It's free,
-          and built for meteorologists anywhere in the world.
+          A free desktop weather workstation. NEXRAD radar with the tilts each site is really flying,
+          loops from thirteen satellites, HRRR, RAP and RTMA analyses, SHARPpy soundings, NWS alerts
+          and SPC outlooks, all on one timeline.
         </p>
 
-        <div class="hero__cta">
-          <a class="btn btn--solid js-dl" href="https://github.com/pabloarzaosc/WeatherTS/releases/latest" target="_blank" rel="noopener">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 11l5 5 5-5M4 20h16"/></svg>
+        <div class="actions">
+          <a class="btn btn--fill js-dl" href="https://github.com/pabloarzaosc/WeatherTS/releases/latest" target="_blank" rel="noopener">
+            <svg class="ic"><use href="#i-download"/></svg>
             Download for Windows
           </a>
-          <a class="btn btn--ghost" href="https://github.com/pabloarzaosc/WeatherTS" target="_blank" rel="noopener">
-            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.34c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.18-.89-1.18-.73-.5.05-.49.05-.49.81.06 1.23.83 1.23.83.72 1.23 1.88.87 2.34.67.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.83-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.22 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.52.56.83 1.28.83 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          <a class="btn" href="https://github.com/pabloarzaosc/WeatherTS" target="_blank" rel="noopener">
+            <svg class="ic ic--fill"><use href="#i-github"/></svg>
             View on GitHub
           </a>
         </div>
-
-        <!-- Both lines are written by main.js: the first from whatever the
-             latest GitHub release turns out to be, the second from the demo
-             window. Nothing here names a version, so nothing here goes stale. -->
-        <p class="hero__note" id="dl-meta">Always the newest build · Windows 64-bit</p>
-        <p class="hero__note" id="demo-note">
-          The demo is open for five days. <a href="#lista">Join the waitlist</a> to hear what happens next.
-        </p>
+        <p class="note" id="dl-meta">Always the newest build · Windows 10 and 11, 64-bit</p>
       </div>
-
     </div>
-  </section>
 
-  <!-- ─────────────────────────  CAPABILITIES / FEATURES  ───────────────────────── -->
-  <section class="section section--alt" id="recursos">
     <div class="wrap">
-      <div class="section__head">
-        <h2 class="section__title">One workspace, every data source</h2>
-        <p class="section__sub">
-          Global coverage — satellite, radar, models, alerts and observations for anywhere on
-          Earth. What the demo ships today is marked <span class="ready ready--inline">READY</span>;
-          the rest is being built. A handful of products are US-only, and marked
-          <span class="us us--inline">US</span>.
-        </p>
-      </div>
-
-      <!-- Observations -->
-      <div class="capgroup">
-        <p class="capgroup__label">Observations</p>
-        <div class="capgrid">
-          <div class="capitem"><h3 class="capitem__title">Satellite</h3><p class="capitem__desc">GOES, Meteosat and Himawari stitched into one view of the whole planet. Reach any spectral channel or the derived RGB products — geocolor, day cloud phase and more.</p></div>
-          <div class="capitem capitem--ready"><h3 class="capitem__title">Radar <span class="ready">READY</span></h3><p class="capitem__desc">Full-resolution NEXRAD (Level II and III) across the US. Tilt through elevations, use dual-pol, and step through the archive scan by scan.</p></div>
-          <div class="capitem"><h3 class="capitem__title">MRMS &amp; RTMA <span class="us">US</span></h3><p class="capitem__desc">The MRMS suite — reflectivity mosaics, rotation tracks and hail sizing — alongside RTMA for a gap-filled read on surface conditions.</p></div>
-          <div class="capitem"><h3 class="capitem__title">Total lightning</h3><p class="capitem__desc">In-cloud and cloud-to-ground strikes from worldwide detection networks, with flash-density fields and time trends.</p></div>
-          <div class="capitem capitem--ready"><h3 class="capitem__title">VAD wind profiles <span class="ready">READY</span> <span class="us">US</span></h3><p class="capitem__desc">Wind profiles derived from NEXRAD that lay bare the vertical shear and storm-relative motion around a site.</p></div>
-          <div class="capitem capitem--ready"><h3 class="capitem__title">Surface observations <span class="ready">READY</span></h3><p class="capitem__desc">Live METAR and synoptic reports from stations across the planet — wind, temperature, dewpoint and visibility.</p></div>
-          <div class="capitem"><h3 class="capitem__title">Marine &amp; buoys</h3><p class="capitem__desc">Offshore conditions from buoys and ships everywhere: wave height, wind and overall sea state.</p></div>
-          <div class="capitem"><h3 class="capitem__title">Rivers &amp; hydrology <span class="us">US</span></h3><p class="capitem__desc">USGS river gauges reporting stage and discharge, for keeping watch on flooding.</p></div>
-        </div>
-      </div>
-
-      <!-- Models & guidance -->
-      <div class="capgroup">
-        <p class="capgroup__label">Models &amp; guidance</p>
-        <div class="capgrid">
-          <div class="capitem"><h3 class="capitem__title">NWP models</h3><p class="capitem__desc">The global suite — GFS, ECMWF, ICON, GEM, UKMO — next to higher-resolution regional and convective models, each with its complete parameter set.</p></div>
-          <div class="capitem"><h3 class="capitem__title">Ensembles</h3><p class="capitem__desc">GEFS and ECMWF ensemble output worldwide: step through members, plot spaghetti, or work straight from the probabilities.</p></div>
-          <div class="capitem capitem--ready"><h3 class="capitem__title">NadoCast <span class="ready">READY</span> <span class="us">US</span></h3><p class="capitem__desc">A machine-learning read on where tornadoes are most likely during US severe-weather events.</p></div>
-          <div class="capitem capitem--ready"><h3 class="capitem__title">SPC · WPC · CPC outlooks <span class="ready">READY</span> <span class="us">US</span></h3><p class="capitem__desc">Severe convective from SPC, excessive rainfall from WPC, and the extended range from CPC.</p></div>
-          <div class="capitem"><h3 class="capitem__title">Winter &amp; snowfall</h3><p class="capitem__desc">Snow-accumulation and ice-accretion output straight from the models, anywhere winter is on the table.</p></div>
-          <div class="capitem"><h3 class="capitem__title">Fire weather</h3><p class="capitem__desc">Fire-weather indices and conditions the world over, with US red-flag warnings layered on top.</p></div>
-          <div class="capitem"><h3 class="capitem__title">Tropical cyclones</h3><p class="capitem__desc">Every basin covered — official tracks, forecast cones and intensity from NHC, JTWC and the regional centers.</p></div>
-        </div>
-      </div>
-
-      <!-- Hazards & alerts -->
-      <div class="capgroup">
-        <p class="capgroup__label">Hazards &amp; alerts</p>
-        <div class="capgrid">
-          <div class="capitem capitem--ready"><h3 class="capitem__title">Weather warnings <span class="ready">READY</span></h3><p class="capitem__desc">US warnings parsed straight from their VTEC codes — every segment, phenomenon and significance, as issued.</p></div>
-          <div class="capitem capitem--ready"><h3 class="capitem__title">Local storm reports <span class="ready">READY</span> <span class="us">US</span></h3><p class="capitem__desc">Ground-truth reports of hail, wind, tornadoes and flooding, dropped right over the radar.</p></div>
-          <div class="capitem"><h3 class="capitem__title">Aviation weather</h3><p class="capitem__desc">The ICAO product set worldwide — parsed TAFs and METARs, SIGMETs and AIRMETs, plus icing and turbulence.</p></div>
-        </div>
-      </div>
-
-      <!-- Analysis -->
-      <div class="capgroup">
-        <p class="capgroup__label">Analysis</p>
-        <div class="capgrid">
-          <div class="capitem capitem--ready"><h3 class="capitem__title">Soundings <span class="ready">READY</span></h3><p class="capitem__desc">Skew-Ts and hodographs pulled from any global model, or from real RAOB and ACARS profiles — for a single point or averaged over an area.</p></div>
-          <div class="capitem"><h3 class="capitem__title">Cross sections</h3><p class="capitem__desc">Trace a line across the map and read the atmosphere in the vertical along it.</p></div>
-          <div class="capitem capitem--ready"><h3 class="capitem__title">Time–height sections <span class="ready">READY</span></h3><p class="capitem__desc">Watch a column evolve — vertical structure at one location plotted through time.</p></div>
-          <div class="capitem"><h3 class="capitem__title">Meteograms</h3><p class="capitem__desc">Point forecasts as time series — temperature, wind and the rest — for the locations that matter to you.</p></div>
-          <div class="capitem capitem--ready"><h3 class="capitem__title">Storm tracking <span class="ready">READY</span></h3><p class="capitem__desc">Automatic cell detection, with where each one has been, where it's heading and its attributes.</p></div>
-          <div class="capitem capitem--ready"><h3 class="capitem__title">Data probe <span class="ready">READY</span></h3><p class="capitem__desc">Point anywhere on a radar product to pull the exact value under the cursor.</p></div>
-          <div class="capitem capitem--ready"><h3 class="capitem__title">Measure tools <span class="ready">READY</span></h3><p class="capitem__desc">Lay down distance, bearing and area measurements directly on the map.</p></div>
-          <div class="capitem"><h3 class="capitem__title">Model comparison</h3><p class="capitem__desc">Line runs or models up side by side, or map the difference field between them.</p></div>
-          <div class="capitem capitem--ready"><h3 class="capitem__title">Archive &amp; replay <span class="ready">READY</span></h3><p class="capitem__desc">Reach back for historical data and re-run past events to see how they unfolded.</p></div>
-        </div>
-      </div>
-
-      <!-- Your workspace -->
-      <div class="capgroup">
-        <p class="capgroup__label">Your workspace</p>
-        <div class="capgrid">
-          <div class="capitem capitem--ready"><h3 class="capitem__title">Multi-panel bundles <span class="ready">READY</span></h3><p class="capitem__desc">Split the window into two, four or six panes on one camera, and find them still there next time you open it.</p></div>
-          <div class="capitem capitem--ready"><h3 class="capitem__title">Custom colormaps <span class="ready">READY</span></h3><p class="capitem__desc">Define your own color scales and value ranges so every product reads the way you want it to.</p></div>
-          <div class="capitem capitem--ready"><h3 class="capitem__title">Map styles <span class="ready">READY</span></h3><p class="capitem__desc">Nine basemaps — vector, imagery and terrain — in light or dark, so the base gets out of the data's way.</p></div>
-          <div class="capitem"><h3 class="capitem__title">Shapefiles &amp; GeoJSON</h3><p class="capitem__desc">Drop in your own vectors — borders, chase polygons, anything — and keep them consistent across every panel.</p></div>
-          <div class="capitem"><h3 class="capitem__title">Annotations &amp; drawing</h3><p class="capitem__desc">Mark up any view with arrows, shapes and text.</p></div>
-          <div class="capitem"><h3 class="capitem__title">Forecast drawing</h3><p class="capitem__desc">Sketch and save forecasts on the map using the very tools you analyze with.</p></div>
-          <div class="capitem"><h3 class="capitem__title">Share links</h3><p class="capitem__desc">Hand someone a link that rebuilds your exact view on their end.</p></div>
-          <div class="capitem capitem--ready"><h3 class="capitem__title">Export &amp; broadcast <span class="ready">READY</span></h3><p class="capitem__desc">Send out stills and animated video for briefings, reports and on-air use.</p></div>
-          <div class="capitem"><h3 class="capitem__title">Alerts &amp; notifications</h3><p class="capitem__desc">Set your own thresholds and get pinged the moment they're crossed.</p></div>
-        </div>
-      </div>
-
-    </div>
-  </section>
-
-  <!-- ─────────────────────────  WHY IT EXISTS  ───────────────────────── -->
-  <section class="section" id="proposta">
-    <div class="wrap section__narrow">
-      <p class="kicker">Why WeatherTS</p>
-      <h2 class="section__title">
-        Bring together what's scattered across paid tools — free and global.
-      </h2>
-      <p class="lede">
-        Radar, satellite, models, soundings and alerts usually live in separate services, and much
-        of the advanced functionality sits behind paid plans. WeatherTS uses public data — NWS,
-        NOAA, ECMWF, GOES/Meteosat/Himawari, RainViewer and others — and puts it all in the same
-        interface, with global coverage, no paid plan and no usage limit. The goal is to give
-        meteorologists a complete, free workspace, wherever they work.
-      </p>
-    </div>
-  </section>
-
-  <!-- ─────────────────────────  HOW IT WORKS  ───────────────────────── -->
-  <section class="section section--alt" id="how">
-    <div class="wrap">
-      <div class="section__head">
-        <h2 class="section__title">How it works</h2>
-        <p class="section__sub">Public data in, layers out, analysis on top.</p>
-      </div>
-
-      <div class="steps">
-        <div class="step">
-          <span class="step__n">01</span>
-          <h3 class="step__title">Public data in</h3>
-          <p class="step__desc">
-            WeatherTS continuously ingests public feeds from around the world — NWS, NOAA, ECMWF,
-            satellite operators, RainViewer and model providers — so the data is there when you
-            open it.
-          </p>
-        </div>
-        <div class="step">
-          <span class="step__n">02</span>
-          <h3 class="step__title">Everything becomes layers</h3>
-          <p class="step__desc">
-            Each source turns into map layers and panels you can stack, animate, restyle and
-            arrange into multi-panel bundles.
-          </p>
-        </div>
-        <div class="step">
-          <span class="step__n">03</span>
-          <h3 class="step__title">Analyze and share</h3>
-          <p class="step__desc">
-            Sound it, slice it, draw on it — then export an image or video, or share a link that
-            reopens the exact view.
-          </p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ─────────────────────────  ROADMAP  ───────────────────────── -->
-  <!--
-    Columns: working · in progress · planned.
-
-    "working" is what the app actually ships today, taken from the layer
-    registry and the backend routes rather than from memory. If a feature is
-    removed, it comes out of this list too -- a roadmap that only ever grows
-    stops being a roadmap.
-  -->
-  <section class="section" id="roadmap">
-    <div class="wrap">
-      <div class="section__head">
-        <h2 class="section__title">The demo is out. Still in active development.</h2>
-        <p class="section__sub">
-          What already works, what's being built, and what's planned.
-        </p>
-      </div>
-
-      <div class="roadmap">
-        <div class="road-col">
-          <div class="road-col__head"><span class="pill pill--on">working</span></div>
-          <ul class="road-list">
-            <li>NEXRAD Level II and Level III — every product, tilt by tilt</li>
-            <li>Radar archive and playback, scan by scan</li>
-            <li>Storm tracks with hail size, rotation and an impact list</li>
-            <li>NWS warnings with full VTEC decoding</li>
-            <li>SPC mesoscale discussions</li>
-            <li>SPC, WPC and CPC outlooks, and NadoCast</li>
-            <li>SHARPpy soundings — RAOB, model, area and ACARS aircraft profiles</li>
-            <li>VAD wind profile as a full time–height display</li>
-            <li>Surface observations, with history</li>
-            <li>Analysed fronts and local storm reports</li>
-            <li>Mean sea level pressure fields</li>
-            <li>GRLevelX palette import, and a unit per product</li>
-            <li>Split screen up to six panes, sharing one camera</li>
-            <li>Nine basemaps, light and dark</li>
-            <li>Accounts, live chaser positions and home pins</li>
-            <li>GIF and video export</li>
-          </ul>
-        </div>
-
-        <div class="road-col">
-          <div class="road-col__head"><span class="pill pill--wip">in progress</span></div>
-          <ul class="road-list">
-            <li>Global NWP models and ensembles — the model roster is in, the fields beyond pressure are not</li>
-            <li>Live satellite as a data layer — GOES, Meteosat and Himawari channels, rather than today's imagery basemaps</li>
-            <li>Radar outside the United States</li>
-            <li>Total lightning, being rebuilt</li>
-          </ul>
-        </div>
-
-        <div class="road-col">
-          <div class="road-col__head"><span class="pill pill--soon">planned</span></div>
-          <ul class="road-list">
-            <li>International warnings via CAP</li>
-            <li>Cross sections and meteograms</li>
-            <li>Share links that reopen the exact view</li>
-            <li>Notifications</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ─────────────────────────  API / OPEN DATA  ───────────────────────── -->
-  <!--
-    NOTE FOR PABLO: confirm whether there will be an API. Left as "Planned" so it
-    doesn't promise something that doesn't run yet. Update text and links once defined.
-  -->
-  <section class="section section--alt" id="api">
-    <div class="wrap">
-      <div class="section__head">
-        <span class="tag">Planned</span>
-        <h2 class="section__title">API and open data</h2>
-        <p class="section__sub">
-          WeatherTS is built on public data and the code is open. The plan is to expose an API for
-          people to build on — still being defined.
-        </p>
-      </div>
-
-      <div class="api">
-        <div class="api-card">
-          <p class="api-card__src">DATA API</p>
-          <h3 class="api-card__title">Programmatic data access</h3>
-          <p class="api-card__desc">
-            An API to query the same layers as the platform — radar, models, satellite — headless,
-            to integrate into other projects. Scope still being defined.
-          </p>
-        </div>
-        <div class="api-card">
-          <p class="api-card__src">PUBLIC DATA</p>
-          <h3 class="api-card__title">Built on public sources</h3>
-          <p class="api-card__desc">
-            Everything on screen comes from feeds anyone can read — NWS, NOAA, ECMWF, RainViewer and
-            others. No private licence sits between you and the data.
-          </p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ─────────────────────────  FAQ  ───────────────────────── -->
-  <section class="section" id="faq">
-    <div class="wrap section__narrow">
-      <div class="section__head">
-        <h2 class="section__title">Questions</h2>
-      </div>
-
-      <div class="faq">
-        <details class="faq-item">
-          <summary>Is it really free?</summary>
-          <p>Yes. WeatherTS is free, with no paid tier and no locked features.</p>
-        </details>
-        <details class="faq-item">
-          <summary>Does it work outside the US?</summary>
-          <p>Yes. Satellite, radar, models, ensembles, weather warnings and observations have global coverage. A few US-specific products — SPC/WPC/CPC outlooks, local storm reports, MRMS/RTMA, NadoCast — are marked <span class="us us--inline">US</span>.</p>
-        </details>
-        <details class="faq-item">
-          <summary>Is it available now?</summary>
-          <p>Yes — a demo build is out for five days. The download always gives you the newest release, and it installs on Windows 64-bit. It is still in active development, so expect rough edges.</p>
-        </details>
-        <details class="faq-item">
-          <summary>What happens after the five days?</summary>
-          <p>That depends on how it goes. If people get on with it, the demo stays up as a public beta. Either way, <a href="#lista">the waitlist</a> is where that gets announced.</p>
-        </details>
-        <details class="faq-item">
-          <summary>Where does the data come from?</summary>
-          <p>Public sources worldwide: NWS, NOAA, ECMWF, GOES/Meteosat/Himawari, RainViewer and open model data, among others.</p>
-        </details>
-        <details class="faq-item">
-          <summary>Can I run it myself?</summary>
-          <p>Yes. The code is open (TypeScript), so you can follow it, extend it or self-host.</p>
-        </details>
-        <details class="faq-item">
-          <summary>Will there be an API?</summary>
-          <p>That's the plan — a data API is being defined. See the API section above.</p>
-        </details>
-        <details class="faq-item">
-          <summary>Who is it for?</summary>
-          <p>Meteorologists and forecasters first, but also storm chasers, researchers and students.</p>
-        </details>
-      </div>
-    </div>
-  </section>
-
-  <!-- ─────────────────────────  CREDITS  ───────────────────────── -->
-  <section class="section" id="credits">
-    <div class="wrap section__narrow">
-      <p class="kicker">Credits</p>
-      <h2 class="section__title">Made by Pablo Arzão</h2>
-      <p class="lede">
-        WeatherTS is built by <a href="https://github.com/pabloarzaosc" target="_blank" rel="noopener">Pablo Arzão</a> —
-        a Brazilian teenager with a deep passion for programming and meteorology, bringing the two
-        together into a single free platform.
-      </p>
-      <p class="credits__handle">
-        <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.2.4a13.6 13.6 0 0 1 4.2 2.1A18.9 18.9 0 0 0 12 4.4c-2.6 0-5 .4-7.4 1.1A13.6 13.6 0 0 1 8.8 3.4L8.6 3a19.8 19.8 0 0 0-4.9 1.4C1 8.9.3 13.3.6 17.6a19.9 19.9 0 0 0 6 3l1.2-1.7c-.9-.3-1.8-.8-2.6-1.3l.6-.5a14.2 14.2 0 0 0 12.4 0l.6.5c-.8.5-1.7 1-2.6 1.3l1.2 1.7a19.9 19.9 0 0 0 6-3c.4-5-.7-9.3-3.1-13.2ZM8.5 15c-1.2 0-2.1-1.1-2.1-2.4S7.3 10.2 8.5 10.2s2.2 1.1 2.2 2.4S9.7 15 8.5 15Zm7 0c-1.2 0-2.1-1.1-2.1-2.4s.9-2.4 2.1-2.4 2.2 1.1 2.2 2.4S16.7 15 15.5 15Z"/></svg>justnarrow
-      </p>
-      <p class="credits__note">Inspired by AguaceroWx — thank you for being a huge inspiration for this project.</p>
-    </div>
-
-    <!-- The testers. Their Discord handle is the useful thing to print beside
-         a name -- it is where this project is discussed. -->
-    <div class="wrap">
-      <p class="people__label">Thank you for helping with this development</p>
-      <div class="people">
-        <div class="person">
-          <img class="person__face" src="assets/CyberWall.png" width="44" height="44" alt="" loading="lazy" />
-          <div class="person__who">
-            <b class="person__name">CyberWall</b>
-            <span class="person__role">Tester</span>
-            <span class="person__nick"><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.2.4a13.6 13.6 0 0 1 4.2 2.1A18.9 18.9 0 0 0 12 4.4c-2.6 0-5 .4-7.4 1.1A13.6 13.6 0 0 1 8.8 3.4L8.6 3a19.8 19.8 0 0 0-4.9 1.4C1 8.9.3 13.3.6 17.6a19.9 19.9 0 0 0 6 3l1.2-1.7c-.9-.3-1.8-.8-2.6-1.3l.6-.5a14.2 14.2 0 0 0 12.4 0l.6.5c-.8.5-1.7 1-2.6 1.3l1.2 1.7a19.9 19.9 0 0 0 6-3c.4-5-.7-9.3-3.1-13.2ZM8.5 15c-1.2 0-2.1-1.1-2.1-2.4S7.3 10.2 8.5 10.2s2.2 1.1 2.2 2.4S9.7 15 8.5 15Zm7 0c-1.2 0-2.1-1.1-2.1-2.4s.9-2.4 2.1-2.4 2.2 1.1 2.2 2.4S16.7 15 15.5 15Z"/></svg>cyberwall1</span>
-          </div>
-        </div>
-        <div class="person">
-          <img class="person__face" src="assets/Ded%20Banana%20Man.webp" width="44" height="44" alt="" loading="lazy" />
-          <div class="person__who">
-            <b class="person__name">Ded Banana man</b>
-            <span class="person__role">Tester</span>
-            <span class="person__nick"><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.2.4a13.6 13.6 0 0 1 4.2 2.1A18.9 18.9 0 0 0 12 4.4c-2.6 0-5 .4-7.4 1.1A13.6 13.6 0 0 1 8.8 3.4L8.6 3a19.8 19.8 0 0 0-4.9 1.4C1 8.9.3 13.3.6 17.6a19.9 19.9 0 0 0 6 3l1.2-1.7c-.9-.3-1.8-.8-2.6-1.3l.6-.5a14.2 14.2 0 0 0 12.4 0l.6.5c-.8.5-1.7 1-2.6 1.3l1.2 1.7a19.9 19.9 0 0 0 6-3c.4-5-.7-9.3-3.1-13.2ZM8.5 15c-1.2 0-2.1-1.1-2.1-2.4S7.3 10.2 8.5 10.2s2.2 1.1 2.2 2.4S9.7 15 8.5 15Zm7 0c-1.2 0-2.1-1.1-2.1-2.4s.9-2.4 2.1-2.4 2.2 1.1 2.2 2.4S16.7 15 15.5 15Z"/></svg>dedbananaa</span>
-          </div>
-        </div>
-        <div class="person">
-          <img class="person__face" src="assets/Chaseuu.webp" width="44" height="44" alt="" loading="lazy" />
-          <div class="person__who">
-            <b class="person__name">Chaseuu</b>
-            <span class="person__role">Tester</span>
-            <span class="person__nick"><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.2.4a13.6 13.6 0 0 1 4.2 2.1A18.9 18.9 0 0 0 12 4.4c-2.6 0-5 .4-7.4 1.1A13.6 13.6 0 0 1 8.8 3.4L8.6 3a19.8 19.8 0 0 0-4.9 1.4C1 8.9.3 13.3.6 17.6a19.9 19.9 0 0 0 6 3l1.2-1.7c-.9-.3-1.8-.8-2.6-1.3l.6-.5a14.2 14.2 0 0 0 12.4 0l.6.5c-.8.5-1.7 1-2.6 1.3l1.2 1.7a19.9 19.9 0 0 0 6-3c.4-5-.7-9.3-3.1-13.2ZM8.5 15c-1.2 0-2.1-1.1-2.1-2.4S7.3 10.2 8.5 10.2s2.2 1.1 2.2 2.4S9.7 15 8.5 15Zm7 0c-1.2 0-2.1-1.1-2.1-2.4s.9-2.4 2.1-2.4 2.2 1.1 2.2 2.4S16.7 15 15.5 15Z"/></svg>chase_editz2</span>
-          </div>
-        </div>
-        <div class="person">
-          <img class="person__face" src="assets/Himynameis.webp" width="44" height="44" alt="" loading="lazy" />
-          <div class="person__who">
-            <b class="person__name">Himmynameis</b>
-            <span class="person__role">Tester</span>
-            <span class="person__nick"><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.2.4a13.6 13.6 0 0 1 4.2 2.1A18.9 18.9 0 0 0 12 4.4c-2.6 0-5 .4-7.4 1.1A13.6 13.6 0 0 1 8.8 3.4L8.6 3a19.8 19.8 0 0 0-4.9 1.4C1 8.9.3 13.3.6 17.6a19.9 19.9 0 0 0 6 3l1.2-1.7c-.9-.3-1.8-.8-2.6-1.3l.6-.5a14.2 14.2 0 0 0 12.4 0l.6.5c-.8.5-1.7 1-2.6 1.3l1.2 1.7a19.9 19.9 0 0 0 6-3c.4-5-.7-9.3-3.1-13.2ZM8.5 15c-1.2 0-2.1-1.1-2.1-2.4S7.3 10.2 8.5 10.2s2.2 1.1 2.2 2.4S9.7 15 8.5 15Zm7 0c-1.2 0-2.1-1.1-2.1-2.4s.9-2.4 2.1-2.4 2.2 1.1 2.2 2.4S16.7 15 15.5 15Z"/></svg>himynameis0101</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ─────────────────────────  DOWNLOAD  ───────────────────────── -->
-  <!--
-    Every fact in here is filled in by main.js from the newest release. Nothing
-    below names a version, a size or a date in the markup, so the page cannot
-    fall out of date with the thing it is handing out.
-  -->
-  <section class="section section--alt" id="download">
-    <div class="wrap section__narrow dl__inner">
-      <h2 class="section__title">Download</h2>
-      <p class="lede">
-        Always the newest release. The link is resolved the moment the page loads, so it never
-        points at a build that has been superseded.
-      </p>
-
-      <a class="btn btn--solid btn--lg js-dl" href="https://github.com/pabloarzaosc/WeatherTS/releases/latest" target="_blank" rel="noopener">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 11l5 5 5-5M4 20h16"/></svg>
-        Download for Windows
-      </a>
-
-      <dl class="dl__facts">
-        <div class="dl__fact"><dt>Version</dt><dd id="dl-version">checking…</dd></div>
-        <div class="dl__fact"><dt>Size</dt><dd id="dl-size">—</dd></div>
-        <div class="dl__fact"><dt>Released</dt><dd id="dl-date">—</dd></div>
-        <div class="dl__fact"><dt>Requires</dt><dd>Windows 10 or 11, 64-bit</dd></div>
+      <dl class="facts">
+        <div class="facts__cell"><dt>NEXRAD radars</dt><dd data-count="150" data-suffix="+">150+</dd></div>
+        <div class="facts__cell"><dt>Satellite products</dt><dd data-count="96">96</dd></div>
+        <div class="facts__cell"><dt>Analysis products</dt><dd data-count="103">103</dd></div>
+        <div class="facts__cell"><dt>Pressure models</dt><dd data-count="37">37</dd></div>
       </dl>
-
-      <p class="dl__note">
-        <a id="dl-notes" href="https://github.com/pabloarzaosc/WeatherTS/releases/latest" target="_blank" rel="noopener">Read what changed in this release ↗</a>
-        <span class="dl__sep">·</span>
-        The installer updates itself from here, so this is a one-time trip.
-      </p>
     </div>
-  </section>
+  </header>
 
-  <!-- ─────────────────────────  FINAL CTA  ───────────────────────── -->
-  <section class="section cta" id="lista">
-    <div class="wrap section__narrow cta__inner">
-      <h2 class="section__title">Find out what happens after the demo</h2>
-      <p class="lede">
-        Leave your email and I'll tell you whether the demo stays up as a public beta. One message, and only that one.
-      </p>
+  <main>
 
-      <form class="waitlist" id="waitlist" novalidate>
-        <div class="waitlist__field">
-          <label class="visually-hidden" for="email">Your email</label>
-          <input type="email" id="email" name="email" inputmode="email" autocomplete="email" placeholder="you@example.com" required />
-          <button class="btn btn--solid" type="submit">Join the waitlist</button>
+    <!-- ─────────────  WHAT WORKS TODAY  ─────────────
+         Only what the app ships, taken from the layer registry, the catalog
+         and the release notes. Coverage is stated per group, not claimed
+         for the whole page. -->
+    <section class="section" id="today">
+      <div class="wrap">
+        <div class="head">
+          <p class="head__label">What works today</p>
+          <h2 class="head__title">Everything below is in the app you download.</h2>
+          <p class="head__sub">
+            Grouped the way the app's catalog is. Each group says where it covers: satellite and
+            station data are worldwide, radar is the NEXRAD network, and most alerts and analyses
+            are US products.
+          </p>
         </div>
-        <p class="waitlist__msg" id="waitlist-msg" role="status" aria-live="polite"></p>
-      </form>
+
+        <div class="groups">
+          <section class="group">
+            <header class="group__head">
+              <svg class="ic"><use href="#i-radar"/></svg>
+              <h3>Radar</h3>
+              <span class="tag">NEXRAD</span>
+            </header>
+            <ul class="group__list">
+              <li>Level III and super-resolution Level II from the NEXRAD network, including its sites in Puerto Rico, Hawaii, Alaska, Guam, Korea and the Azores.</li>
+              <li>Each radar's real products and tilts, checked when you pick it: low cuts below 0.5° and upper tilts up to 19.5° where the radar flies them.</li>
+              <li>Dual-pol: correlation coefficient, differential reflectivity, specific differential phase and hydrometeor classification, plus spectrum width, differential phase and clutter filter power from Level II.</li>
+              <li>Echo tops, VIL and precipitation accumulations.</li>
+              <li>Storm tracks with forecast positions, hail size, rotation and TVS markers, and the towns in each path.</li>
+              <li>Loops and archive playback: Level III back to March 2022, Level II for any date.</li>
+              <li>The value under the pointer, and GR palettes with a unit per product.</li>
+              <li>VAD wind profiles as a time–height display, with a hodograph.</li>
+            </ul>
+          </section>
+
+          <section class="group">
+            <header class="group__head">
+              <svg class="ic"><use href="#i-satellite"/></svg>
+              <h3>Satellite</h3>
+              <span class="tag">Worldwide</span>
+            </header>
+            <ul class="group__list">
+              <li>Thirteen satellites and groups: GOES-East and GOES-West with their 5-minute blend, Himawari, Meteosat MTG-I and MSG, Metop, NOAA-20 and NOAA-21, Suomi NPP, Terra, Aqua, Sentinel-3 and a global mosaic.</li>
+              <li>96 products: visible, infrared, water vapor, RGB composites, lightning and derived products.</li>
+              <li>Loops from 1 hour to 7 days. Frames download only when you press play, and a stop button ends it.</li>
+              <li>Full screen resolution when you stop to look, with borders and place names drawn on top.</li>
+            </ul>
+          </section>
+
+          <section class="group">
+            <header class="group__head">
+              <svg class="ic"><use href="#i-eye"/></svg>
+              <h3>Observations</h3>
+              <span class="tag">North America</span>
+            </header>
+            <ul class="group__list">
+              <li>HRRR, RAP and RTMA analyses every hour, and RTMA Rapid Update every 15 minutes.</li>
+              <li>103 products, from surface and upper air to severe weather (CAPE, SRH, STP, SCP) and winter weather.</li>
+              <li>Labelled contours, wind barbs, the value under the pointer, and place names with the value under each one.</li>
+              <li>Up to 7 days of frames on the timeline.</li>
+            </ul>
+          </section>
+
+          <section class="group">
+            <header class="group__head">
+              <svg class="ic"><use href="#i-thermo"/></svg>
+              <h3>Surface and soundings</h3>
+              <span class="tag">Worldwide</span>
+            </header>
+            <ul class="group__list">
+              <li>METAR station plots anywhere in the world, with each station's recent history.</li>
+              <li>SHARPpy soundings from radiosondes, model point forecasts and ACARS aircraft profiles.</li>
+              <li>Analysis, risk, comparison and trend views, and your own soundings by upload.</li>
+            </ul>
+          </section>
+
+          <section class="group">
+            <header class="group__head">
+              <svg class="ic"><use href="#i-alert"/></svg>
+              <h3>Alerts, reports and outlooks</h3>
+              <span class="tag">US</span>
+            </header>
+            <ul class="group__list">
+              <li>NWS warnings, watches and advisories with full VTEC decoding, on every pane, with an alert rail.</li>
+              <li>Local storm reports, and SPC mesoscale discussions with WPC precipitation discussions.</li>
+              <li>SPC outlooks for Days 1 to 5, WPC excessive rainfall for Days 1 to 3, and CPC 6–10 and 8–14 day outlooks and hazards.</li>
+              <li>NadoCast tornado, significant tornado, wind and hail probabilities.</li>
+            </ul>
+          </section>
+
+          <section class="group">
+            <header class="group__head">
+              <svg class="ic"><use href="#i-gauge"/></svg>
+              <h3>Pressure</h3>
+              <span class="tag">Worldwide</span>
+            </header>
+            <ul class="group__list">
+              <li>Sea level pressure isobars from 37 models and 1000–500 mb thickness from 28, from NOAA, ECMWF, DWD, the Met Office and Environment Canada.</li>
+            </ul>
+          </section>
+
+          <section class="group">
+            <header class="group__head">
+              <svg class="ic"><use href="#i-grid"/></svg>
+              <h3>Workspace</h3>
+            </header>
+            <ul class="group__list">
+              <li>Split screen into 1, 2, 4 or 6 panes on one camera and one timeline.</li>
+              <li>Nine basemaps across vector, imagery and terrain, and a globe projection.</li>
+              <li>Distance, area and radius measurements on the map.</li>
+              <li>Export the view as PNG, or an animation as GIF or MP4.</li>
+              <li>Place search, and light, dark and automatic themes.</li>
+              <li>No account needed. Sign in to share your position with other chasers, see theirs and pin your home.</li>
+              <li>Updates install themselves on the next launch.</li>
+            </ul>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────  WHY  ───────────── -->
+    <section class="section section--band" id="why">
+      <div class="wrap narrow">
+        <p class="head__label">Why WeatherTS</p>
+        <p class="lede">
+          Radar, satellite, analyses, soundings and alerts usually live in separate services, and much
+          of the advanced part sits behind paid plans. WeatherTS reads public data from NOAA, the NWS,
+          NASA, EUMETSAT, ECMWF and others, and puts it on one map and one timeline, with no paid plan
+          and no usage limit.
+        </p>
+      </div>
+    </section>
+
+    <!-- ─────────────  IN DEVELOPMENT  ─────────────
+         Two columns. Something moves to "What works today" only when it ships,
+         and something removed from the app comes off this page too. -->
+    <section class="section" id="next">
+      <div class="wrap">
+        <div class="head">
+          <p class="head__label">In development</p>
+          <h2 class="head__title">What is being built, and what comes after.</h2>
+        </div>
+
+        <div class="road">
+          <section class="group group--wip">
+            <header class="group__head"><h3>Being built</h3></header>
+            <ul class="group__list">
+              <li>The MRMS national mosaic — already in the catalog, locked until it is ready.</li>
+              <li>Surface fronts, back in the catalog.</li>
+              <li>Model fields beyond pressure and thickness.</li>
+              <li>A total lightning layer.</li>
+            </ul>
+          </section>
+          <section class="group group--later">
+            <header class="group__head"><h3>Planned</h3></header>
+            <ul class="group__list">
+              <li>Radar beyond the NEXRAD network.</li>
+              <li>Warnings from other countries, through CAP.</li>
+              <li>Cross sections and meteograms.</li>
+              <li>Tropical cyclones, aviation and marine products.</li>
+              <li>Share links that reopen your exact view.</li>
+              <li>Notifications on thresholds you set.</li>
+              <li>A data API.</li>
+            </ul>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────  DOWNLOAD  ─────────────
+         Every fact is filled in by main.js from the newest release, so nothing
+         here can fall out of date with the file it hands out. -->
+    <section class="section section--band" id="download">
+      <div class="wrap narrow center">
+        <p class="head__label">Download</p>
+        <h2 class="head__title">Always the newest release.</h2>
+        <p class="lede">The link is resolved when the page loads, and the app updates itself from then on.</p>
+
+        <a class="btn btn--fill btn--lg js-dl" href="https://github.com/pabloarzaosc/WeatherTS/releases/latest" target="_blank" rel="noopener">
+          <svg class="ic"><use href="#i-download"/></svg>
+          Download for Windows
+        </a>
+
+        <dl class="facts facts--dl">
+          <div class="facts__cell"><dt>Version</dt><dd id="dl-version">checking…</dd></div>
+          <div class="facts__cell"><dt>Size</dt><dd id="dl-size">—</dd></div>
+          <div class="facts__cell"><dt>Released</dt><dd id="dl-date">—</dd></div>
+          <div class="facts__cell"><dt>Requires</dt><dd>Windows 10 or 11, 64-bit</dd></div>
+        </dl>
+
+        <p class="note">
+          <a id="dl-notes" href="https://github.com/pabloarzaosc/WeatherTS/releases/latest" target="_blank" rel="noopener">What changed in this release ↗</a>
+        </p>
+      </div>
+    </section>
+
+    <!-- ─────────────  FAQ  ───────────── -->
+    <section class="section" id="faq">
+      <div class="wrap narrow">
+        <div class="head head--left">
+          <p class="head__label">Questions</p>
+        </div>
+
+        <div class="faq">
+          <details class="faq__item">
+            <summary>Is it really free?</summary>
+            <p>Yes. There is no paid tier, no locked feature and no usage limit.</p>
+          </details>
+          <details class="faq__item">
+            <summary>Do I need an account?</summary>
+            <p>No. The app opens without one. Signing in is only for sharing your position with other chasers, seeing theirs, and pinning your home.</p>
+          </details>
+          <details class="faq__item">
+            <summary>Does it work outside the US?</summary>
+            <p>In part. Satellite, METAR observations and the pressure charts cover the world. Radar is the NEXRAD network: the US and its sites in Puerto Rico, Hawaii, Alaska, Guam, Korea and the Azores. Alerts, storm reports, outlooks and the HRRR and RTMA analyses are US products, and the RAP covers North America.</p>
+          </details>
+          <details class="faq__item">
+            <summary>How do updates work?</summary>
+            <p>Installed copies check for a new release when they start and install it on the next launch. You only download the installer once.</p>
+          </details>
+          <details class="faq__item">
+            <summary>Where does the data come from?</summary>
+            <p>Public sources: NOAA and the NWS (NEXRAD, HRRR, RAP, RTMA, SPC, WPC, CPC), NASA GIBS, NOAA nowCOAST, EUMETSAT, the Aviation Weather Center, ECMWF, DWD, the Met Office, Environment Canada, the Iowa Environmental Mesonet and NadoCast.</p>
+          </details>
+          <details class="faq__item">
+            <summary>Can I see the code?</summary>
+            <p>Yes. It is on <a href="https://github.com/pabloarzaosc/WeatherTS" target="_blank" rel="noopener">GitHub</a>, with every release.</p>
+          </details>
+          <details class="faq__item">
+            <summary>Will there be an API?</summary>
+            <p>That is the plan, and it is still being defined.</p>
+          </details>
+          <details class="faq__item">
+            <summary>Who is it for?</summary>
+            <p>Meteorologists and forecasters first, and storm chasers, researchers and students too.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────  CREDITS  ───────────── -->
+    <section class="section section--band" id="credits">
+      <div class="wrap narrow">
+        <p class="head__label">Credits</p>
+        <h2 class="head__title">Made by Pablo Arzão</h2>
+        <p class="lede">
+          WeatherTS is built by <a href="https://github.com/pabloarzaosc" target="_blank" rel="noopener">Pablo Arzão</a>,
+          a Brazilian teenager with a deep passion for programming and meteorology, bringing the two
+          together into a single free platform.
+        </p>
+        <p class="handle"><svg class="ic ic--fill"><use href="#i-discord"/></svg>justnarrow</p>
+        <p class="note">Inspired by AguaceroWx — thank you for being a huge inspiration for this project.</p>
+      </div>
+
+      <!-- The testers. Their Discord handle is the useful thing to print beside
+           a name: it is where this project is discussed. -->
+      <div class="wrap">
+        <p class="people__label">Thank you for helping with this development</p>
+        <div class="people">
+          <div class="person">
+            <img class="person__face" src="assets/CyberWall.png" width="40" height="40" alt="" loading="lazy" />
+            <div class="person__who">
+              <b class="person__name">CyberWall</b>
+              <span class="person__role">Tester</span>
+              <span class="person__nick"><svg class="ic ic--fill"><use href="#i-discord"/></svg>cyberwall1</span>
+            </div>
+          </div>
+          <div class="person">
+            <img class="person__face" src="assets/Ded%20Banana%20Man.webp" width="40" height="40" alt="" loading="lazy" />
+            <div class="person__who">
+              <b class="person__name">Ded Banana man</b>
+              <span class="person__role">Tester</span>
+              <span class="person__nick"><svg class="ic ic--fill"><use href="#i-discord"/></svg>dedbananaa</span>
+            </div>
+          </div>
+          <div class="person">
+            <img class="person__face" src="assets/Chaseuu.webp" width="40" height="40" alt="" loading="lazy" />
+            <div class="person__who">
+              <b class="person__name">Chaseuu</b>
+              <span class="person__role">Tester</span>
+              <span class="person__nick"><svg class="ic ic--fill"><use href="#i-discord"/></svg>chase_editz2</span>
+            </div>
+          </div>
+          <div class="person">
+            <img class="person__face" src="assets/Himynameis.webp" width="40" height="40" alt="" loading="lazy" />
+            <div class="person__who">
+              <b class="person__name">Himmynameis</b>
+              <span class="person__role">Tester</span>
+              <span class="person__nick"><svg class="ic ic--fill"><use href="#i-discord"/></svg>himynameis0101</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────  WAITLIST  ───────────── -->
+    <section class="section" id="lista">
+      <div class="wrap narrow center">
+        <p class="head__label">When it leaves beta</p>
+        <h2 class="head__title">One email, when WeatherTS leaves beta.</h2>
+        <p class="lede">Leave your address and you will get that one message, and nothing else.</p>
+
+        <form class="waitlist" id="waitlist" novalidate>
+          <div class="waitlist__field">
+            <label class="visually-hidden" for="email">Your email</label>
+            <input type="email" id="email" name="email" inputmode="email" autocomplete="email" placeholder="you@example.com" required />
+            <button class="btn btn--fill" type="submit">Join the list</button>
+          </div>
+          <p class="waitlist__msg" id="waitlist-msg" role="status" aria-live="polite"></p>
+        </form>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ─────────────  FOOTER  ───────────── -->
+  <footer class="footer">
+    <div class="wrap footer__grid">
+      <div class="footer__brand">
+        <p class="hero__brand hero__brand--sm">
+          <img src="assets/logo.png" width="28" height="22" alt="" />
+          <span>Weather<b>TS</b></span>
+        </p>
+        <p>A free weather workstation, in public beta.</p>
+      </div>
+      <nav class="footer__col" aria-label="Page">
+        <p class="footer__h">Page</p>
+        <a href="#today">What works today</a>
+        <a href="#next">In development</a>
+        <a href="#download">Download</a>
+        <a href="#faq">Questions</a>
+      </nav>
+      <nav class="footer__col" aria-label="Project">
+        <p class="footer__h">Project</p>
+        <a href="https://github.com/pabloarzaosc/WeatherTS" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/pabloarzaosc/WeatherTS/releases" target="_blank" rel="noopener">Releases</a>
+        <a href="#lista">Email list</a>
+      </nav>
+      <div class="footer__col">
+        <p class="footer__h">Data</p>
+        <span class="footer__note">NOAA · NWS · NASA GIBS · nowCOAST · EUMETSAT · AWC · ECMWF · DWD · Met Office · ECCC · IEM · NadoCast</span>
+      </div>
     </div>
-  </section>
-
-</main>
-
-<!-- ─────────────────────────  FOOTER  ───────────────────────── -->
-<footer class="footer">
-  <div class="wrap footer__grid">
-    <div class="footer__brand">
-      <span class="brand">
-        <img class="brand__logo" src="assets/logo.png" width="28" height="22" alt="WeatherTS logo" />
-        Weather<span class="brand__ts">TS</span>
-      </span>
-      <p>A meteorology platform, free, with global coverage. In development.</p>
+    <div class="wrap footer__base">
+      <span>© <span id="ano">2026</span> WeatherTS</span>
+      <span>Built for meteorologists.</span>
     </div>
+  </footer>
 
-    <nav class="footer__col" aria-label="Project">
-      <p class="footer__h">Project</p>
-      <a href="#recursos">Features</a>
-      <a href="#how">How it works</a>
-      <a href="#roadmap">Roadmap</a>
-      <a href="#api">API</a>
-      <a href="#faq">FAQ</a>
-    </nav>
-
-    <nav class="footer__col" aria-label="Community">
-      <p class="footer__h">Community</p>
-      <a href="https://github.com/pabloarzaosc/WeatherTS" target="_blank" rel="noopener">GitHub</a>
-      <a href="#lista">Waitlist</a>
-    </nav>
-
-    <nav class="footer__col" aria-label="Data sources">
-      <p class="footer__h">Data</p>
-      <span class="footer__note">NWS · NOAA · ECMWF · GOES · Meteosat · Himawari · ICON · RainViewer · NadoCast · CAP · USGS</span>
-    </nav>
-  </div>
-
-  <div class="wrap footer__base">
-    <span>© <span id="ano">2026</span> WeatherTS</span>
-    <span>Built for meteorologists.</span>
-  </div>
-</footer>
+</div>
 
 <script src="main.js"></script>
+</body>
+</html>

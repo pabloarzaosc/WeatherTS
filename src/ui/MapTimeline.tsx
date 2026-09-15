@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Pause, Play, Repeat, SkipBack, SkipForward } from "lucide-react";
 
+import { getSetting } from "../settings/useSettingsStore";
 import { useSoundingViewerStore } from "../store/useSoundingViewerStore";
 import { useAlertStore } from "../store/useAlertStore";
 import { useAppStore } from "../store/useAppStore";
@@ -15,7 +16,6 @@ import { useSatStore } from "../store/useSatStore";
 /** Stable empty array so the selector doesn't rerender on every store tick. */
 const NO_HOURS: number[] = [];
 
-const PLAY_BASE_MS = 2800;
 const PLAY_SPEEDS = [1, 2, 4, 8, 12, 16, 20] as const;
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MO = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -113,8 +113,12 @@ export function MapTimeline() {
   const modelRunIso = useMslpStore((s) => s.runIso);
 
   const [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState<(typeof PLAY_SPEEDS)[number]>(1);
-  const [loop, setLoop] = useState(false);
+  // Where playback starts comes from Settings; the buttons change it for the session.
+  const [speed, setSpeed] = useState<(typeof PLAY_SPEEDS)[number]>(() => {
+    const wanted = Number(getSetting<string>("timeline.speed"));
+    return PLAY_SPEEDS.find((v) => v === wanted) ?? 1;
+  });
+  const [loop, setLoop] = useState(() => getSetting<boolean>("timeline.loop"));
   const [obsTimes] = useState<number[]>(() => recentSynoptic());
   const [lsrNow] = useState<number>(() => Date.now() / 1000);
   const lsrTimes = recentQuarterHours(lsrEndUnix ?? lsrNow);
@@ -325,7 +329,7 @@ export function MapTimeline() {
     // same rule as soundings: never run ahead of what's drawn.
     async function runRadar() {
       while (!cancelled) {
-        await wait(700 / speed);
+        await wait(getSetting<number>("timeline.radarMs") / speed);
         if (cancelled) return;
         const rs = useNexradStore.getState();
         const max = Math.max(rs.scans.length - 1, 0);
@@ -345,7 +349,7 @@ export function MapTimeline() {
 
     async function run() {
       while (!cancelled) {
-        await wait(PLAY_BASE_MS / speed);
+        await wait(getSetting<number>("timeline.soundingMs") / speed);
         if (cancelled) return;
         const st = useSoundingViewerStore.getState();
         if (!st.data) return;
@@ -370,7 +374,7 @@ export function MapTimeline() {
     // the draw to commit before stepping instead of queueing requests.
     async function runModel() {
       while (!cancelled) {
-        await wait(600 / speed);
+        await wait(getSetting<number>("timeline.modelMs") / speed);
         if (cancelled) return;
         const ms = useModelStore.getState();
         const hours = selectCurrentModel(ms)?.hours ?? [];
@@ -395,7 +399,7 @@ export function MapTimeline() {
     // fresh window fetch, so wait for it to land before advancing.
     async function runLsr() {
       while (!cancelled) {
-        await wait(900 / speed);
+        await wait(getSetting<number>("timeline.lsrMs") / speed);
         if (cancelled) return;
         const ls = useLsrStore.getState();
         const current = ls.endUnix ?? lsrTimes[lsrTimes.length - 1];
@@ -419,7 +423,8 @@ export function MapTimeline() {
     async function runFrames(
       read: () => { index: number; length: number; busy: boolean },
       go: (i: number) => void,
-      dwell: number,
+      /** Time per frame at 1x, read each step so a change in Settings lands mid-loop. */
+      dwell: () => number,
       /** First frame of the loop; the end wraps back here. */
       first = 0,
     ) {
@@ -433,7 +438,7 @@ export function MapTimeline() {
         }
       }
       while (!cancelled) {
-        await wait(dwell / speed);
+        await wait(dwell() / speed);
         if (cancelled) return;
         const { index, length } = read();
         if (length === 0) return;
@@ -455,7 +460,7 @@ export function MapTimeline() {
     // is the paint.
     async function runFronts() {
       while (!cancelled) {
-        await wait(1100 / speed);
+        await wait(getSetting<number>("timeline.frontsMs") / speed);
         if (cancelled) return;
         const fs = useFrontsStore.getState();
         const atEnd = fs.index >= fs.frames.length - 1;
@@ -476,7 +481,7 @@ export function MapTimeline() {
               return { index: s.index, length: s.frames.length, busy: s.busy };
             },
             (i) => useSatStore.getState().setIndex(i),
-            350,
+            () => getSetting<number>("timeline.satMs"),
           )
       : isObs
         ? runFrames(
@@ -487,7 +492,7 @@ export function MapTimeline() {
             (i) => useObsStore.getState().setIndex(i),
             // The whole timeline is the loop now -- its length is picked in the
             // panel -- and its frames are made ahead, so it steps like satellite.
-            400,
+            () => getSetting<number>("timeline.obsMs"),
           )
       : isModel
         ? runModel()

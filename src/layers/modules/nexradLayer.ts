@@ -111,7 +111,7 @@ function registerSitePills(map: import("maplibre-gl").Map) {
       content: [RAD, 4 * R, W - RAD, H - 4 * R],
     });
   };
-  make(PILL_BG, "rgba(11,15,21,0.82)", "rgba(190,200,210,0.42)");
+  make(PILL_BG, "rgba(20,20,20,0.85)", "rgba(200,200,200,0.42)");
   make(PILL_ACTIVE, "rgba(250,204,21,0.95)", "rgba(255,255,255,0.7)");
   make(PILL_DOWN, "rgba(222,80,80,0.92)", "rgba(255,155,155,0.9)");
 }
@@ -182,8 +182,8 @@ export const nexradLayer: LayerModule = {
             ["==", ["get", "status"], "down"],
             "#ffeded",
             ["get", "active"],
-            "#0a0f16",
-            "#e6eef8",
+            "#121212",
+            "#ececec",
           ],
         },
       });

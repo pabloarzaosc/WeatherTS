@@ -19,6 +19,10 @@ export function holdBasemapLabels(map: MapLibreMap, owner: string, hide: boolean
   holders.set(map, set);
   const visibility = set.size > 0 ? "none" : "visible";
   for (const id of BASEMAP_PLACE_LAYERS) {
-    if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", visibility);
+    if (!map.getLayer(id)) continue;
+    // Unchanged is left alone: a write is a style change, and Settings re-runs
+    // on every style change.
+    const current = map.getLayoutProperty(id, "visibility") ?? "visible";
+    if (current !== visibility) map.setLayoutProperty(id, "visibility", visibility);
   }
 }

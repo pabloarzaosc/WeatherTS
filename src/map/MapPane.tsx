@@ -5,6 +5,7 @@ import { INITIAL_VIEW } from "./mapStyle";
 import { buildBasemapStyle } from "./basemaps";
 import { registerMap, setActivePane, allMaps, subscribeMaps, getActivePaneId, PRIMARY_PANE } from "./mapInstance";
 import { LayerManager } from "../layers/manager";
+import { attachSettings } from "../settings/mapStyle";
 import { useAppStore } from "../store/useAppStore";
 import { useNexradStore } from "../store/useNexradStore";
 import { RadarColorBar } from "../ui/RadarColorBar";
@@ -99,6 +100,8 @@ export function MapPane({ id }: { id: string }) {
     }
 
     const manager = new LayerManager(map);
+    // Settings restyle whatever the modules draw, on this pane as on every other.
+    const detachSettings = attachSettings(map);
 
     /**
      * Sync only once the style can actually take layers, and re-run when it can.
@@ -236,6 +239,7 @@ export function MapPane({ id }: { id: string }) {
 
     return () => {
       ro.disconnect();
+      detachSettings();
       unsubLayers();
       unsubOrder();
       unsubProjection();

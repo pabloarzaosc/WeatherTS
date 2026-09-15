@@ -3,6 +3,7 @@ import type { LayerModule } from "../types";
 import { useAlertStore } from "../../store/useAlertStore";
 import { alertsToFeatureCollection } from "../../lib/nwsAlerts";
 import { markerUnderPoint } from "../clickPriority";
+import { getSetting, useSettingsStore } from "../../settings/useSettingsStore";
 
 const SRC = "alerts-src";
 const FILL = "alerts-fill";
@@ -69,11 +70,14 @@ const NO_OUTLINE: ExpressionSpecification = ["match", kindOf, NO_LINE_KINDS, tru
 function pushFilter(map: import("maplibre-gl").Map) {
   const expr = visibilityExpr();
   if (map.getLayer(FILL)) map.setFilter(FILL, expr);
+  // Settings can outline every tier; by default the colour-only tiers get none.
+  const tiers = getSetting<boolean>("alerts.outlineWatches") ? null : HAS_OUTLINE;
+  const lineFilter = expr && tiers ? (["all", expr, tiers] as ExpressionSpecification) : (expr ?? tiers);
   // The casing is half of the same stroke, so it lives by the same rule -- one
   // left showing under a hidden outline would just be a black border.
   for (const id of [CASING, OUTLINE]) {
     if (!map.getLayer(id)) continue;
-    map.setFilter(id, expr ? (["all", expr, HAS_OUTLINE] as ExpressionSpecification) : HAS_OUTLINE);
+    map.setFilter(id, lineFilter);
   }
 }
 
@@ -232,9 +236,14 @@ export const alertsLayer: LayerModule = {
       (s) => s.categoryFilters,
       () => pushFilter(map),
     );
+    const unsubOutlines = useSettingsStore.subscribe(
+      (s) => s.values["alerts.outlineWatches"],
+      () => pushFilter(map),
+    );
     const unsubTime = () => {
       unsubTimeOnly();
       unsubCategory();
+      unsubOutlines();
     };
     pushFilter(map);
 

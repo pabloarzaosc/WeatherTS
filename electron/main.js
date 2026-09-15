@@ -5,6 +5,7 @@ import fs from 'fs';
 import { fileURLToPath, pathToFileURL } from 'url';
 import updater from 'electron-updater';
 import net from 'net';
+import { splashHtml } from './splash.js';
 const { autoUpdater } = updater;
 
 const __filename = fileURLToPath(import.meta.url);
@@ -102,13 +103,15 @@ function getFreePort(preferredPort) {
   });
 }
 
-function setSplashStatus(text) {
+function setSplashStatus(text, progress = null) {
   // Best effort: the splash may already have been replaced by the real app, or
   // the window closed. Either way this is cosmetic and must never throw.
+  // `progress` (0-1) moves the loading bar; see splash.js.
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  const p = typeof progress === 'number' ? progress : 'null';
   mainWindow.webContents
     .executeJavaScript(
-      `(() => { const el = document.getElementById('splash-status'); if (el) el.textContent = ${JSON.stringify(text)}; })()`
+      `(() => { if (window.__splash) { window.__splash.set(${JSON.stringify(text)}, ${p}); return; } const el = document.getElementById('splash-status'); if (el) el.textContent = ${JSON.stringify(text)}; })()`
     )
     .catch(() => {});
 }
@@ -140,7 +143,8 @@ async function waitForBackend(port) {
       setSplashStatus(
         secs >= 20
           ? `preparing the local server — the first run is slower (${secs}s)`
-          : `starting the local server… (${secs}s)`
+          : `starting the local server… (${secs}s)`,
+        0.25 + Math.min(0.4, secs / 150)
       );
     }
     await new Promise(r => setTimeout(r, 500));
@@ -153,12 +157,12 @@ function showErrorPage(title, detail) {
   const safeDetail = String(detail).replace(/</g, '&lt;').substring(0, 2000);
   mainWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`
     <html>
-      <body style="background-color: #0b1522; color: #e8eef6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: sans-serif; padding: 40px;">
+      <body style="background-color: #202020; color: #ececec; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: sans-serif; padding: 40px;">
         <div style="max-width: 600px; text-align: center;">
           <h1 style="color: #f2715a; margin-bottom: 12px;">${safeTitle}</h1>
-          <p style="color: #aabbd0; font-size: 14px; line-height: 1.5; margin-bottom: 20px;">The backend server failed to start. This usually means Windows Defender (or another antivirus) is still scanning the bundled runtime on first launch — it can take a couple of minutes. On a fresh PC, the VC++ Redistributable may also be missing.</p>
-          <pre style="background: #101d2e; border: 1px solid #22364f; border-radius: 8px; padding: 12px; color: #8196b0; font-size: 11px; text-align: left; overflow-x: auto; max-height: 240px; overflow-y: auto;">${safeDetail}</pre>
-          <p style="color: #8196b0; font-size: 12px; margin-top: 16px;">If this keeps happening, try: (1) wait a minute and launch again — the second run is fast, (2) add <code style="background:#101d2e;padding:1px 6px;border-radius:4px;">%LOCALAPPDATA%\Temp\_MEI*</code> to your AV exclusions, or (3) install the <a href="https://aka.ms/vs/17/release/vc_redist.x64.exe" style="color: #8fb4ff;">Microsoft VC++ Redistributable</a>.</p>
+          <p style="color: #b8b8b8; font-size: 14px; line-height: 1.5; margin-bottom: 20px;">The backend server failed to start. This usually means Windows Defender (or another antivirus) is still scanning the bundled runtime on first launch — it can take a couple of minutes. On a fresh PC, the VC++ Redistributable may also be missing.</p>
+          <pre style="background: #262626; border: 1px solid #353535; border-radius: 8px; padding: 12px; color: #8e8e8e; font-size: 11px; text-align: left; overflow-x: auto; max-height: 240px; overflow-y: auto;">${safeDetail}</pre>
+          <p style="color: #8e8e8e; font-size: 12px; margin-top: 16px;">If this keeps happening, try: (1) wait a minute and launch again — the second run is fast, (2) add <code style="background:#262626;padding:1px 6px;border-radius:4px;">%LOCALAPPDATA%\Temp\_MEI*</code> to your AV exclusions, or (3) install the <a href="https://aka.ms/vs/17/release/vc_redist.x64.exe" style="color: #8fb4ff;">Microsoft VC++ Redistributable</a>.</p>
         </div>
       </body>
     </html>
@@ -188,7 +192,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
-    backgroundColor: '#0b1522',
+    backgroundColor: '#202020',
     title: 'WeatherTS — Geo Workstation',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -226,62 +230,10 @@ function createWindow() {
     if (/^https?:$/.test(protocol)) void shell.openExternal(url);
   });
 
-  // Splash. This is on screen for as long as the backend takes to answer, which
-  // on a cold first run is tens of seconds, so it carries a live status line
-  // (see setSplashStatus) instead of a bare "Loading". The colours are the
-  // app's own tokens from theme.css, inlined because a data: URL has no CSS.
-  mainWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`
-    <html>
-      <head><meta charset="utf-8"></head>
-      <body>
-        <style>
-          body {
-            margin: 0; height: 100vh; display: flex; flex-direction: column;
-            align-items: center; justify-content: center; gap: 20px;
-            background: #0b1522; color: #e8eef6; user-select: none;
-            font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-            -webkit-font-smoothing: antialiased;
-          }
-          .mark {
-            font-family: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
-            font-size: 25px; font-weight: 700; letter-spacing: 0.22em;
-            animation: rise .55s cubic-bezier(.2,.7,.3,1) both;
-          }
-          .mark span { color: #6c9dff; }
-          .bar {
-            width: 186px; height: 2px; border-radius: 2px; overflow: hidden;
-            background: #22364f;
-            animation: rise .55s cubic-bezier(.2,.7,.3,1) .08s both;
-          }
-          .bar i {
-            display: block; width: 38%; height: 100%; border-radius: 2px;
-            background: #6c9dff; animation: slide 1.2s ease-in-out infinite;
-          }
-          .status {
-            font-family: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
-            font-size: 11px; letter-spacing: 0.04em; color: #8196b0;
-            min-height: 14px; text-align: center; padding: 0 24px;
-            animation: rise .55s cubic-bezier(.2,.7,.3,1) .16s both;
-          }
-          @keyframes slide {
-            0% { transform: translateX(-110%); }
-            100% { transform: translateX(370%); }
-          }
-          @keyframes rise {
-            from { opacity: 0; transform: translateY(6px); }
-            to { opacity: 1; transform: none; }
-          }
-          @media (prefers-reduced-motion: reduce) {
-            .bar i { animation: none; width: 100%; opacity: .45; }
-            .mark, .bar, .status { animation: none; }
-          }
-        </style>
-        <div class="mark">WEATHER<span>TS</span></div>
-        <div class="bar"><i></i></div>
-        <div class="status" id="splash-status">starting…</div>
-      </body>
-    </html>
-  `));
+  // Splash: the logo, the name, a loading bar with what is loading under it
+  // (see setSplashStatus) and the version, on screen for as long as the backend
+  // takes to answer -- tens of seconds on a cold first run. See splash.js.
+  mainWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(splashHtml(app.getVersion())));
 
   return mainWindow;
 }
@@ -420,7 +372,7 @@ app.whenReady().then(async () => {
 
     const backendPath = path.join(process.resourcesPath, 'backend', 'weatherts-backend.exe');
     console.log(`Starting backend on port ${assignedPort}:`, backendPath);
-    setSplashStatus('starting the local server…');
+    setSplashStatus('starting the local server…', 0.2);
 
     backendProcess = spawn(backendPath, ['--port', String(assignedPort)], {
       env: { ...process.env, QT_QPA_PLATFORM: 'offscreen' },
@@ -460,14 +412,17 @@ app.whenReady().then(async () => {
     return;
   }
 
-  setSplashStatus('loading the map…');
+  setSplashStatus('loading the map…', 0.8);
 
+  // index.html carries the same screen on, from where this one left off and
+  // without replaying its entrance.
   if (app.isPackaged) {
     const indexUrl = pathToFileURL(path.join(__dirname, '../dist/index.html'));
     indexUrl.searchParams.set('backendPort', String(assignedPort));
+    indexUrl.searchParams.set('splash', 'continue');
     mainWindow.loadURL(indexUrl.toString());
   } else {
-    mainWindow.loadURL('http://localhost:1420');
+    mainWindow.loadURL('http://localhost:1420/?splash=continue');
   }
 
   // A sign-in link that beat the renderer here waits until there is something

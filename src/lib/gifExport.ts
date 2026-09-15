@@ -332,7 +332,7 @@ function paintScale(
 
   const span = vmax - vmin || 1;
   ctx.font = "10px ui-monospace, Consolas, monospace";
-  ctx.fillStyle = "rgba(232,238,246,0.65)";
+  ctx.fillStyle = "rgba(236,236,236,0.65)";
   ctx.textBaseline = "top";
   let lastRight = -Infinity;
   for (const v of palTicks(vmin, vmax, table.step)) {
@@ -356,7 +356,7 @@ function paintClasses(ctx: CanvasRenderingContext2D, table: PalTable, x: number,
     const cx = x + i * cell;
     ctx.fillStyle = c.color;
     ctx.fillRect(Math.round(cx), y, Math.ceil(cell) - 1, h);
-    ctx.fillStyle = "rgba(232,238,246,0.65)";
+    ctx.fillStyle = "rgba(236,236,236,0.65)";
     const tw = ctx.measureText(c.short).width;
     ctx.fillText(c.short, cx + (cell - tw) / 2, y + h + 4);
   });
@@ -380,9 +380,9 @@ function paintCaption(
   },
 ): void {
   const h = captionHeight(w);
-  ctx.fillStyle = "#101d2e";
+  ctx.fillStyle = "#262626";
   ctx.fillRect(0, top, w, h);
-  ctx.fillStyle = "#22364f";
+  ctx.fillStyle = "#353535";
   ctx.fillRect(0, top, w, 1);
 
   const { day, time } = fmtUtc(info.unix);
@@ -390,7 +390,7 @@ function paintCaption(
   ctx.textBaseline = "alphabetic";
 
   if (isNarrow(w)) {
-    ctx.fillStyle = "#e8eef6";
+    ctx.fillStyle = "#ececec";
     // Canvas takes a family name and nothing more: there is no way to reach
     // Recursive's MONO axis from ctx.font. So the labels share the app's face,
     // and the figures stay on the system mono, which is the closest a canvas
@@ -404,7 +404,7 @@ function paintCaption(
     ctx.fillText(counter, w - PAD - ctx.measureText(counter).width, top + 16);
 
     ctx.font = "10px ui-monospace, Consolas, monospace";
-    ctx.fillStyle = "rgba(232,238,246,0.7)";
+    ctx.fillStyle = "rgba(236,236,236,0.7)";
     const line2 = [info.units, info.site, info.tilt].filter(Boolean).join(" · ");
     ctx.fillText(line2, PAD, top + 30);
     const stamp = `${day.replace(/ \d{4}$/, "")} ${time}`;
@@ -414,14 +414,14 @@ function paintCaption(
     return;
   }
 
-  ctx.fillStyle = "#e8eef6";
+  ctx.fillStyle = "#ececec";
   ctx.font = "600 14px 'Recursive Variable', system-ui, 'Segoe UI', sans-serif";
   const title = info.product;
   ctx.fillText(title, PAD, top + 19);
 
   const x = PAD + ctx.measureText(title).width + 8;
   ctx.font = "11px ui-monospace, Consolas, monospace";
-  ctx.fillStyle = "rgba(232,238,246,0.55)";
+  ctx.fillStyle = "rgba(236,236,236,0.55)";
   const sub = [info.units, info.site, info.tilt].filter(Boolean).join("  ·  ");
   ctx.fillText(sub, x, top + 19);
 
@@ -431,7 +431,7 @@ function paintCaption(
   ctx.fillText(counter, w - PAD - cw, top + 19);
 
   ctx.font = "11px ui-monospace, Consolas, monospace";
-  ctx.fillStyle = "rgba(232,238,246,0.75)";
+  ctx.fillStyle = "rgba(236,236,236,0.75)";
   const stamp = `${day}  ${time}`;
   const sw = ctx.measureText(stamp).width;
   ctx.fillText(stamp, w - PAD - cw - 14 - sw, top + 19);
@@ -458,18 +458,18 @@ function paintPaneStrip(
   w: number,
   info: { product: string; units: string; tilt: string; table: PalTable; kind: string },
 ): void {
-  ctx.fillStyle = "#101d2e";
+  ctx.fillStyle = "#262626";
   ctx.fillRect(x, y, w, PANE_STRIP_H);
 
   ctx.textBaseline = "alphabetic";
-  ctx.fillStyle = "#e8eef6";
+  ctx.fillStyle = "#ececec";
   ctx.font = "600 11px 'Recursive Variable', system-ui, 'Segoe UI', sans-serif";
   ctx.fillText(info.product, x + 6, y + 13);
 
   const right = [info.units, info.tilt].filter(Boolean).join("  ");
   if (right) {
     ctx.font = "10px ui-monospace, Consolas, monospace";
-    ctx.fillStyle = "rgba(232,238,246,0.55)";
+    ctx.fillStyle = "rgba(236,236,236,0.55)";
     ctx.fillText(right, x + w - 6 - ctx.measureText(right).width, y + 13);
   }
 
@@ -545,7 +545,7 @@ async function exportPanes(
       await Promise.all(targets.map((t) => settled(t.map)));
       if (cancel.cancelled) throw new GifCancelled();
 
-      ctx.fillStyle = "#0b1522";
+      ctx.fillStyle = "#202020";
       ctx.fillRect(0, 0, w, h);
 
       const st = useNexradStore.getState();
@@ -576,15 +576,15 @@ async function exportPanes(
 
       if (opts.caption) {
         const footY = h - FOOTER_H;
-        ctx.fillStyle = "#101d2e";
+        ctx.fillStyle = "#262626";
         ctx.fillRect(0, footY, w, FOOTER_H);
-        ctx.fillStyle = "#22364f";
+        ctx.fillStyle = "#353535";
         ctx.fillRect(0, footY, w, 1);
 
         const { day, time } = fmtUtc(scans[i].time);
         ctx.textBaseline = "alphabetic";
         ctx.font = "11px ui-monospace, Consolas, monospace";
-        ctx.fillStyle = "rgba(232,238,246,0.8)";
+        ctx.fillStyle = "rgba(236,236,236,0.8)";
         ctx.fillText(`${site}  ${day}  ${time}`, PAD, footY + 18);
 
         const counter = `${String(n + 1).padStart(2, "0")} / ${total}`;
@@ -678,7 +678,7 @@ export async function exportAnimation(
       await settled(map);
       if (cancel.cancelled) throw new GifCancelled();
 
-      ctx.fillStyle = "#0b1522";
+      ctx.fillStyle = "#202020";
       ctx.fillRect(0, 0, w, h);
       ctx.drawImage(src, sx, sy, sw, sh, 0, 0, w, mapH);
 

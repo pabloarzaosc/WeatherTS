@@ -50,26 +50,29 @@ interface Palette {
   halo: string;
 }
 
-/** Near-black. For radar and satellite, where the base should get out of the way. */
+/** Near-black, and neutral: the same grey family as the dark chrome (#202020)
+ *  around it, a shade darker so radar and satellite carry the colour. It was a
+ *  blue-green slate, which read as a second, unrelated colour beside the panels
+ *  once they went grey. Water sits darker than land, as on a night chart. */
 const DARK: Palette = {
-  bg: "#14181b",
-  water: "#1d262c",
-  waterway: "#27333a",
-  wood: "#181f20",
-  grass: "#1b2223",
-  wetland: "#1d2629",
-  ice: "#3d4649",
-  landDefault: "#1a2022",
-  urban: "#222829",
-  urbanPark: "#1e2625",
-  park: "#1d2726",
-  country: "#5f6d73",
-  state: "#48545a",
-  roadMinor: "#3a4245",
-  roadMajor: "#495154",
-  text: "#b9c3c7",
-  textDim: "#93a0a5",
-  halo: "#0b0f11",
+  bg: "#1b1b1b",
+  water: "#131313",
+  waterway: "#2b2b2b",
+  wood: "#1d1d1d",
+  grass: "#1e1e1e",
+  wetland: "#1c1c1c",
+  ice: "#424242",
+  landDefault: "#1c1c1c",
+  urban: "#252525",
+  urbanPark: "#202020",
+  park: "#1f1f1f",
+  country: "#6e6e6e",
+  state: "#525252",
+  roadMinor: "#3c3c3c",
+  roadMajor: "#4b4b4b",
+  text: "#c2c2c2",
+  textDim: "#9a9a9a",
+  halo: "#0e0e0e",
 };
 
 /** Pale. Reads well in a bright room and prints without eating a cartridge. */
@@ -320,7 +323,7 @@ function blankStyle(): StyleSpecification {
     version: 8,
     glyphs: GLYPHS,
     sources: {},
-    layers: [{ id: "background", type: "background", paint: { "background-color": "#0c1013" } }],
+    layers: [{ id: "background", type: "background", paint: { "background-color": "#161616" } }],
   };
 }
 
@@ -329,11 +332,11 @@ function blankStyle(): StyleSpecification {
 /** Labels over imagery are dark-haloed and bright, whatever the picture beneath. */
 const OVER_IMAGERY: Palette = {
   ...DARK,
-  country: "#e8eef0",
-  state: "#c3ced3",
-  text: "#f2f6f7",
-  textDim: "#dbe3e6",
-  halo: "#0a0d0f",
+  country: "#ececec",
+  state: "#c8c8c8",
+  text: "#f4f4f4",
+  textDim: "#dedede",
+  halo: "#0c0c0c",
 };
 
 function rasterStyle(opts: {
@@ -357,7 +360,7 @@ function rasterStyle(opts: {
       [VECTOR_SOURCE]: { type: "vector", url: "https://tiles.openfreemap.org/planet", attribution: OFM_ATTRIB },
     },
     layers: [
-      { id: "background", type: "background", paint: { "background-color": "#0c1013" } },
+      { id: "background", type: "background", paint: { "background-color": "#161616" } },
       { id: "base", type: "raster", source: "base", paint: { "raster-opacity": 1 } },
       ...referenceLayers(opts.labels ?? OVER_IMAGERY),
     ],

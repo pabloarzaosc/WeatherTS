@@ -805,7 +805,7 @@
 .acctask__scrim {
   position: absolute;
   inset: 0;
-  background: rgba(3, 8, 15, 0.72);
+  background: rgba(0, 0, 0, 0.66);
 }
 .acctask__card {
   position: relative;

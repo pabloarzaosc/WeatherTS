@@ -1,7 +1,7 @@
 {
   "name": "weatherts",
   "private": true,
-  "version": "1.4.2",
+  "version": "1.5.0",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
@@ -13,7 +13,8 @@
     "dev": "vite",
     "dev:all": "node scripts/dev-all.mjs",
     "backend": "cd backend && .venv\\Scripts\\python -m uvicorn main:app --port 8787",
-    "build": "tsc && vite build",
+    "build": "node scripts/sync-splash.mjs && tsc && vite build",
+    "splash:sync": "node scripts/sync-splash.mjs",
     "preview": "vite preview",
     "release:announce": "node scripts/announce-release.mjs"
   },

@@ -1,9 +1,12 @@
 /* Design tokens + the light/dark palettes. Every UI colour is a variable.
  *
- * A road console, not a dashboard template: the blue of an interstate shield
- * at night -- deep sign blue for the ground, reflective white for the legend
- * and one lit blue for what is on -- drawn with solid hairlines instead of
- * glass and glow. Two constraints decide nearly everything below.
+ * A road console, not a dashboard template: a neutral ground, white for the
+ * legend and one lit blue for what is on, drawn with solid hairlines instead
+ * of glass and glow. In dark the ground is the grey of the window frame
+ * itself (#202020, the Windows dark title bar), so the app and the window it
+ * sits in read as one surface -- it was a deep sign blue, and the seam where
+ * the grey title bar met it was the first thing anyone saw. Two constraints
+ * decide nearly everything below.
  *
  * Radar already uses almost every hue, blue included, so the accent is spent
  * sparingly, on what is on and what has focus, and never on the map. It is a
@@ -67,36 +70,36 @@
   --t: 0.2s;
   --t-slow: 0.34s;
 
-  /* dark: sign blue at night (default -- also the fallback before JS picks a theme) */
-  --bg: #0b1522;
+  /* dark: the window's grey (default -- also the fallback before JS picks a theme) */
+  --bg: #202020;
   /* Opaque. The panels used to be 94% glass; the few percent of basemap that
      showed through made every surface a slightly different colour. */
-  --panel: #101d2e;
-  --panel-solid: #101d2e;
-  --panel-2: rgba(232, 238, 246, 0.045);
-  --border: #22364f;
-  --border-strong: #3a5577;
-  --text: #e8eef6;
-  --text-dim: #aabbd0;
-  --text-faint: #8196b0;
+  --panel: #262626;
+  --panel-solid: #262626;
+  --panel-2: rgba(236, 236, 236, 0.045);
+  --border: #353535;
+  --border-strong: #4d4d4d;
+  --text: #ececec;
+  --text-dim: #b8b8b8;
+  --text-faint: #8e8e8e;
   /* The lit blue. A fill, with dark text on it. */
   --accent: #6c9dff;
   --accent-strong: #5287f5;
   --accent-soft: rgba(108, 157, 255, 0.14);
   --accent-ring: rgba(108, 157, 255, 0.6);
   --accent-text: #8fb4ff;
-  --on-accent: #0b1522;
+  --on-accent: #121212;
   /* danger / "not working" -- radar offline, failed scans, dead sites */
   --danger: #f2715a;
   --danger-soft: rgba(242, 113, 90, 0.14);
   --danger-border: rgba(242, 113, 90, 0.45);
   /* A keyline, not a glow: separation that reads the same over any basemap. */
-  --shadow: 0 0 0 1px rgba(2, 6, 12, 0.55);
-  --track: #22364f;
-  /* RGB triplet (no alpha) behind every wash/hover overlay: sign white to
-     lighten the blue here; the light theme flips it to ink so the same
-     overlays darken instead of vanishing. */
-  --wash-rgb: 232, 238, 246;
+  --shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+  --track: #353535;
+  /* RGB triplet (no alpha) behind every wash/hover overlay: white to lighten
+     the grey here; the light theme flips it to ink so the same overlays
+     darken instead of vanishing. */
+  --wash-rgb: 236, 236, 236;
 }
 
 /* light: the same sign in daylight */

@@ -35,6 +35,7 @@ import { acarsLayer } from "./modules/acarsLayer";
 import { chasersLayer } from "./modules/chasersLayer";
 import { homesLayer } from "./modules/homesLayer";
 import { mesoscaleLayer } from "./modules/mesoscaleLayer";
+import { drawLayer } from "./modules/drawLayer";
 
 // Satellite imagery is the bottom of the stack: an opaque picture of the whole
 // planet that borders, fields and radar are all read over.
@@ -78,3 +79,5 @@ registerLayer(lsrLayer);
 registerLayer(homesLayer);
 // People sit above everything: where someone actually is must never be buried.
 registerLayer(chasersLayer);
+// The user's own drawings: last, and lifted above everything.
+registerLayer(drawLayer);

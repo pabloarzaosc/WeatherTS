@@ -974,9 +974,18 @@ function hashColor(value: string): string {
   return FALLBACK_EVENT_COLORS[hash % FALLBACK_EVENT_COLORS.length];
 }
 
+/** Colours the user picked in Settings, by normalized event name. Set by the
+ *  settings store, so this file needs no dependency on it. */
+let eventColorResolver: ((normalizedEvent: string) => string | undefined) | null = null;
+
+export function setEventColorResolver(fn: (normalizedEvent: string) => string | undefined): void {
+  eventColorResolver = fn;
+}
+
 export function eventColor(event: string): string {
   const normalized = event.trim().replace(/\s+/g, " ").toLowerCase();
   return (
+    eventColorResolver?.(normalized) ??
     EXACT_EVENT_COLORS[normalized] ??
     EVENT_PATTERNS.find(([pattern]) => pattern.test(event))?.[1] ??
     hashColor(event || "Alert")
