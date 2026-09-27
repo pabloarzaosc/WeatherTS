@@ -32,11 +32,23 @@ export type WindUnit = "kt" | "mph" | "ms";
 export type PresUnit = "mb" | "inHg";
 export type VisUnit = "mi" | "km";
 
+/** Which station networks are plotted. */
+export interface StationNetworks {
+  /** Airports (METAR). */
+  metar: boolean;
+  /** Official networks: WMO synoptic stations, and INMET's with a token. */
+  synop: boolean;
+  /** Mesonets and personal stations (NOAA MADIS: state networks, CWOP...). */
+  mesonet: boolean;
+}
+
 /** 0 means "no age limit" -- every observation the feed returns is plotted. */
 export const AGE_UNLIMITED = 0;
 
 interface SurfaceObsState {
   displayMode: SurfaceDisplayMode;
+  networks: StationNetworks;
+  toggleNetwork: (k: keyof StationNetworks) => void;
   elements: StationElements;
   spacing: number; // min px between plotted stations (declutter)
   size: number; // plot scale multiplier
@@ -102,6 +114,8 @@ export const ELEMENT_PRESETS: { id: string; label: string; hint: string; element
 
 export const useSurfaceObsStore = create<SurfaceObsState>((set) => ({
   displayMode: "station",
+  networks: { metar: true, synop: true, mesonet: true },
+  toggleNetwork: (k) => set((s) => ({ networks: { ...s.networks, [k]: !s.networks[k] } })),
   elements: {
     wind: true,
     gust: true,
@@ -113,7 +127,9 @@ export const useSurfaceObsStore = create<SurfaceObsState>((set) => ({
     pressure: true,
     stationName: true,
   },
-  spacing: 70,
+  // Denser than a textbook plot (70): with the synoptic and mesonet stations
+  // there is far more to show, and the slider goes either way.
+  spacing: 55,
   size: 1,
 
   tempUnits: "F",

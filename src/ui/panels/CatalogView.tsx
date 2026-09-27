@@ -1,16 +1,15 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Lock,
   Radar,
-  Layers,
   Thermometer,
   AlertTriangle,
 
   Activity,
   Sparkles,
   Megaphone,
-  Gauge,
   Eye,
+  Tornado,
   Satellite,
 } from "lucide-react";
 
@@ -18,13 +17,11 @@ import { useAppStore } from "../../store/useAppStore";
 import type { CatalogTab } from "../../store/useAppStore";
 import { SurfaceObsView } from "./SurfaceObsView";
 import { RadarView } from "./RadarView";
-import { MrmsView } from "./MrmsView";
 import { LsrView } from "./LsrView";
-import { PressureView } from "./PressureView";
 import { ObservationsView } from "./ObservationsView";
+import { OutlooksView } from "./OutlooksView";
 import { SatelliteView } from "./SatelliteView";
-import { ThicknessView } from "./ThicknessView";
-import { ModelBar } from "../ModelBar";
+import { useOutlookStore } from "../../store/useOutlookStore";
 import { AdvancedTab, FavoritesTab, MineTab } from "./CatalogTabs";
 import { ActiveLayers } from "./ActiveLayers";
 import { SoundingsContent } from "./SoundingsContent";
@@ -38,27 +35,29 @@ const CAT_TABS: { id: CatalogTab; label: string }[] = [
 
 const ALERT_LAYER_ID = "nws-alerts";
 
+type Panel = "surface" | "radar" | "satellite" | "lsr" | "pressure" | "sounding" | "observations" | "outlooks";
+
 // Quick-launch grid à la pro workstation. Alerts toggles its layer directly;
-// the rest are future-phase placeholders. (Outlooks live in the top toolbar.)
+// the rest open their panel below the grid. (The top toolbar's outlook picker
+// is the quick way in; its panel is here.)
 const CATEGORIES: {
   id: string;
   label: string;
   icon: ReactNode;
   ready: boolean;
   layerId?: string;
-  panel?: "surface" | "radar" | "mrms" | "lsr" | "pressure" | "sounding" | "observations" | "satellite";
+  panel?: Panel;
 }[] = [
   { id: "surface", label: "Surface", icon: <Activity size={15} />, ready: true, panel: "surface" },
   { id: "radar", label: "Radar", icon: <Radar size={15} />, ready: true, panel: "radar" },
   { id: "satellite", label: "Satellite", icon: <Satellite size={15} />, ready: true, panel: "satellite" },
   // Locked for now: shown so people know it is coming, not yet switchable. The
   // layer is unregistered in layers/index.ts; flip both back to unlock it.
-  { id: "mrms", label: "Mosaic (MRMS)", icon: <Layers size={15} />, ready: false, panel: "mrms" },
   { id: "sounding", label: "Sounding", icon: <Thermometer size={15} />, ready: true, panel: "sounding" },
   { id: "alerts", label: "Alerts", icon: <AlertTriangle size={15} />, ready: true, layerId: ALERT_LAYER_ID },
   { id: "lsr", label: "Storm Reports", icon: <Megaphone size={15} />, ready: true, panel: "lsr" },
-  { id: "observations", label: "Observations", icon: <Eye size={15} />, ready: true, panel: "observations" },
-  { id: "pressure", label: "Pressure", icon: <Gauge size={15} />, ready: true, panel: "pressure" },
+  { id: "observations", label: "Models", icon: <Eye size={15} />, ready: true, panel: "observations" },
+  { id: "outlooks", label: "Outlooks", icon: <Tornado size={15} />, ready: true, panel: "outlooks" },
   { id: "more", label: "Others in development...", icon: <Sparkles size={15} />, ready: false },
 ];
 
@@ -71,9 +70,12 @@ export function CatalogView() {
   const toggleLayer = useAppStore((s) => s.toggleLayer);
 
   // Which category's inline panel is open.
-  const [openPanel, setOpenPanel] = useState<
-    "surface" | "radar" | "mrms" | "lsr" | "pressure" | "sounding" | "observations" | "satellite" | null
-  >(null);
+  const [openPanel, setOpenPanel] = useState<Panel | null>(null);
+  // The top-bar outlook picker's "Outlooks panel" link.
+  const panelRequest = useOutlookStore((s) => s.panelRequest);
+  useEffect(() => {
+    if (panelRequest > 0) setOpenPanel("outlooks");
+  }, [panelRequest]);
 
   return (
     <div className="catalog">
@@ -139,11 +141,6 @@ export function CatalogView() {
               <RadarView />
             </div>
           )}
-          {openPanel === "mrms" && (
-            <div className="catalog__panel">
-              <MrmsView />
-            </div>
-          )}
           {openPanel === "lsr" && (
             <div className="catalog__panel">
               <LsrView />
@@ -159,13 +156,9 @@ export function CatalogView() {
               <SatelliteView />
             </div>
           )}
-          {openPanel === "pressure" && (
+          {openPanel === "outlooks" && (
             <div className="catalog__panel">
-              {/* The model drives every model product, so its picker sits above
-                  the options of the one product that exists so far. */}
-              <ModelBar />
-              <PressureView />
-              <ThicknessView />
+              <OutlooksView />
             </div>
           )}
           {openPanel === "sounding" && (

@@ -5,7 +5,7 @@
 // the algorithm's own smoothing, while a straight ray off the current heading
 // is what the lead time actually assumes.
 
-const PLACES_URL = "/data/us-places.json";
+const PLACES_URL = `${import.meta.env.BASE_URL}data/us-places.json`;
 
 /** Miles per degree of latitude. Longitude is scaled by cos(lat) per place. */
 const MI_PER_DEG_LAT = 69.09;

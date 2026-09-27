@@ -10,7 +10,7 @@ import { fetchModels, snapHour, type ModelInfo } from "../lib/modelFields";
  * Deliberately not owned by any one panel: the picker lives in the sidebar and
  * every model-driven product reads from here, so switching model re-drives all
  * of them at once instead of each panel keeping its own idea of "the model".
- * Today that is the pressure field; satellite and the rest plug into the same
+ * Today that is the pressure field; the rest plug into the same
  * two values.
  */
 interface ModelState {

@@ -25,10 +25,7 @@ import { vwpLayer } from "./modules/vwpLayer";
 import { surfaceObsLayer } from "./modules/surfaceObsLayer";
 import { obsLayer } from "./modules/obsLayer";
 import { satelliteLayer } from "./modules/satelliteLayer";
-import { mslpLayer } from "./modules/mslpLayer";
-import { thicknessLayer } from "./modules/thicknessLayer";
 import { nexradLayer } from "./modules/nexradLayer";
-// import { mrmsLayer } from "./modules/mrmsLayer";
 import { lsrLayer } from "./modules/lsrLayer";
 // import { frontsLayer } from "./modules/frontsLayer";
 import { acarsLayer } from "./modules/acarsLayer";
@@ -52,10 +49,6 @@ registerLayer(vwpLayer);
 // The analysed field is a backdrop: isobars, fronts and radar are all read
 // over it, so it goes in under them.
 registerLayer(obsLayer);
-// Thickness under the isobars: the dashed field is the backdrop the solid
-// black lines are read against, the way a printed chart layers them.
-registerLayer(thicknessLayer);
-registerLayer(mslpLayer);
 registerLayer(surfaceObsLayer);
 registerLayer(acarsLayer);
 // Surface fronts are out of the catalogue for now, so nothing -- the Layers
@@ -63,15 +56,6 @@ registerLayer(acarsLayer);
 // (panels/FrontsView.tsx) and the backend stay as they are; restoring this line
 // and the import above brings the product back.
 // registerLayer(frontsLayer);
-// The national mosaic sits under the single-site radar: MRMS answers "where
-// is this across three states", the site radar answers "what is it doing right
-// here", and the second is the one you zoom in to read.
-//
-// Locked for now (the Catalog shows its tile with a padlock). Unregistered
-// rather than hidden, so nothing -- the Layers drawer, a saved workspace, the
-// catalog tabs -- can switch it on. The module, its picker and the backend
-// stay as they are; restoring this line and the import above unlocks it.
-// registerLayer(mrmsLayer);
 registerLayer(nexradLayer);
 // Ground truth sits on top of every product it might be checked against.
 registerLayer(lsrLayer);

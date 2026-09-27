@@ -7,58 +7,55 @@ import {
   type SatCatalog,
   type SatFrame,
   type SatProduct,
+  type SatRegion,
   type SatSatellite,
 } from "../lib/satellite";
 import { describe, retrying, within } from "../lib/patience";
 
 /**
- * The satellite layer's state: which product, how long a loop, which frame.
+ * The satellite layer's state: which satellite, region and product, how many
+ * frames, which frame.
  *
  * The frames ARE the timeline's axis while satellite drives it, as radar's
  * scans are. The layer module draws and reports back through setStatus, so a
- * second map pane never starts its own copy of the same tiles.
+ * second map pane never starts its own copy of the same pictures.
  */
 
-const K_PRODUCT = "weatherts.sat.product";
-const K_HOURS = "weatherts.sat.hours";
+const K_SEL = "weatherts.sat.selection";
+const K_COUNT = "weatherts.sat.count";
 
-/** Past a day the loop keeps every k-th frame (the backend picks k), so a week
- *  is still a loop of a hundred and fifty pictures rather than a thousand. */
-export const LOOP_HOURS = [1, 2, 3, 6, 12, 24, 48, 72, 168] as const;
-
-/** "6 h", "24 h", "3 d". */
-export function spanLabel(hours: number): string {
-  return hours > 24 && hours % 24 === 0 ? `${hours / 24} d` : `${hours} h`;
-}
-
-/** How far apart a loop's frames are, "10 min" or "3 h"; "" under three frames. */
-export function stepLabel(unixes: number[]): string {
-  if (unixes.length < 3) return "";
-  const gaps = unixes
-    .slice(1)
-    .map((u, i) => u - unixes[i])
-    .sort((a, b) => a - b);
-  const gap = gaps[Math.floor(gaps.length / 2)];
-  return gap >= 3600 && gap % 3600 === 0 ? `${gap / 3600} h` : `${Math.max(1, Math.round(gap / 60))} min`;
-}
+/** Frames a loop can hold, like WeatherWise's "max frames" but longer: a
+ *  replay of a whole day of CONUS scans is 288. */
+export const FRAME_COUNTS = [6, 12, 24, 36, 48, 72, 100, 150, 200, 288] as const;
+const DEFAULT_COUNT = 24;
 
 const CATALOG_TIMEOUT_MS = 10_000;
-/** A first run reads every agency's list of times before it can answer. */
+/** A first list reads a day of AWS listings or SLIDER's time files. */
 const FRAMES_TIMEOUT_MS = 45_000;
 const CATALOG_TRIES = 6;
-/** With nothing on screen a failed frame list is asked for again this soon,
- *  this many times, before it waits for the minute's refresh. */
 const FRAMES_RETRY_MS = 5_000;
 const FRAMES_RETRIES = 6;
 
+interface Selection {
+  sat: string;
+  region: string;
+  product: string;
+}
+
 interface SatState {
   catalog: SatCatalog | null;
+  sat: string;
+  region: string;
   product: string;
-  hours: number;
+  count: number;
   frames: SatFrame[];
   /** Index into `frames`; -1 until the first list lands. */
   index: number;
-  stale: boolean;
+  /** Where the region is: the moving boxes (GOES mesoscale, Himawari target)
+   *  come with each frame list. */
+  bounds: [number, number, number, number] | null;
+  /** Counts requests to fly the map to the region (a new region was picked). */
+  flyRequest: number;
 
   busy: boolean;
   error: string | null;
@@ -67,28 +64,22 @@ interface SatState {
   loopTotal: number;
   /**
    * Play was pressed: the whole loop for the area on screen downloads. Until
-   * then only the frame someone is looking at is fetched -- zooming around
-   * does not start a day of pictures. A new area, product or length with
-   * nothing playing waits for play again, and so does a stop from the card.
+   * then only the frame someone is looking at is fetched.
    */
   loopArmed: boolean;
-  /** The timeline is playing satellite. */
   playing: boolean;
-  /** Counts stops, so the timeline can pause on each one. */
   loopStops: number;
 
   load: () => Promise<void>;
-  /** Fetch the frame list. `keepPlace` keeps a scrubbed-back position; at the
-   *  newest frame the loop follows the new one in. */
   loadFrames: (keepPlace?: boolean) => Promise<void>;
-  setProduct: (id: string) => void;
-  setHours: (h: number) => void;
+  /** Pick any of satellite / region / product; the rest follow sensibly. */
+  select: (next: Partial<Selection>) => void;
+  setCount: (n: number) => void;
   setIndex: (i: number) => void;
   goToUnix: (unix: number | null) => void;
   setStatus: (s: Partial<Pick<SatState, "busy" | "error" | "loopLoaded" | "loopTotal">>) => void;
   stopLoop: () => void;
   armLoop: () => void;
-  /** Back to fetching only the frame on screen, without it counting as a stop. */
   disarmLoop: () => void;
   setPlaying: (on: boolean) => void;
 }
@@ -109,26 +100,66 @@ function write(key: string, value: string) {
   }
 }
 
+function savedSelection(): Selection | null {
+  try {
+    const v = JSON.parse(read(K_SEL) ?? "null");
+    if (v && typeof v.sat === "string" && typeof v.region === "string" && typeof v.product === "string") return v;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/**
+ * Resolve a wish into a selection the catalogue has: a satellite, one of its
+ * regions, and one of that region's products -- keeping the product (or at
+ * least its kind) when the satellite or region changes, so IR stays IR.
+ */
+export function resolveSelection(cat: SatCatalog, want: Selection, before?: Selection): Selection {
+  const sat = cat.satellites.find((s) => s.id === want.sat) ?? cat.satellites.find((s) => s.id === cat.default.sat)!;
+  const region =
+    sat.regions.find((r) => r.id === want.region) ??
+    sat.regions.find((r) => r.id === before?.region) ??
+    sat.regions[0];
+  const prevProduct = before
+    ? cat.satellites
+        .find((s) => s.id === before.sat)
+        ?.regions.find((r) => r.id === before.region)
+        ?.products.find((p) => p.id === before.product)
+    : undefined;
+  const product =
+    region.products.find((p) => p.id === want.product) ??
+    (prevProduct && region.products.find((p) => p.label === prevProduct.label)) ??
+    // Band 13-ish: the clean IR window is the one every imager has.
+    (prevProduct && region.products.find((p) => p.group === prevProduct.group)) ??
+    region.products.find((p) => /Clean|IR Window|10\.|Thermal/i.test(p.label)) ??
+    region.products[0];
+  return { sat: sat.id, region: region.id, product: product.id };
+}
+
 let framesCtrl: AbortController | null = null;
 let catalogLoad: Promise<void> | null = null;
 let framesRetry: number | null = null;
 let framesFailures = 0;
 
-/** Another product or length keeps downloading only while a loop is playing;
- *  otherwise what was still queued for the old one is dropped. */
 function keepsLoop(s: { playing: boolean; loopArmed: boolean }): boolean {
   const keep = s.playing && s.loopArmed;
   if (s.loopArmed && !keep) void cancelSatLoop().catch(() => undefined);
   return keep;
 }
 
+const saved = savedSelection();
+
 export const useSatStore = create<SatState>((set, get) => ({
   catalog: null,
-  product: read(K_PRODUCT) || "goes-blend-vis",
-  hours: Number(read(K_HOURS)) || 3,
+  sat: saved?.sat ?? "goes19",
+  region: saved?.region ?? "conus",
+  product: saved?.product ?? "c13",
+  count: Number(read(K_COUNT)) || DEFAULT_COUNT,
   frames: [],
   index: -1,
-  stale: false,
+  bounds: null,
+  flyRequest: 0,
   busy: false,
   error: null,
   loopLoaded: 0,
@@ -139,7 +170,6 @@ export const useSatStore = create<SatState>((set, get) => ({
 
   load: async () => {
     if (!get().catalog) {
-      // One load at a time: the panel and the layer both ask when they appear.
       catalogLoad ??= (async () => {
         try {
           const catalog = await retrying(() => fetchSatCatalog(within(CATALOG_TIMEOUT_MS)), {
@@ -148,10 +178,10 @@ export const useSatStore = create<SatState>((set, get) => ({
             maxWaitMs: 15_000,
             onRetry: () => set({ error: "The satellite service is not answering yet, trying again…" }),
           });
-          const product = catalog.products.some((p) => p.id === get().product) ? get().product : catalog.defaultProduct;
-          set({ catalog, product, error: null });
+          const s = get();
+          const sel = resolveSelection(catalog, { sat: s.sat, region: s.region, product: s.product });
+          set({ catalog, ...sel, error: null });
         } catch (err) {
-          // The layer's refresh asks again in a minute.
           set({ error: describe(err, "The satellite service") });
         }
       })().finally(() => {
@@ -175,27 +205,35 @@ export const useSatStore = create<SatState>((set, get) => ({
     const atNewest = before.index < 0 || before.index >= before.frames.length - 1;
     const pinned = before.frames[before.index]?.unix;
     try {
-      const out = await fetchSatFrames(before.product, before.hours, within(FRAMES_TIMEOUT_MS, mine.signal));
+      const out = await fetchSatFrames(
+        before.sat,
+        before.region,
+        before.product,
+        before.count,
+        within(FRAMES_TIMEOUT_MS, mine.signal),
+      );
       if (mine.signal.aborted) return;
+      const now = get();
+      // The selection moved on while this list was on its way.
+      if (now.sat !== before.sat || now.region !== before.region || now.product !== before.product) return;
       framesFailures = 0;
       let index = out.frames.length - 1;
       if (keepPlace && !atNewest && pinned != null) {
         const same = out.frames.findIndex((f) => f.unix === pinned);
         if (same >= 0) index = same;
       }
-      // Same frames as before: keep the array, so nothing downstream redraws.
       const unchanged =
         out.frames.length === before.frames.length &&
         out.frames.every((f, i) => f.time === before.frames[i]?.time);
+      const sameBounds = JSON.stringify(out.bounds) === JSON.stringify(before.bounds);
       set({
         frames: unchanged ? before.frames : out.frames,
         index: unchanged ? before.index : index,
-        stale: out.stale,
+        bounds: sameBounds ? before.bounds : out.bounds,
         error: out.frames.length ? null : "No images from this product right now",
       });
     } catch (err) {
       if (mine.signal.aborted) return;
-      // A loop already on screen keeps playing; the next refresh tries again.
       if (keepPlace && before.frames.length) return;
       set({ frames: [], index: -1, error: describe(err, "The satellite service") });
       framesFailures += 1;
@@ -208,18 +246,33 @@ export const useSatStore = create<SatState>((set, get) => ({
     }
   },
 
-  setProduct: (id) => {
-    if (id === get().product) return;
-    write(K_PRODUCT, id);
-    set({ product: id, frames: [], index: -1, stale: false, error: null, loopArmed: keepsLoop(get()) });
+  select: (next) => {
+    const s = get();
+    const want = { sat: next.sat ?? s.sat, region: next.region ?? s.region, product: next.product ?? s.product };
+    // A new satellite starts on the region it was left on, not the old one's id.
+    if (next.sat && next.sat !== s.sat && !next.region) want.region = "";
+    const before = { sat: s.sat, region: s.region, product: s.product };
+    const sel = s.catalog ? resolveSelection(s.catalog, want, before) : want;
+    if (sel.sat === s.sat && sel.region === s.region && sel.product === s.product) return;
+    write(K_SEL, JSON.stringify(sel));
+    const moved = sel.sat !== s.sat || sel.region !== s.region;
+    set({
+      ...sel,
+      frames: [],
+      index: -1,
+      error: null,
+      bounds: moved ? null : s.bounds,
+      flyRequest: moved ? s.flyRequest + 1 : s.flyRequest,
+      loopArmed: keepsLoop(s),
+    });
     void get().loadFrames();
   },
 
-  setHours: (h) => {
-    if (h === get().hours) return;
-    write(K_HOURS, String(h));
-    set({ hours: h, loopArmed: keepsLoop(get()) });
-    void get().loadFrames();
+  setCount: (n) => {
+    if (n === get().count) return;
+    write(K_COUNT, String(n));
+    set({ count: n, loopArmed: keepsLoop(get()) });
+    void get().loadFrames(true);
   },
 
   setIndex: (i) => {
@@ -269,12 +322,13 @@ export const useSatStore = create<SatState>((set, get) => ({
   },
 }));
 
-export const selectSatProduct = (s: SatState): SatProduct | null =>
-  s.catalog?.products.find((p) => p.id === s.product) ?? null;
+export const selectSatSatellite = (s: SatState): SatSatellite | null =>
+  s.catalog?.satellites.find((x) => x.id === s.sat) ?? null;
 
-export const selectSatSatellite = (s: SatState): SatSatellite | null => {
-  const product = selectSatProduct(s);
-  return product ? s.catalog?.satellites.find((x) => x.id === product.sat) ?? null : null;
-};
+export const selectSatRegion = (s: SatState): SatRegion | null =>
+  selectSatSatellite(s)?.regions.find((r) => r.id === s.region) ?? null;
+
+export const selectSatProduct = (s: SatState): SatProduct | null =>
+  selectSatRegion(s)?.products.find((p) => p.id === s.product) ?? null;
 
 export const selectSatFrame = (s: SatState): SatFrame | null => s.frames[s.index] ?? null;

@@ -63,11 +63,18 @@ interface AlertState {
   message: string | null;
   /**
    * Unix seconds the map should show alerts *as of*, or null for "now".
-   * The global timeline sets this while radar drives it, so scrubbing back past
-   * an alert's issue time hides it. An open sounding owns the timeline instead,
-   * so it leaves this null.
+   * The global timeline sets it from whatever drives it -- radar, the Models
+   * frames, storm reports, fronts, a sounding -- so scrubbing or playing back
+   * past an alert's issue time hides it, and a forecast hour shows what is
+   * still in force then. Null on the newest frame of an observed loop.
    */
   timeFilter: number | null;
+  /**
+   * The span of the timeline driving `timeFilter` (unix seconds, first and last
+   * frame), or null. The alerts of the whole span are read ahead, so playing
+   * it is a filter on what is here rather than a request per frame.
+   */
+  timeRange: [number, number] | null;
   /**
    * Whether the side list is expanded. Deliberately separate from `active`:
    * dismissing the panel must not touch the layer, so the polygons stay on the
@@ -86,6 +93,7 @@ interface AlertState {
   select: (selectedId: string | null) => void;
   selectMany: (selectedIds: string[]) => void;
   setTimeFilter: (t: number | null) => void;
+  setTimeRange: (range: [number, number] | null) => void;
 }
 
 export const useAlertStore = create<AlertState>()(
@@ -97,6 +105,7 @@ export const useAlertStore = create<AlertState>()(
     status: "idle",
     message: null,
     timeFilter: null,
+    timeRange: null,
     listOpen: true,
     categoryFilters: DEFAULT_ALERT_CATEGORY_FILTERS,
 
@@ -108,6 +117,10 @@ export const useAlertStore = create<AlertState>()(
     selectMany: (selectedIds) =>
       set({ selectedIds, selectedId: selectedIds.length > 0 ? selectedIds[0] : null }),
     setTimeFilter: (timeFilter) => set({ timeFilter }),
+    setTimeRange: (timeRange) =>
+      set((s) =>
+        s.timeRange?.[0] === timeRange?.[0] && s.timeRange?.[1] === timeRange?.[1] ? s : { timeRange },
+      ),
     setCategoryFilter: (k: AlertCategoryKey, v: boolean) => set((s) => ({ categoryFilters: { ...s.categoryFilters, [k]: v } })),
     toggleCategory: (k: AlertCategoryKey) => set((s) => ({ categoryFilters: { ...s.categoryFilters, [k]: !s.categoryFilters[k] } })),
   })),

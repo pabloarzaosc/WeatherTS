@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { X, Copy, AlertTriangle, ChevronLeft, Clock, MapPin, Radio, Radar } from "lucide-react";
 
 import { MesoscaleList } from "./MesoscaleList";
 import { selectVisibleAlerts, useAlertStore } from "../store/useAlertStore";
-import type { AlertFeature } from "../lib/nwsAlerts";
+import type { AlertFeature, NwsAlert } from "../lib/nwsAlerts";
 import {
   alertBounds,
   alertCentroid,
@@ -386,13 +386,82 @@ function AlertDetail({
   );
 }
 
+/** Each alert's priority, worked out once: it reads the whole text, and the
+ *  list is sorted again at every frame of a playing timeline. */
+const PRIORITY = new WeakMap<NwsAlert, number>();
+function priorityOf(alert: NwsAlert): number {
+  let p = PRIORITY.get(alert);
+  if (p === undefined) {
+    p = alertPriority(alert);
+    PRIORITY.set(alert, p);
+  }
+  return p;
+}
+
 function sortAlerts(features: AlertFeature[]): AlertFeature[] {
   return [...features].sort((a, b) => {
-    const priority = alertPriority(b.alert) - alertPriority(a.alert);
+    const priority = priorityOf(b.alert) - priorityOf(a.alert);
     if (priority !== 0) return priority;
     return Date.parse(a.alert.expires) - Date.parse(b.alert.expires);
   });
 }
+
+/**
+ * One alert of the list. Its facts come from parsing the whole description,
+ * so a row is drawn again only when its alert or the minute changes: the list
+ * redrew every row every second (the "expires in" clock) and at every frame
+ * of a playing timeline -- 100-280 ms a frame with a few hundred alerts.
+ */
+const AlertRow = memo(function AlertRow({
+  feature,
+  minute,
+  onSelect,
+}: {
+  feature: AlertFeature;
+  minute: number;
+  onSelect: (id: string) => void;
+}) {
+  const a = feature.alert;
+  const now = minute * 60_000;
+  const color = eventColor(a.event);
+  const facts = alertSummaryFacts(a, now).slice(0, 4);
+  const expires = Date.parse(a.expires);
+  const upper = `${a.event} ${a.headline ?? ""} ${a.description}`.toUpperCase();
+  const tornadoThreat = param(a.parameters, "tornadoDamageThreat");
+  const flashThreat = param(a.parameters, "flashFloodDamageThreat");
+  const isEmergency =
+    upper.includes("TORNADO EMERGENCY") ||
+    upper.includes("FLASH FLOOD EMERGENCY") ||
+    tornadoThreat === "CATASTROPHIC" ||
+    flashThreat === "CATASTROPHIC";
+  const isPDS = upper.includes("PARTICULARLY DANGEROUS SITUATION") || tornadoThreat === "CONSIDERABLE";
+  return (
+    <button
+      type="button"
+      className="alert-list__row"
+      data-emergency={isEmergency ? "true" : "false"}
+      data-pds={isPDS ? "true" : "false"}
+      style={{ borderLeftColor: color }}
+      onClick={() => onSelect(a.id)}
+    >
+      <span className="alert-list__event">{a.event}</span>
+      {(isEmergency || isPDS) && (
+        <span className={`alert-list__flag ${isEmergency ? "alert-list__flag--emergency" : "alert-list__flag--pds"}`}>
+          {isEmergency ? "Emergency" : "PDS"}
+        </span>
+      )}
+      {facts.map((fact) => (
+        <span key={fact.key} className="alert-list__fact">
+          <b>{fact.label}:</b> {fact.value}
+        </span>
+      ))}
+      {!Number.isNaN(expires) && (
+        <span className="alert-list__expires">Expires in {formatTimeLeft(expires - now)}</span>
+      )}
+      {!feature.geometry && <span className="alert-list__nomap">No map polygon</span>}
+    </button>
+  );
+});
 
 function AlertList({
   features,
@@ -472,49 +541,9 @@ function AlertList({
         {groups.map((group) => (
           <section key={group.kind} className="alert-list__group">
             {filter === "all" && <h3 className="alert-list__group-title">{alertKindLabel(group.kind)}</h3>}
-            {group.alerts.map((feature) => {
-              const a = feature.alert;
-              const color = eventColor(a.event);
-              const facts = alertSummaryFacts(a, now).slice(0, 4);
-              const expires = Date.parse(a.expires);
-              const upper = `${a.event} ${a.headline ?? ""} ${a.description}`.toUpperCase();
-              const tornadoThreat = param(a.parameters, "tornadoDamageThreat");
-              const flashThreat = param(a.parameters, "flashFloodDamageThreat");
-              const isEmergency =
-                upper.includes("TORNADO EMERGENCY") ||
-                upper.includes("FLASH FLOOD EMERGENCY") ||
-                tornadoThreat === "CATASTROPHIC" ||
-                flashThreat === "CATASTROPHIC";
-              const isPDS =
-                upper.includes("PARTICULARLY DANGEROUS SITUATION") || tornadoThreat === "CONSIDERABLE";
-              return (
-                <button
-                  key={a.id}
-                  type="button"
-                  className="alert-list__row"
-                  data-emergency={isEmergency ? "true" : "false"}
-                  data-pds={isPDS ? "true" : "false"}
-                  style={{ borderLeftColor: color }}
-                  onClick={() => onSelect(a.id)}
-                >
-                  <span className="alert-list__event">{a.event}</span>
-                  {(isEmergency || isPDS) && (
-                    <span className={`alert-list__flag ${isEmergency ? "alert-list__flag--emergency" : "alert-list__flag--pds"}`}>
-                      {isEmergency ? "Emergency" : "PDS"}
-                    </span>
-                  )}
-                  {facts.map((fact) => (
-                    <span key={fact.key} className="alert-list__fact">
-                      <b>{fact.label}:</b> {fact.value}
-                    </span>
-                  ))}
-                  {!Number.isNaN(expires) && (
-                    <span className="alert-list__expires">Expires in {formatTimeLeft(expires - now)}</span>
-                  )}
-                  {!feature.geometry && <span className="alert-list__nomap">No map polygon</span>}
-                </button>
-              );
-            })}
+            {group.alerts.map((feature) => (
+              <AlertRow key={feature.alert.id} feature={feature} minute={Math.floor(now / 60_000)} onSelect={onSelect} />
+            ))}
           </section>
         ))}
       </div>
@@ -584,6 +613,26 @@ export function AlertPanel() {
     return () => window.clearInterval(t);
   }, []);
 
+  // Clicking an alert in the side list frames it on the map. (Clicking the
+  // polygon itself doesn't need this -- you're already looking at it.) Alerts
+  // with no drawable footprint just open without moving the camera. One
+  // function for the panel's life, so the rows (memoised) are not all drawn
+  // again at each render of the list.
+  const featuresRef = useRef(features);
+  featuresRef.current = features;
+  const onSelectAlert = useCallback(
+    (id: string) => {
+      selectMany([id]);
+      const feature = featuresRef.current.find((f) => f.alert.id === id);
+      const bounds = feature ? alertBounds(feature.geometry) : null;
+      const map = getMap();
+      if (map && bounds) {
+        map.fitBounds(bounds, { padding: 64, maxZoom: 10.5, duration: 700, essential: true });
+      }
+    },
+    [selectMany],
+  );
+
   // Clicking a polygon opens the rail on that alert even when the list was
   // closed, so `detail` -- not `listOpen` alone -- decides whether we render.
   const detail = selectedFeatures.length > 0;
@@ -592,18 +641,6 @@ export function AlertPanel() {
   const closeRail = () => {
     select(null);
     setListOpen(false);
-  };
-
-  // Clicking an alert in the side list frames it on the map. (Clicking the
-  // polygon itself doesn't need this -- you're already looking at it.) Alerts
-  // with no drawable footprint just open without moving the camera.
-  const zoomToAlert = (id: string) => {
-    const feature = features.find((f) => f.alert.id === id);
-    const bounds = feature ? alertBounds(feature.geometry) : null;
-    const map = getMap();
-    if (map && bounds) {
-      map.fitBounds(bounds, { padding: 64, maxZoom: 10.5, duration: 700, essential: true });
-    }
   };
 
   return (
@@ -658,10 +695,7 @@ export function AlertPanel() {
           timeFilter={timeFilter}
           categoryCounts={categoryCounts}
           onResetCategories={resetCategories}
-          onSelect={(id) => {
-            selectMany([id]);
-            zoomToAlert(id);
-          }}
+          onSelect={onSelectAlert}
         />
       )}
     </aside>

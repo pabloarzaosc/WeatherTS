@@ -13,6 +13,10 @@ export interface LayerRuntimeState {
  */
 export class LayerManager {
   private added = new Set<string>();
+  /** Modules whose addTo() is still under way: already subscribed to their
+   *  stores, but not yet in `added`. */
+  private adding = new Set<string>();
+  private destroyed = false;
   private running = false;
   private next: LayerRuntimeState | null = null;
 
@@ -33,7 +37,12 @@ export class LayerManager {
    * Nothing on screen caused it, which is what made it look random.
    */
   destroy(): void {
-    for (const id of [...this.added]) {
+    this.destroyed = true;
+    this.next = null;
+    // The ones still being added too: a pane closed while a slow addTo() waited
+    // (the Models catalogue on a backend just started) left that module's
+    // store listener on the dead map, throwing on every later store write.
+    for (const id of [...this.added, ...this.adding]) {
       try {
         getLayerModule(id)?.removeFrom(this.map);
       } catch {
@@ -42,6 +51,7 @@ export class LayerManager {
       }
     }
     this.added.clear();
+    this.adding.clear();
   }
 
   /** Reconcile toward `state`. Safe to call rapidly; only the latest wins. */
@@ -62,6 +72,7 @@ export class LayerManager {
 
   private async reconcile(state: LayerRuntimeState): Promise<void> {
     for (const module of getLayerModules()) {
+      if (this.destroyed) return;
       const ls = state.layers[module.id];
       if (!ls) continue;
       const isAdded = this.added.has(module.id);
@@ -76,7 +87,15 @@ export class LayerManager {
       // registry off the map, which reads as "my layer just does not appear".
       try {
         if (ls.visible && !isAdded) {
-          await module.addTo(this.map);
+          this.adding.add(module.id);
+          try {
+            await module.addTo(this.map);
+          } finally {
+            this.adding.delete(module.id);
+          }
+          // The map went while this was being added; destroy() has already
+          // taken the module back off.
+          if (this.destroyed) return;
           module.setOpacity(this.map, ls.opacity);
           this.added.add(module.id);
         } else if (!ls.visible && (isAdded || stranded)) {
@@ -86,6 +105,8 @@ export class LayerManager {
           module.setOpacity(this.map, ls.opacity);
         }
       } catch (err) {
+        // An add cut short by the map going away is not a failure worth a report.
+        if (this.destroyed) return;
         console.error(`[layers] ${module.id} failed to reconcile`, err);
       }
     }

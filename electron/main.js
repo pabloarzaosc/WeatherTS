@@ -25,6 +25,11 @@ let pendingAuthUrl = null;
 const PREFERRED_BACKEND_PORT = 47837;
 let activeBackendPort = PREFERRED_BACKEND_PORT;
 
+// A fixed ceiling on the browser cache. Pictures, radar scans and views come
+// with a max-age, so Chromium keeps them -- within a size it picks from the free
+// space. It stays under this one instead, whatever the disk.
+app.commandLine.appendSwitch('disk-cache-size', String(512 * 1024 * 1024));
+
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
@@ -337,6 +342,12 @@ function setupAutoUpdater() {
     return app.getVersion();
   });
   ipcMain.handle('backend:port', () => activeBackendPort);
+
+  // An animation export runs with the window's background throttling off, so
+  // minimising the app mid-export does not slow its timers or stop its map.
+  ipcMain.on('render:keep', (_e, on) => {
+    mainWindow?.webContents.setBackgroundThrottling(!on);
+  });
 }
 
 app.whenReady().then(async () => {

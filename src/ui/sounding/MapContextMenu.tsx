@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import type { MapMouseEvent } from "maplibre-gl";
-import { Activity, Copy, Crosshair, Square } from "lucide-react";
+import { Activity, Copy, Crosshair, Radar, Square } from "lucide-react";
 
 import { getMap } from "../../map/mapInstance";
 import { useSoundingViewerStore } from "../../store/useSoundingViewerStore";
+import { useAppStore } from "../../store/useAppStore";
+import { useNexradStore } from "../../store/useNexradStore";
+import { nearestRadar, switchToNearestRadar } from "../../layers/radarHold";
 
 interface MenuState {
   x: number;
@@ -16,6 +19,8 @@ export function MapContextMenu() {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const openAt = useSoundingViewerStore((s) => s.openAt);
   const setAreaSelecting = useSoundingViewerStore((s) => s.setAreaSelecting);
+  // Read so the menu redraws when the radar list arrives.
+  useNexradStore((s) => s.sites);
 
   useEffect(() => {
     let map = getMap();
@@ -30,6 +35,8 @@ export function MapContextMenu() {
       }
       const onContext = (e: MapMouseEvent) => {
         e.preventDefault();
+        // The radar list, for "Radar here", if the radar has not been opened yet.
+        if (useNexradStore.getState().sites.length === 0) void useNexradStore.getState().loadCatalog();
         setMenu({
           x: e.originalEvent.clientX,
           y: e.originalEvent.clientY,
@@ -75,6 +82,9 @@ export function MapContextMenu() {
   const top = Math.min(menu.y, window.innerHeight - 230);
 
   const coordText = `${menu.lat.toFixed(4)}, ${menu.lng.toFixed(4)}`;
+  // The radar that sees this spot best: the nearest, where its beam is lowest.
+  const radar = nearestRadar(menu.lat, menu.lng);
+  const radarOn = useNexradStore.getState().site === radar?.site.id && useAppStore.getState().layers.nexrad?.visible;
 
   return (
     <div
@@ -110,6 +120,23 @@ export function MapContextMenu() {
         Area sounding
         <span className="mapmenu__hint">drag a box</span>
       </button>
+      {radar && radar.km < 460 && (
+        <button
+          type="button"
+          className="mapmenu__item"
+          disabled={!!radarOn}
+          onClick={() => {
+            if (!useAppStore.getState().layers.nexrad?.visible) useAppStore.getState().setLayerVisible("nexrad", true);
+            switchToNearestRadar(menu.lat, menu.lng);
+            setMenu(null);
+          }}
+          title="Switch to the radar nearest this spot (or press and hold on the map)"
+        >
+          <Radar size={15} />
+          {radarOn ? `On ${radar.site.icao}` : `Radar here: ${radar.site.icao}`}
+          <span className="mapmenu__hint">{Math.round(radar.km)} km</span>
+        </button>
+      )}
       <button
         type="button"
         className="mapmenu__item"

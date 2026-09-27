@@ -1,13 +1,66 @@
 import { useEffect } from "react";
-import { AlertTriangle, Loader2, Radio } from "lucide-react";
+import { AlertTriangle, Layers, Loader2, Radio } from "lucide-react";
 
 import { useAppStore } from "../../store/useAppStore";
 import { LayerPower } from "../LayerPower";
 import { Select } from "../Select";
 import { frameChoicesFor, useNexradStore } from "../../store/useNexradStore";
 import { getMap } from "../../map/mapInstance";
+import { useObsStore } from "../../store/useObsStore";
 
 const LAYER = "nexrad";
+
+/** The national mosaic's most-used products, one click from the radar: each
+ *  opens on the Models layer, where the rest of MRMS and its loop are. */
+const MOSAIC: { source: string; field: string; label: string }[] = [
+  { source: "mrms", field: "mr_cref", label: "Composite reflectivity" },
+  { source: "mrms", field: "mr_rms", label: "Rain / mix / snow" },
+  { source: "mrms", field: "mr_mesh240", label: "Hail swaths (4 h)" },
+  { source: "mrms", field: "mr_rot240", label: "Rotation tracks (4 h)" },
+  { source: "mrms", field: "mr_cg5", label: "Lightning density" },
+  { source: "mrms", field: "mr_et18", label: "Echo tops" },
+  { source: "mrms", field: "mr_ro24h", label: "24-h rainfall" },
+  { source: "mrms-flash", field: "mf_arimax", label: "Flash flood (ARI)" },
+];
+
+function MosaicShortcuts() {
+  const obsOn = useAppStore((s) => s.layers.observations?.visible ?? false);
+  const source = useObsStore((s) => s.source);
+  const field = useObsStore((s) => s.field);
+  const open = (m: (typeof MOSAIC)[number]) => {
+    const obs = useObsStore.getState();
+    if (obs.source !== m.source) obs.setSource(m.source);
+    useObsStore.getState().setField(m.field);
+    if (!useAppStore.getState().layers.observations?.visible) useAppStore.getState().setLayerVisible("observations", true);
+  };
+  return (
+    <>
+      <div className="sfcobs__section">National mosaic · MRMS</div>
+      <div className="radarv__mosaic">
+        {MOSAIC.map((m) => {
+          const on = obsOn && source === m.source && field === m.field;
+          return (
+            <button
+              key={m.field}
+              type="button"
+              className={on ? "is-on" : ""}
+              aria-pressed={on}
+              onClick={() => open(m)}
+              title="Every radar merged, every two minutes -- drawn on the Models layer"
+            >
+              {m.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="sfcobs__row">
+        <span style={{ color: "var(--text-faint)", fontSize: 11, display: "inline-flex", gap: 6, alignItems: "center" }}>
+          <Layers size={11} /> 130+ more MRMS products under Models
+        </span>
+      </div>
+    </>
+  );
+}
 
 function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
   return (
@@ -177,6 +230,8 @@ export function RadarView() {
       {/* Products + tilt now live on the map, top-right (RadarProductPanel):
           the grids here were cramped and duplicated that control. */}
 
+      <MosaicShortcuts />
+
       <div className="sfcobs__section">Overlays</div>
       <div className="sfcobs__toggle-row">
         <span>Range ring</span>
@@ -341,7 +396,7 @@ export function RadarView() {
       {!loading && !error && !scan && !site && (
         <div className="sfcobs__row">
           <span style={{ color: "var(--text-faint)", fontSize: 12 }}>
-            Pick a site above or click a blue dot on the map.
+            Pick a site above, click one on the map, or press and hold on the map for the nearest.
           </span>
         </div>
       )}

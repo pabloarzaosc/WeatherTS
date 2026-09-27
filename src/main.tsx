@@ -28,7 +28,6 @@ import { useSoundingViewerStore } from "./store/useSoundingViewerStore";
 import { useSoundingViewStore } from "./store/useSoundingViewStore";
 import { useAcarsStore } from "./store/useAcarsStore";
 import { useNexradStore } from "./store/useNexradStore";
-import { useMrmsStore } from "./store/useMrmsStore";
 import { useVwpStore } from "./store/useVwpStore";
 import { useSurfaceObsStore } from "./store/useSurfaceObsStore";
 import { useThemeStore } from "./store/useThemeStore";
@@ -56,7 +55,6 @@ if (import.meta.env.DEV) {
     soundingView: useSoundingViewStore,
     acars: useAcarsStore,
     nexrad: useNexradStore,
-    mrms: useMrmsStore,
     vwp: useVwpStore,
   };
 }

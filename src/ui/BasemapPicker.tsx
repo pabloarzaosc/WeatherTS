@@ -4,7 +4,7 @@ import { Check, ChevronDown, Layers } from "lucide-react";
 import { BASEMAPS, basemapInfo, type BasemapGroup } from "../map/basemaps";
 import { useAppStore } from "../store/useAppStore";
 
-const GROUP_ORDER: BasemapGroup[] = ["Vector", "Imagery", "Terrain"];
+const GROUP_ORDER: BasemapGroup[] = ["Vector", "Chart", "Imagery", "Terrain"];
 
 /**
  * Basemap chooser, floating at the map's top-left corner.

@@ -3,6 +3,7 @@ import maplibregl, { type GeoJSONSource, type Map as MapLibreMap, type MapLayerM
 import type { LayerModule } from "../types";
 import { fetchPublicHomes, ROLE_COLOR, ROLE_LETTER, type PublicProfile } from "../../lib/auth";
 import { useAuthStore } from "../../store/useAuthStore";
+import { mapInk } from "../../map/mapInk";
 
 /**
  * Home pins: where people say they are based.
@@ -220,8 +221,8 @@ export const homesLayer: LayerModule = {
           "text-optional": true,
         },
         paint: {
-          "text-color": ["case", ["get", "self"], SELF_COLOR, "#cfe3f5"],
-          "text-halo-color": "rgba(5,8,13,0.95)",
+          "text-color": ["case", ["get", "self"], SELF_COLOR, mapInk().text],
+          "text-halo-color": mapInk().halo,
           "text-halo-width": 1.3,
         },
       });

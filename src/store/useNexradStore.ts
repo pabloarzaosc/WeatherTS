@@ -21,7 +21,8 @@ import {
 } from "../lib/nexrad";
 import { wireCode } from "../lib/nexrad";
 import { getActivePaneId } from "../map/mapInstance";
-import { buildMesh, decodeScan, recolor, type PolarScan, type RadarMesh } from "../lib/radarMesh";
+import { decodeScan, recolor, type PolarScan, type RadarMesh } from "../lib/radarMesh";
+import { buildMeshOffThread } from "../lib/radarMeshPool";
 import { usePaletteStore } from "./usePaletteStore";
 
 // Single-site NEXRAD Level III radar. `date` picks a UTC day from the archive
@@ -215,34 +216,55 @@ function palHash(text: string): number {
   return h;
 }
 
-/** Build a mesh, or hand back the one already built for this exact frame+look. */
+const meshKeyOf = (scanKey: string, pal: string, smooth: boolean, threshold: number | null) =>
+  `${scanKey}|${smooth ? 1 : 0}|${threshold ?? ""}|${palHash(pal)}`;
+/** Meshes being built, so a frame asked for while the warm-up builds it waits
+ *  for that build instead of starting another. */
+const meshInflight = new Map<string, Promise<RadarMesh>>();
+
+/** Build a mesh -- on a worker -- or hand back the one already built for this
+ *  exact frame+look. */
 function getMesh(
   scanKey: string,
   scan: PolarScan,
   pal: string,
   smooth: boolean,
   threshold: number | null,
-): RadarMesh {
-  const key = `${scanKey}|${smooth ? 1 : 0}|${threshold ?? ""}|${palHash(pal)}`;
+): Promise<RadarMesh> {
+  const key = meshKeyOf(scanKey, pal, smooth, threshold);
   const hit = meshCache.get(key);
   if (hit) {
     // Refresh recency: delete + re-set moves it to the end of the Map's order.
     meshCache.delete(key);
     meshCache.set(key, hit);
-    return hit;
+    return Promise.resolve(hit);
   }
-  const mesh = buildMesh(scan, pal, { smooth, threshold });
-  meshCache.set(key, mesh);
-  meshCacheBytes += meshBytes(mesh);
-  while (meshCacheBytes > MESH_CACHE_BUDGET && meshCache.size > 1) {
-    const oldest = meshCache.keys().next().value;
-    if (oldest === undefined) break;
-    const m = meshCache.get(oldest)!;
-    meshCacheBytes -= meshBytes(m);
-    meshCache.delete(oldest);
-  }
-  return mesh;
+  const pending = meshInflight.get(key);
+  if (pending) return pending;
+  const p = buildMeshOffThread(scan, pal, { smooth, threshold })
+    .then((mesh) => {
+      meshCache.set(key, mesh);
+      meshCacheBytes += meshBytes(mesh);
+      while (meshCacheBytes > MESH_CACHE_BUDGET && meshCache.size > 1) {
+        const oldest = meshCache.keys().next().value;
+        if (oldest === undefined) break;
+        const m = meshCache.get(oldest)!;
+        meshCacheBytes -= meshBytes(m);
+        meshCache.delete(oldest);
+      }
+      return mesh;
+    })
+    .finally(() => meshInflight.delete(key));
+  meshInflight.set(key, p);
+  return p;
 }
+
+/** How many scans from the playhead on the warm-up builds meshes for. Few: a
+ *  super-res reflectivity mesh with wide echoes is ~38 MB (96 bytes a gate), so
+ *  the 220 MB cache holds five or six -- building twelve ahead threw out the
+ *  first ones before they were shown. The workers keep this many ahead of a
+ *  play at any speed the setting allows. */
+const MESH_AHEAD = 4;
 
 /** Drop the mesh cache -- geometry options changed, so every mesh is now stale. */
 function clearMeshCache(): void {
@@ -376,6 +398,9 @@ interface NexradState {
   frames: number; // how many scans the loop covers
   /** Archive playback: unix seconds the loop starts at, or null for live. */
   archiveTime: number | null;
+  /** The instant archive playback should open on, when not its first frame
+   *  (a storm report's time: the loop starts a little before it). */
+  archiveFocus: number | null;
   /** Whole-day playback: "YYYY-MM-DD" (UTC), every scan of that day. */
   archiveDate: string | null;
   /** Non-null while a day is being pulled down; drives the blocking overlay. */
@@ -416,6 +441,8 @@ interface NexradState {
   setFrames: (n: number) => void;
   /** Jump the loop to a past instant (null = back to live). */
   setArchiveTime: (t: number | null) => void;
+  /** This radar, looping from shortly before `unix`, opened on the scan at it. */
+  openAt: (site: string, unix: number) => void;
   /** Load an entire UTC day, warming every frame before playback. */
   setArchiveDate: (date: string | null) => Promise<void>;
   cancelDayLoad: () => void;
@@ -438,11 +465,28 @@ interface NexradState {
   loadScans: () => Promise<void>;
   prefetch: (from: number) => void;
   countWarm: () => number;
+  /** Whether scan `i` of the list is already cached (shows without a fetch). */
+  isWarmAt: (i: number) => boolean;
+  /** Whether scan `i`'s mesh is built too (shows without a build). */
+  isMeshedAt: (i: number) => boolean;
   showIndex: (i: number) => Promise<boolean>;
   refresh: () => Promise<void>;
   startAutoRefresh: () => void;
   stopAutoRefresh: () => void;
   clear: () => void;
+}
+
+/** How far before a storm report's time "radar at this time" starts its loop. */
+const OPEN_AT_LEAD_S = 20 * 60;
+
+/** The scan closest to `unix`, or the first when there is no instant to aim at. */
+function nearestScan(scans: NexradScan[], unix: number | null): number {
+  if (unix == null || scans.length === 0) return 0;
+  let best = 0;
+  for (let i = 1; i < scans.length; i++) {
+    if (Math.abs((scans[i].time ?? 0) - unix) < Math.abs((scans[best].time ?? 0) - unix)) best = i;
+  }
+  return best;
 }
 
 /** The catalog load in flight, if any. The radar layer calls loadCatalog from
@@ -503,19 +547,20 @@ function checkAvailability(site: string): void {
   const current = () => store.getState().site === site && store.getState().archiveTime === at;
   const fresh = store.getState().availabilityState !== "ready";
   if (fresh) store.setState({ availabilityState: "loading" });
-  let full = false;
-  if (fresh) {
-    // Nothing known about this radar: its Level III tilts first, in well under
-    // a second, and Level II's when that check finishes.
-    void fetchSiteAvailability(site, true, at)
-      .then((quick) => {
-        if (!full && current()) applyAvailability(quick);
-      })
-      .catch(() => undefined);
-  }
-  void fetchSiteAvailability(site, false, at)
+  // Nothing known about this radar: its Level III tilts first, in about a
+  // second, and only then Level II's. Asked for together, Level II's -- a
+  // search of the chunk bucket, several seconds -- slowed the Level III answer
+  // to three or ten seconds, and the tilt buttons waited on it.
+  const first = fresh
+    ? fetchSiteAvailability(site, true, at)
+        .then((quick) => {
+          if (current()) applyAvailability(quick);
+        })
+        .catch(() => undefined)
+    : Promise.resolve();
+  void first
+    .then(() => (current() ? fetchSiteAvailability(site, false, at) : Promise.reject(new Error("moved on"))))
     .then((avail) => {
-      full = true;
       if (at === null) rememberAvailability(site, avail);
       if (!current()) return;
       // Unchanged since what is on screen: nothing to redo.
@@ -594,6 +639,7 @@ export const useNexradStore = create<NexradState>((set, get) => ({
   tilt: "0",
   frames: DEFAULT_FRAMES,
   archiveTime: null,
+  archiveFocus: null,
   archiveDate: null,
   dayLoad: null,
   showRing: true,
@@ -686,6 +732,9 @@ export const useNexradStore = create<NexradState>((set, get) => ({
     // budget isn't spent holding geometry for a radar no longer on screen.
     clearMeshCache();
     lastStormKey = null;
+    // The last radar's frames stop downloading now, not once this one's first
+    // scan is up: they were queued ahead of everything this radar needs first.
+    warmToken++;
     set({
       site, scan: null, mesh: null, meshRev: get().meshRev + 1, scans: [], index: 0,
       error: null, storms: null, selectedCellId: null,
@@ -706,7 +755,9 @@ export const useNexradStore = create<NexradState>((set, get) => ({
       // Moving the tilt already loads the scan; loading it again here was a
       // second fetch of every frame on every radar switch.
       if (!moved) void get().refresh();
-      void get().loadStorms();
+      // No storms asked for here: the first frame asks for its own once it is
+      // on the map. This one was for "now", a second answer nobody showed,
+      // and it held up the frame and the tilts behind it.
       checkAvailability(site);
       availabilityTimer = window.setInterval(() => {
         if (get().site === site) checkAvailability(site);
@@ -721,6 +772,7 @@ export const useNexradStore = create<NexradState>((set, get) => ({
 
   setProduct: (product) => {
     if (product === get().product) return;
+    warmToken++; // the last product's frames are no longer wanted
     const fam = get().catalog.find((f) => f.tilts.some((t) => t.code === product));
     set({
       product,
@@ -1008,7 +1060,7 @@ export const useNexradStore = create<NexradState>((set, get) => ({
   // must not, or the loop would yank itself back to the present.
   setArchiveTime: (archiveTime) => {
     if (archiveTime === get().archiveTime) return;
-    set({ archiveTime, archiveDate: null, error: null, scan: null, mesh: null,
+    set({ archiveTime, archiveFocus: null, archiveDate: null, error: null, scan: null, mesh: null,
           meshRev: get().meshRev + 1, index: 0 });
     if (archiveTime !== null) get().stopAutoRefresh();
     const { site } = get();
@@ -1018,6 +1070,21 @@ export const useNexradStore = create<NexradState>((set, get) => ({
     const moved = applyAvailability(archiveTime === null ? (knownAvailability.get(site) ?? null) : null);
     if (!moved) void get().refresh();
     checkAvailability(site);
+  },
+
+  openAt: (site, unix) => {
+    // A few scans of lead-in, so the loop shows the storm arriving.
+    const start = Math.floor(unix - OPEN_AT_LEAD_S);
+    if (get().site !== site) {
+      // Archive first, then the radar: its first load is then the archive one,
+      // not a live list that a second load would have to race.
+      get().stopAutoRefresh();
+      set({ archiveTime: start, archiveFocus: unix, archiveDate: null });
+      get().selectSite(site);
+      return;
+    }
+    get().setArchiveTime(start);
+    set({ archiveFocus: unix });
   },
 
   // Load the scan list for the current site/product. Live opens on the newest
@@ -1032,7 +1099,7 @@ export const useNexradStore = create<NexradState>((set, get) => ({
       set({
         scans: res.scans,
         archiveStart: res.archiveStart,
-        index: archiveTime !== null ? 0 : Math.max(0, res.scans.length - 1),
+        index: archiveTime !== null ? nearestScan(res.scans, get().archiveFocus) : Math.max(0, res.scans.length - 1),
         warm: 0,
       });
     } catch (err) {
@@ -1054,6 +1121,19 @@ export const useNexradStore = create<NexradState>((set, get) => ({
       .sort((a, b) => a.d - b.d)
       .map((x) => x.key);
 
+    // The meshes of the scans just ahead of the playhead are built too, on the
+    // workers, as each scan lands: a play then shows them without a build.
+    const ahead = new Set<string>();
+    for (let k = 0; k <= Math.min(MESH_AHEAD, scans.length - 1); k++) ahead.add(scans[(from + k) % scans.length].key);
+    const prebuild = (key: string) => {
+      if (!ahead.has(key) || token !== warmToken) return;
+      const id = scanId(site, product, key);
+      const scan = scanCache.get(id);
+      const pal = scan ? get().resolvePal(scan.meta.kind) : null;
+      if (scan && pal) void getMesh(id, scan, pal, get().smooth, get().threshold).catch(() => undefined);
+    };
+    for (const key of ahead) prebuild(key);
+
     let next = 0;
     const pump = async (): Promise<void> => {
       while (next < order.length) {
@@ -1062,6 +1142,7 @@ export const useNexradStore = create<NexradState>((set, get) => ({
         if (scanCache.has(scanId(site, product, key))) continue;
         try {
           await loadScan(site, product, key);
+          prebuild(key);
         } catch {
           /* skip -- it'll retry if displayed */
         }
@@ -1088,6 +1169,23 @@ export const useNexradStore = create<NexradState>((set, get) => ({
     }
 
     set({ warm: get().countWarm() });
+  },
+
+  isWarmAt: (i) => {
+    const { site, product, scans } = get();
+    const s = scans[i];
+    return !!site && !!s && scanCache.has(scanId(site, product, s.key));
+  },
+
+  isMeshedAt: (i) => {
+    const { site, product, scans, smooth, threshold } = get();
+    const s = scans[i];
+    if (!site || !s) return false;
+    const id = scanId(site, product, s.key);
+    const scan = scanCache.get(id);
+    if (!scan) return false;
+    const pal = get().resolvePal(scan.meta.kind);
+    return !pal || meshCache.has(meshKeyOf(id, pal, smooth, threshold));
   },
 
   countWarm: () => {
@@ -1119,7 +1217,7 @@ export const useNexradStore = create<NexradState>((set, get) => ({
       const scan = await loadScan(site, prod, k);
       const pal = get().resolvePal(scan.meta.kind);
       if (!pal) throw new Error("palette tables not loaded");
-      const mesh = getMesh(scanId(site, prod, k), scan, pal, get().smooth, get().threshold);
+      const mesh = await getMesh(scanId(site, prod, k), scan, pal, get().smooth, get().threshold);
       return { scan, mesh };
     };
 

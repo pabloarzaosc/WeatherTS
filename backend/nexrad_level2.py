@@ -33,7 +33,7 @@ import time
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Optional
 
 import numpy as np
@@ -120,6 +120,8 @@ _LIST_CACHE: "OrderedDict[str, tuple[float, list[dict]]]" = OrderedDict()
 _LIST_TTL = 120.0
 # Last known volume number per site, so discovery doesn't rescan 999 dirs.
 _VOL_HINT: dict[str, int] = {}
+# Whole volumes already found per site: {vol: list entry}.
+_WHOLE: dict[str, dict[int, dict]] = {}
 # The elevation ladder per decoded volume, so every extracted grid can carry it.
 _VOL_ELEVS: dict[tuple, list[dict]] = {}
 
@@ -250,18 +252,26 @@ def list_volumes(site: str, limit: int = 30, start: Optional[int] = None) -> lis
     newest = _newest_vol_num(site)
     if newest is None:
         return []
-    # A few extra candidates absorb incomplete/missing slots.
+    # A few extra candidates absorb incomplete/missing slots. A volume already
+    # found whole in the last few hours is not listed again -- it cannot change
+    # -- so a refresh asks about the newest few, not forty.
     cands = [((newest - 1 - i) % 999) + 1 for i in range(limit + 8)]
+    known = _WHOLE.setdefault(site, {})
+    cutoff = now - 6 * 3600
+    for v in [v for v, e in known.items() if e["time"] < cutoff]:
+        known.pop(v, None)
+        _CHUNK_LISTS.pop((site, v), None)
+    ask = [v for v in cands if v not in known]
     with ThreadPoolExecutor(24) as ex:
-        got = list(ex.map(lambda v: (v, _chunks_for(site, v)), cands))
+        got = list(ex.map(lambda v: (v, _chunks_for(site, v)), ask))
 
-    out: list[dict] = []
     for v, ch in got:
         if not _whole(ch):
             continue  # still being written, or old enough to be losing chunks
         st = _stamp(ch)
-        out.append({"vol": v, "stamp": st, "time": _stamp_unix(st),
-                    "key": f"L2:{v}:{st}"})
+        known[v] = {"vol": v, "stamp": st, "time": _stamp_unix(st), "key": f"L2:{v}:{st}"}
+        _CHUNK_LISTS[(site, v)] = ch
+    out: list[dict] = [known[v] for v in cands if v in known]
     out.sort(key=lambda d: d["time"])
     out = out[-limit:]
     _LIST_CACHE[site] = (now, out)
@@ -292,20 +302,204 @@ def _kept(key: tuple, fetch) -> bytes:
     return raw
 
 
-def _decode_volume(site: str, vol: int) -> tuple[Any, str]:
-    """Fetch a specific volume's chunks and decode it. The decoded volume is
-    never cached -- the caller extracts what it needs and lets it go."""
-    ch = _chunks_for(site, vol)
+def _volume_chunks(site: str, vol: int) -> list[tuple[str, int]]:
+    """A volume's chunk keys in order -- from the listing list_volumes already
+    made when there is one (a whole volume never changes), else listed now."""
+    known = _CHUNK_LISTS.get((site, vol))
+    ch = list(known) if known else _chunks_for(site, vol)
     if not ch:
         raise RuntimeError(f"Level II volume {vol} missing for {site}.")
     ch.sort(key=lambda kv: _chunk_num(kv[0]))
+    return ch
+
+
+def _volume_raw(site: str, vol: int) -> tuple[bytes, str]:
+    """A whole volume's bytes, and its stamp."""
+    ch = _volume_chunks(site, vol)
     stamp = _stamp(ch)
+    nums = [_chunk_num(k) for k, _ in ch]
+    return b"".join(_get_chunks(site, vol, stamp, ch, nums)), stamp
 
-    def fetch() -> bytes:
-        with ThreadPoolExecutor(24) as ex:
-            return b"".join(ex.map(lambda kv: _SESSION.get(CHUNKS + kv[0], timeout=_TIMEOUT).content, ch))
 
-    return Level2File(io.BytesIO(_kept((site, vol, stamp), fetch))), stamp
+def _decode_volume(site: str, vol: int) -> tuple[Any, str]:
+    """Fetch a specific volume's chunks and decode it. The decoded volume is
+    never cached -- the caller extracts what it needs and lets it go."""
+    raw, stamp = _volume_raw(site, vol)
+    return Level2File(io.BytesIO(raw)), stamp
+
+
+# ---------------------------------------------------------------------------
+# One tilt without the rest of the volume.
+#
+# The chunk bucket cuts a volume into pieces of exactly 120 radials of one
+# elevation, in the order flown (read from KFWS 2026-09-25: 55 chunks -- the
+# start chunk, 6 per 720-radial cut, 3 per 360-radial one). The start chunk,
+# 2 kB, carries the scan strategy: every cut's angle and whether it is flown at
+# 0.5 deg. So the chunks of one tilt are known before any of them is fetched,
+# and the 0.5 deg split cut is chunks 2-13: 2.3 MB of an 8.4 MB volume, and a
+# decode of that much instead of all of it -- the whole volume took 3.6 s to
+# pull and 1.4 s to decode, every frame of a loop.
+# ---------------------------------------------------------------------------
+_CHUNK_BYTES: "OrderedDict[tuple, bytes]" = OrderedDict()
+_CHUNK_BUDGET = 192 * 1024 * 1024
+_CHUNK_SIZE = {"n": 0}
+_CHUNK_LOCK = threading.Lock()
+# Chunks being fetched, so a tilt asked for while the rest of its volume is
+# being filled in waits for the same download instead of starting another.
+_INFLIGHT: dict[tuple, "Future[bytes]"] = {}
+# Chunk listings of whole volumes, as list_volumes found them.
+_CHUNK_LISTS: dict[tuple, list[tuple[str, int]]] = {}
+# The scan strategy of each volume: [(angle, radials)] per elevation number.
+_VOL_PLAN: "OrderedDict[tuple, list[tuple[float, int]]]" = OrderedDict()
+_POOL = ThreadPoolExecutor(32, thread_name_prefix="l2-chunk")
+# A tilt read alone is a volume with the cuts before it missing, and MetPy says
+# so for every one ("Missed start of volume!", "Missed elevation"), rightly and
+# uselessly -- as it does for message types it skips in a whole one.
+logging.getLogger("metpy.io.nexrad").setLevel(logging.ERROR)
+
+
+def _get_chunks(site: str, vol: int, stamp: str, ch: list[tuple[str, int]], nums: list[int],
+                pool: Optional[ThreadPoolExecutor] = None) -> list[bytes]:
+    """Chunks `nums` of a volume, in that order: kept ones from memory, the rest
+    fetched at once (on `pool`, the foreground one unless told otherwise)."""
+    by_num = {_chunk_num(k): k for k, _ in ch}
+    out: dict[int, bytes] = {}
+    waits: dict[int, Future] = {}
+    with _CHUNK_LOCK:
+        for n in nums:
+            key = (site, vol, stamp, n)
+            hit = _CHUNK_BYTES.get(key)
+            if hit is not None:
+                _CHUNK_BYTES.move_to_end(key)
+                out[n] = hit
+                continue
+            # A chunk already on its way is waited for, not fetched twice --
+            # unless it is only queued behind the rest of a volume being filled
+            # in: then it is taken off that queue and fetched now.
+            fut = _INFLIGHT.get(key)
+            if fut is not None and not fut.running() and not fut.done() and pool is None and fut.cancel():
+                fut = None
+            if fut is None:
+                fut = (pool or _POOL).submit(_fetch_chunk, key, CHUNKS + by_num[n])
+                _INFLIGHT[key] = fut
+            waits[n] = fut
+    for n, fut in waits.items():
+        out[n] = fut.result()
+    return [out[n] for n in nums]
+
+
+def _fetch_chunk(key: tuple, url: str) -> bytes:
+    """One chunk, kept once it is here -- by whoever fetched it."""
+    try:
+        data = _SESSION.get(url, timeout=_TIMEOUT).content
+        with _CHUNK_LOCK:
+            if key not in _CHUNK_BYTES:
+                _CHUNK_BYTES[key] = data
+                _CHUNK_SIZE["n"] += len(data)
+            while _CHUNK_SIZE["n"] > _CHUNK_BUDGET and len(_CHUNK_BYTES) > 1:
+                _, old = _CHUNK_BYTES.popitem(last=False)
+                _CHUNK_SIZE["n"] -= len(old)
+        return data
+    finally:
+        with _CHUNK_LOCK:
+            _INFLIGHT.pop(key, None)
+
+
+# The rest of the volume on screen, fetched behind it on connections of their
+# own, so another tilt of it is a decode (0.3 s) rather than a download (2.5 s
+# measured at KAMA) -- and never ahead of a frame someone is waiting for.
+_REST = ThreadPoolExecutor(6, thread_name_prefix="l2-rest")
+_RESTED: "OrderedDict[tuple, None]" = OrderedDict()
+
+
+def _fetch_rest(site: str, vol: int) -> None:
+    """Queue every chunk of a live volume, once."""
+    if (site, vol) in _RESTED:
+        return
+    _RESTED[(site, vol)] = None
+    while len(_RESTED) > 64:
+        _RESTED.popitem(last=False)
+
+    def run() -> None:
+        try:
+            ch = _volume_chunks(site, vol)
+            _get_chunks(site, vol, _stamp(ch), ch, [_chunk_num(k) for k, _ in ch], pool=_REST)
+        except Exception:  # noqa: BLE001 - a tilt asked for later fetches its own
+            _RESTED.pop((site, vol), None)
+
+    threading.Thread(target=run, daemon=True, name="l2-rest-volume").start()
+
+
+def _volume_plan(site: str, vol: int, stamp: str, ch: list[tuple[str, int]]) -> list[tuple[float, int]]:
+    """Each elevation's (angle, radials) from the volume's start chunk."""
+    key = (site, vol, stamp)
+    plan = _VOL_PLAN.get(key)
+    if plan is not None:
+        return plan
+    head = _get_chunks(site, vol, stamp, ch, [1])[0]
+    vcp = Level2File(io.BytesIO(head)).vcp_info
+    plan = []
+    for e in vcp.els:
+        fine = any("0.5 azimuth" in str(x) for x in (getattr(e, "super_res", None) or []))
+        plan.append((round(float(e.el_angle), 2), 720 if fine else 360))
+    _VOL_PLAN[key] = plan
+    while len(_VOL_PLAN) > 256:
+        _VOL_PLAN.popitem(last=False)
+    return plan
+
+
+def _slot_part(site: str, vol: int, slot: str) -> Optional[tuple[bytes, str, list[float], set[int]]]:
+    """The start chunk and the chunks of the cuts filed under `slot`, joined --
+    a volume MetPy reads as one holding just those sweeps -- with its stamp,
+    every cut angle of the volume (the slot mapping needs them all) and the
+    elevation numbers fetched. None when the chunks do not add up to the scan
+    strategy (a volume cut short, a strategy this does not know): the caller
+    then reads the whole volume."""
+    ch = _volume_chunks(site, vol)
+    stamp = _stamp(ch)
+    if not _whole(ch):
+        return None
+    plan = _volume_plan(site, vol, stamp, ch)
+    counts = [radials // 120 for _, radials in plan]
+    # A volume can stop short of its strategy (AVSET ends it when there is
+    # nothing up high): then its chunks add up to the first cuts only.
+    total = 1
+    for k, c in enumerate(counts):
+        total += c
+        if total == len(ch):
+            plan, counts = plan[:k + 1], counts[:k + 1]
+            break
+    else:
+        return None
+    angles = [a for a, _ in plan]
+    wanted = dict(slots_for_cuts(sorted(set(angles)))).get(slot)
+    first = 2
+    nums: list[int] = []
+    els: set[int] = set()
+    for i, (angle, _) in enumerate(plan):
+        if wanted is not None and abs(angle - wanted) <= 0.1:
+            nums.extend(range(first, first + counts[i]))
+            els.add(i + 1)
+        first += counts[i]
+    if not nums:
+        nums = list(range(2, 2 + counts[0]))  # not flown: one sweep, for the site's header
+    return b"".join(_get_chunks(site, vol, stamp, ch, [1, *nums])), stamp, angles, els
+
+
+def _ladder(angles: list[float]) -> list[dict]:
+    """The distinct cuts of a scan strategy, low to high, snapped to the ladder
+    (volume_elevations, from the plan instead of decoded sweeps)."""
+    groups: list[float] = []
+    for e in sorted(set(angles)):
+        if not groups or e - groups[-1] > 0.25:
+            groups.append(e)
+    out = []
+    for g in groups:
+        nominal = min(_ELEV_LADDER, key=lambda r: abs(r - g))
+        if out and out[-1]["elev"] == nominal:
+            continue
+        out.append({"elev": nominal, "actual": g})
+    return out
 
 
 def _sweep_angle(f: Any, sweep: list) -> float:
@@ -358,7 +552,8 @@ def available_tilts(f: Any, fam: str) -> list[dict]:
     return tilts
 
 
-def _pick(cand: list[tuple[int, float, int, int]], nominal: float, slot: str = ""):
+def _pick(cand: list[tuple[int, float, int, int]], nominal: float, slot: str = "",
+          cuts: Optional[list[float]] = None):
     """The best sweep for a nominal elevation.
 
     First the ANGLE: only the sweeps at the elevation nearest the one asked for.
@@ -374,17 +569,20 @@ def _pick(cand: list[tuple[int, float, int, int]], nominal: float, slot: str = "
     """
     # Only the sweeps whose cut belongs to this slot: at VCP 31's 1.5 deg cut the
     # "1.8" slot would otherwise take 1.5 as the nearest thing it has.
-    wanted = dict(slots_for_cuts(sorted({round(c[1], 2) for c in cand}))).get(slot)
+    # `cuts`: every cut of the volume, when only some of its sweeps were read.
+    angles = sorted(set(cuts)) if cuts is not None else sorted({round(c[1], 2) for c in cand})
+    wanted = dict(slots_for_cuts(angles)).get(slot)
     near = [c for c in cand if wanted is not None and abs(c[1] - wanted) <= 0.1]
     if not near:
         return None
     return sorted(near, key=lambda c: (-c[3], -c[2], abs(c[1] - nominal)))[0]
 
 
-def _extract(f: Any, fam: str, slot: str, site: str, stamp: str) -> Optional[dict]:
+def _extract(f: Any, fam: str, slot: str, site: str, stamp: str,
+             cuts: Optional[list[float]] = None) -> Optional[dict]:
     """One moment out of an already-decoded volume, in the polar wire format."""
     spec = L2_MOMENTS[fam]
-    chosen = _pick(_sweeps_with(f, spec["src"]), _ELEV[slot], slot)
+    chosen = _pick(_sweeps_with(f, spec["src"]), _ELEV[slot], slot, cuts)
     if chosen is None:
         return None
     idx, elev, _, _ = chosen
@@ -511,22 +709,52 @@ def polar_data_l2(site: str, product: str, key: str = "") -> dict:
         _GRID_CACHE.move_to_end(cache_key)
         return hit
 
+    # The bytes first, outside the decode gate: the gate bounds the memory of
+    # a decode, and with the downloads inside it a loop pulled two volumes at a
+    # time -- ten volumes took 49 s. A live volume brings only this tilt's
+    # chunks (see _slot_part); an archive one, or a volume the plan does not
+    # fit, comes whole.
+    cuts: Optional[list[float]] = None
+    els: set[int] = set()
+    if isinstance(vol, str):
+        raw = _kept(("archive", vol), lambda: _archive_get(_archive_path(vol)))
+        stamp = f"{vol[4:12]}-{vol[13:19]}"
+    else:
+        part = None
+        try:
+            part = _slot_part(icao_for(site), vol, slot)
+        except Exception:  # noqa: BLE001 - the whole volume still answers
+            part = None
+        if part is not None:
+            raw, stamp, cuts, els = part
+            # The newest volume is the one on screen until the next lands: its
+            # other tilts are the next thing asked for.
+            listed = _LIST_CACHE.get(icao_for(site))
+            if listed and listed[1] and listed[1][-1]["vol"] == vol:
+                _fetch_rest(icao_for(site), vol)
+        else:
+            raw, stamp = _volume_raw(icao_for(site), vol)
+
     with _DECODE_SEM:  # bound the memory spike, not the downloads
         # another thread may have finished it while we waited
         hit = _GRID_CACHE.get(cache_key)
         if hit is not None:
             _GRID_CACHE.move_to_end(cache_key)
             return hit
-        if isinstance(vol, str):
-            f, stamp = _decode_archive(vol)
-        else:
-            f, stamp = _decode_volume(icao_for(site), vol)
-        _VOL_ELEVS[(site, stamp)] = volume_elevations(f)
+        f = Level2File(io.BytesIO(raw))
+        if cuts is not None and els:
+            # Each fetched cut whole (120 radials a chunk), or the full volume.
+            flown = {int(sw[0][0].el_num): len(sw) for sw in f.sweeps if sw}
+            if any(el not in flown for el in els):
+                raw, stamp = _volume_raw(icao_for(site), vol)
+                f = Level2File(io.BytesIO(raw))
+                cuts = None
+        _VOL_ELEVS[(site, stamp)] = _ladder(cuts) if cuts is not None else volume_elevations(f)
         while len(_VOL_ELEVS) > 8:
             _VOL_ELEVS.pop(next(iter(_VOL_ELEVS)))
         wanted: Optional[dict] = None
         for other in L2_MOMENTS:
-            grid = _extract(f, other, slot, site, stamp)
+            grid = _extract(f, other, slot, site, stamp, cuts)
             if grid is None:
                 continue
             k = (site, other, slot, vol)
@@ -840,17 +1068,21 @@ def site_cuts(site: str, at: Optional[int] = None) -> dict:
     vols = list_volumes(site, 1)
     if vols:
         newest = vols[-1]
-        chunks = sorted(_chunks_for(site, newest["vol"]), key=lambda kv: _chunk_num(kv[0]))
+        # Through the chunk store: the first Level II frame of this volume then
+        # finds its start chunk (the scan strategy) already here.
+        chunks = _volume_chunks(site, newest["vol"])
         if chunks and chunks[0][0].endswith("-S"):
-            head = _SESSION.get(CHUNKS + chunks[0][0], timeout=_TIMEOUT).content
+            ends = chunks[-1][0].endswith("-E")
+            got = _get_chunks(site, newest["vol"], newest["stamp"], chunks,
+                              [1, _chunk_num(chunks[-1][0])] if ends else [1])
+            head = got[0]
             vcp = Level2File(io.BytesIO(head)).vcp_info
             volume, volume_unix = newest["key"], newest["time"]
             # The radar ends a volume early when there is nothing up high
             # (AVSET): KLGX's VCP runs to 19.5 deg and the volume stopped at 6.4.
             # The last chunk carries the last elevation it reached.
-            if chunks[-1][0].endswith("-E"):
-                tail = _SESSION.get(CHUNKS + chunks[-1][0], timeout=_TIMEOUT).content
-                flown = _last_el_num(head, tail)
+            if ends:
+                flown = _last_el_num(head, got[1])
     if vcp is None:
         key = _newest_archive_key(site)
         if key is None:

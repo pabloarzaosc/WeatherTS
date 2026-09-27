@@ -5,6 +5,7 @@ import { BACKEND_BASE } from "../../lib/apiConfig";
 import { useMesoscaleStore, type MesoscaleMD } from "../../store/useMesoscaleStore";
 import { useAlertStore } from "../../store/useAlertStore";
 import { getSetting } from "../../settings/useSettingsStore";
+import { mapInk } from "../../map/mapInk";
 
 const SRC = "spc-md";
 const FILL = "spc-md-fill";
@@ -178,7 +179,7 @@ export const mesoscaleLayer: LayerModule = {
         },
         paint: {
           "text-color": HAZARD_COLOR,
-          "text-halo-color": "rgba(5,8,13,0.95)",
+          "text-halo-color": mapInk().halo,
           "text-halo-width": 1.8,
         },
       });

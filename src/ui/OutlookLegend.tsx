@@ -7,23 +7,21 @@ function formatStamp(value?: string | null): string | null {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value.replace(/\.png$/i, "");
-  return date.toLocaleString(undefined, {
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  // UTC, as the outlooks are issued and as the panel and popup show them.
+  const iso = date.toISOString();
+  return `${iso.slice(5, 7)}/${iso.slice(8, 10)} ${iso.slice(11, 13)}${iso.slice(14, 16)}Z`;
 }
 
 function timing(meta: OutlookMeta): string | null {
   const run = meta.run ? `run ${meta.run}` : null;
   const valid = formatStamp(meta.valid);
   const expire = formatStamp(meta.expire);
+  const issued = formatStamp(meta.issued);
   if (run && valid) return `${run} / ${valid}`;
   if (run) return run;
-  if (expire) return `until ${expire}`;
-  if (valid) return valid;
-  return null;
+  const span = valid && expire ? `${valid} – ${expire}` : expire ? `until ${expire}` : valid;
+  if (issued && span) return `issued ${issued} · ${span}`;
+  return span ?? (issued ? `issued ${issued}` : null);
 }
 
 function groupedLegend(items: OutlookLegendItem[]): Array<[string, OutlookLegendItem[]]> {
@@ -67,6 +65,8 @@ export function OutlookLegend() {
                 <span>{t}</span>
               </div>
             )}
+
+            {meta.note && !meta.error && <div className="ol-card__note">{meta.note}</div>}
 
             {groupedLegend(meta.legend).map(([section, items]) => (
               <div key={`${meta.id}-${section}`} className="ol-table">

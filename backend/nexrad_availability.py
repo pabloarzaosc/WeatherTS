@@ -41,6 +41,10 @@ _STALE_S = 2 * 3600
 
 
 _QUICK: dict[str, tuple[float, dict]] = {}
+# Each Level III code's newest scan, as the quick answer listed them: the full
+# check that follows it reuses them and only reads the Level II volume.
+_L3_NEWEST: dict[str, tuple[float, dict[str, Optional[int]]]] = {}
+_L3_REUSE_S = 90
 
 
 def site_availability(site: str, quick: bool = False, at: Optional[int] = None) -> dict[str, Any]:
@@ -63,7 +67,7 @@ def site_availability(site: str, quick: bool = False, at: Optional[int] = None) 
         got = _QUICK.get(ck)
         if got and time.time() - got[0] < ttl:
             return got[1]
-        out = _check(sid, with_level2=False, at=at)
+        out = _check(sid, with_level2=False, at=at, ck=ck)
         _QUICK[ck] = (time.time(), out)
         return out
     lock = _LOCKS.setdefault(ck, threading.Lock())
@@ -71,7 +75,7 @@ def site_availability(site: str, quick: bool = False, at: Optional[int] = None) 
         hit = _CACHE.get(ck)
         if hit and time.time() - hit[0] < ttl:
             return hit[1]
-        out = _check(sid, at=at)
+        out = _check(sid, at=at, ck=ck)
         _CACHE[ck] = (time.time(), out)
         return out
 
@@ -93,7 +97,7 @@ def _newest(sid: str, code: str, since: datetime, until: Optional[datetime] = No
     return None
 
 
-def _check(sid: str, with_level2: bool = True, at: Optional[int] = None) -> dict[str, Any]:
+def _check(sid: str, with_level2: bool = True, at: Optional[int] = None, ck: str = "") -> dict[str, Any]:
     catalog = n2.merged_catalog(n3.product_catalog())
 
     l3_codes = sorted({n3._SRV_SOURCE.get(t["code"], t["code"])  # noqa: SLF001
@@ -111,9 +115,17 @@ def _check(sid: str, with_level2: bool = True, at: Optional[int] = None) -> dict
         except Exception:  # noqa: BLE001 - no Level II: only Level III tilts
             return None
 
+    listed = _L3_NEWEST.get(ck)
     with ThreadPoolExecutor(16) as pool:
         cuts_job = pool.submit(vcp) if with_level2 else None
-        newest = dict(zip(l3_codes, pool.map(lambda c: _newest(sid, c, since, until), l3_codes)))
+        if listed and time.time() - listed[0] < _L3_REUSE_S and set(listed[1]) >= set(l3_codes):
+            newest = listed[1]
+        else:
+            newest = dict(zip(l3_codes, pool.map(lambda c: _newest(sid, c, since, until), l3_codes)))
+            now = time.time()
+            for k in [k for k, (t, _) in _L3_NEWEST.items() if now - t > _L3_REUSE_S]:
+                _L3_NEWEST.pop(k, None)
+            _L3_NEWEST[ck] = (now, newest)
         info = cuts_job.result() if cuts_job else None
 
     ref = newest.get("N0B") or max((v for v in newest.values() if v), default=None)

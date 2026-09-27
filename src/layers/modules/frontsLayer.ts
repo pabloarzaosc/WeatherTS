@@ -3,6 +3,7 @@ import type { GeoJSONSource, Map as MapLibreMap, MapLayerMouseEvent } from "mapl
 import type { LayerModule } from "../types";
 import { FRONT_COLORS } from "../../lib/fronts";
 import { selectFrontFeatures, useFrontsStore } from "../../store/useFrontsStore";
+import { mapInk } from "../../map/mapInk";
 
 const SRC = "fronts-src";
 const L_TROUGH = "fronts-trough";
@@ -214,7 +215,7 @@ export const frontsLayer: LayerModule = {
         },
         paint: {
           "text-color": ["match", ["get", "kind"], "high", FRONT_COLORS.cold, FRONT_COLORS.warm],
-          "text-halo-color": "rgba(6,10,16,0.92)",
+          "text-halo-color": mapInk().halo,
           "text-halo-width": 1.8,
           "text-opacity": opacity,
         },
@@ -239,7 +240,7 @@ export const frontsLayer: LayerModule = {
         },
         paint: {
           "text-color": ["match", ["get", "kind"], "high", FRONT_COLORS.cold, FRONT_COLORS.warm],
-          "text-halo-color": "rgba(6,10,16,0.92)",
+          "text-halo-color": mapInk().halo,
           "text-halo-width": 1.6,
           "text-opacity": opacity,
         },

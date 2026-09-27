@@ -9,7 +9,6 @@ import { DrawTool } from "./ui/DrawTool";
 import { AlertController } from "./ui/AlertController";
 import { AlertPanel } from "./ui/AlertPanel";
 import { OutlookLegend } from "./ui/OutlookLegend";
-import { MslpLegend } from "./ui/MslpLegend";
 import { BasemapPicker } from "./ui/BasemapPicker";
 import { MapContextMenu } from "./ui/sounding/MapContextMenu";
 import { SoundingViewer } from "./ui/sounding/SoundingViewer";
@@ -23,6 +22,8 @@ import { MapTimeline } from "./ui/MapTimeline";
 import { RadarHud } from "./ui/RadarHud";
 import { RadarReadout } from "./ui/RadarReadout";
 import { ObsReadout } from "./ui/ObsReadout";
+import { ObsCompare } from "./ui/ObsCompare";
+import { RunStrip } from "./ui/RunStrip";
 import { DayLoadOverlay } from "./ui/DayLoadOverlay";
 import { LoopLoadCard } from "./ui/LoopLoadCard";
 import { AnimationModal } from "./ui/AnimationModal";
@@ -77,7 +78,6 @@ export default function App() {
         <MeasureTool />
         <DrawTool />
         <OutlookLegend />
-        <MslpLegend />
         <AlertPanel />
         <ZoomControls />
         <StatusBar />
@@ -86,6 +86,9 @@ export default function App() {
         {/* the gate value under the pointer, pinned to the pointer */}
         <RadarReadout />
         <ObsReadout />
+        {/* the Models compare views: models side by side, or the runs of one */}
+        <ObsCompare />
+        <RunStrip />
         {/* radar storm-cell card, anchored to the cell it describes */}
         <StormPopup />
         <ChaserPopup />
@@ -99,7 +102,7 @@ export default function App() {
         <FrontPopup />
         <MapTimeline />
         <DayLoadOverlay />
-        {/* a satellite or analysis loop loading, with a way to stop it */}
+        {/* an analysis loop loading, with a way to stop it */}
         <LoopLoadCard />
         <UpdateBanner />
       </div>

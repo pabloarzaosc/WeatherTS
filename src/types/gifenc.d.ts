@@ -1,4 +1,4 @@
-// gifenc ships no types. Only the three entry points we use are declared.
+// gifenc ships no types. Only the entry points we use are declared.
 declare module "gifenc" {
   export interface WriteFrameOptions {
     palette?: number[][];
@@ -10,6 +10,8 @@ declare module "gifenc" {
     first?: boolean;
   }
   export interface GIFEncoderInstance {
+    /** The file's "GIF89a" signature; written by the first frame unless `auto` is false. */
+    writeHeader(): void;
     writeFrame(index: Uint8Array, width: number, height: number, opts?: WriteFrameOptions): void;
     finish(): void;
     bytes(): Uint8Array;

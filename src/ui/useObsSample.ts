@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { fetchObsValue } from "../lib/observations";
+import { fetchObsValue, isTrackSource } from "../lib/observations";
 import { useAppStore } from "../store/useAppStore";
 import { selectObsFrame, useObsStore } from "../store/useObsStore";
 
@@ -46,7 +46,8 @@ export function useObsSample(): ObsSample | null {
   useEffect(() => {
     // While the frame is still being drawn there is nothing to read yet; the
     // server answers "pending" rather than downloading for a pointer move.
-    if (!visible || !cursor || !frame || busy) {
+    // Tracks have no value at a point.
+    if (!visible || !cursor || !frame || busy || isTrackSource(useObsStore.getState().catalog, source)) {
       if (!visible || !cursor || !frame) setSample(null);
       return;
     }

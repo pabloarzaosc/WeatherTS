@@ -3117,6 +3117,11 @@ html[data-reduce-motion="true"] *::after {
   background: var(--panel);
   animation: fade-up var(--t) var(--ease-out) both;
 }
+/* With radar and an analysis both on, the two scales stack rather than sit on
+   top of each other; each can still be dragged wherever it is wanted. */
+.cbar--obs {
+  bottom: calc(var(--dock-h) + 14px + 92px);
+}
 .cbar__head {
   display: flex;
   align-items: baseline;
@@ -4727,6 +4732,31 @@ html[data-reduce-motion="true"] *::after {
   color: var(--text);
 }
 .sfx__chip--wide { width: 100%; border-radius: var(--radius); padding: 7px 10px; text-align: center; }
+.sfx__count { margin-left: 5px; font-style: normal; font-family: var(--mono); font-size: 10px; color: var(--text-faint); }
+.sfx__token { display: flex; gap: 6px; }
+.sfx__token input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.sfx__token button {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.sfx__token button:not(:disabled):hover { border-color: var(--accent); color: var(--text); }
+.sfx__note { margin: 0; font-size: 10.5px; line-height: 1.45; color: var(--text-faint); }
+.sfx__note b { color: var(--text-dim); font-weight: 600; }
+.sfx__note.is-error { display: flex; gap: 5px; align-items: center; color: var(--danger, #e5484d); }
 
 .sfx__units { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }
 .sfx__seg { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
@@ -5232,7 +5262,7 @@ html[data-reduce-motion="true"] *::after {
 .sfc-mini__open {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 8px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -5242,18 +5272,32 @@ html[data-reduce-motion="true"] *::after {
 .sfc-mini__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding-right: 22px; }
 .sfc-mini__head b { font-family: var(--mono); font-size: 12.5px; color: var(--text); letter-spacing: 0.04em; }
 .sfc-mini__head span { font-size: 10px; color: var(--text-faint); }
+.sfc-mini__name { margin-top: -2px; font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sfc-mini__rows { display: flex; flex-direction: column; gap: 3px; }
 .sfc-mini__row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .sfc-mini__row span { font-size: 11.5px; color: var(--text-dim); }
 .sfc-mini__row b { font-family: var(--mono); font-size: 12px; color: var(--text); font-weight: 600; }
 .sfc-mini__more {
-  align-self: flex-start;
+  align-self: stretch;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
   font-family: var(--mono);
   font-variation-settings: var(--mono-axes);
-  font-size: 9.5px;
-  color: var(--accent);
+  font-size: 10.5px;
+  letter-spacing: 0.2px;
+  text-align: center;
+  transition: background 110ms ease, border-color 110ms ease;
 }
-.sfc-mini__open:hover .sfc-mini__more { text-decoration: underline; }
+.sfc-mini__open:hover .sfc-mini__more {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.sfc-mini__open:active .sfc-mini__more {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
 .sfc-mini__radars { display: flex; gap: 5px; padding-top: 6px; border-top: 1px solid var(--border); }
 .sfc-mini__radar {
   flex: 1 1 0;
@@ -5268,29 +5312,108 @@ html[data-reduce-motion="true"] *::after {
 }
 .sfc-mini__radar:hover { border-color: color-mix(in srgb, var(--accent) 50%, transparent); color: var(--accent); }
 
-/* ---- Station: full METAR report ------------------------------------------ */
-.stp {
+/* ---- Station: search, current conditions, meteograms ---------------------- */
+/* The finder in the Surface panel. */
+.stsearch { display: flex; flex-direction: column; gap: 6px; }
+.stsearch__field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-faint);
+}
+.stsearch__field:focus-within { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.stsearch__field input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.stsearch__field input::-webkit-search-cancel-button { display: none; }
+.stsearch__clear {
+  display: flex;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 2px;
+}
+.stsearch__clear:hover { color: var(--text); }
+.stsearch__spin { animation: spin 1s linear infinite; }
+.stsearch__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.stsearch__head b { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0; }
+.stsearch__list { display: flex; flex-direction: column; gap: 2px; max-height: 232px; overflow-y: auto; }
+.stsearch__row {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: baseline;
+  gap: 7px;
+  padding: 5px 7px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.stsearch__row:hover { border-color: var(--border); }
+.stsearch__row.is-on { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.stsearch__row b {
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 11.5px;
+  color: var(--text);
+  letter-spacing: 0.03em;
+}
+.stsearch__row span {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stsearch__row i { font-style: normal; font-family: var(--mono); font-size: 10px; color: var(--text-faint); }
+.stsearch__note { padding: 8px 4px; font-size: 11.5px; color: var(--text-faint); }
+
+/* The station report itself. */
+.stn {
   position: fixed;
   inset: 0;
   z-index: 125;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: 22px;
 }
-.stp__scrim {
+.stn__scrim {
   position: absolute;
   inset: 0;
   background: rgba(6, 8, 11, 0.7);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
 }
-.stp__panel {
+.stn__panel {
   position: relative;
   display: flex;
   flex-direction: column;
-  width: min(420px, 100%);
-  max-height: 86vh;
+  width: min(1040px, 100%);
+  max-height: 90vh;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--panel-solid);
@@ -5298,134 +5421,295 @@ html[data-reduce-motion="true"] *::after {
   overflow: hidden;
   animation: fade-up var(--t) var(--ease-out) both;
 }
-.stp__top {
+.stn__top {
   display: flex;
   align-items: flex-start;
+  justify-content: space-between;
   gap: 12px;
-  padding: 15px 16px 12px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--border);
 }
-.stp__top > div { flex: 1 1 auto; min-width: 0; }
-.stp__top h2 { margin: 0; font-family: var(--mono); font-size: 16px; font-weight: 700; color: var(--text); letter-spacing: 0.04em; }
-.stp__top span { display: flex; align-items: center; gap: 4px; margin-top: 3px; font-size: 11px; color: var(--text-faint); }
-.stp__close {
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  width: 27px;
-  height: 27px;
+.stn__ident { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.stn__ident h2 {
+  margin: 0;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+.stn__ident > div { min-width: 0; }
+.stn__ident b { display: block; font-size: 13px; font-weight: 600; color: var(--text); }
+.stn__ident span {
+  display: block;
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stn__topright { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.stn__cat {
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--cat) 55%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--cat) 12%, transparent);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--cat);
+}
+.stn__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: transparent;
-  color: var(--text-dim);
+  color: var(--text-faint);
+  cursor: pointer;
 }
-.stp__close:hover { color: var(--text); border-color: rgba(190, 200, 210, 0.3); }
-.stp__body { padding: 14px 16px 16px; overflow-y: auto; }
+.stn__icon:hover { color: var(--text); border-color: rgba(190, 200, 210, 0.3); }
+.stn__spin { animation: spin 1s linear infinite; }
 
-.stp__cat {
+.stn__body {
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr);
+  gap: 0;
+  overflow-y: auto;
+}
+.stn__side {
+  padding: 12px 13px 14px;
+  border-right: 1px solid var(--border);
+}
+.stn__main { padding: 12px 14px 14px; min-width: 0; }
+
+.stn__sec {
   display: flex;
   align-items: baseline;
-  gap: 9px;
-  padding: 9px 12px;
-  border: 1px solid color-mix(in srgb, var(--cat) 45%, transparent);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--cat) 12%, transparent);
+  justify-content: space-between;
+  gap: 8px;
+  margin: 14px 0 7px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
 }
-.stp__cat b { font-family: var(--mono); font-size: 15px; letter-spacing: 0.08em; color: var(--cat); }
-.stp__cat span { font-size: 11.5px; color: var(--text-dim); }
+.stn__sec:first-child { margin-top: 0; }
+.stn__sec > span { display: flex; align-items: center; gap: 5px; }
+.stn__sec > b { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.stn__sec--reports { margin-top: 16px; }
 
-.stp__cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; margin-top: 12px; }
-.stp__card {
+.stn__tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.stn__tile {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: 9px 10px;
+  padding: 7px 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--panel-2);
-  text-align: left;
 }
-.stp__card:hover { border-color: rgba(190, 200, 210, 0.3); }
-.stp__card.is-on { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.stp__card > span {
-  font-family: var(--mono);
-  font-variation-settings: var(--mono-axes);
-  font-size: 9px;
+.stn__tile > span {
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--text-faint);
 }
-.stp__card > b { font-size: 15px; font-weight: 650; color: var(--text); }
-.stp__card > i { font-style: normal; font-size: 10px; color: var(--text-faint); }
+.stn__tile > b {
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--text);
+}
+.stn__tile > i { font-style: normal; font-size: 9.5px; color: var(--text-faint); }
 
-.stp__sec {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 14px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
+.stn__wx { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.stn__wx span {
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--radius);
+  font-size: 11px;
+  color: var(--text);
 }
-.stp__sec > span {
-  display: flex;
-  align-items: center;
-  gap: 5px;
+
+.stn__sum { display: flex; flex-direction: column; gap: 4px; }
+.stn__sum > div { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.stn__sum span { font-size: 11.5px; color: var(--text-dim); }
+.stn__sum b {
   font-family: var(--mono);
   font-variation-settings: var(--mono-axes);
-  font-size: 9px;
-  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
 }
-.stp__ranges { display: flex; gap: 3px; }
-.stp__range {
-  padding: 3px 8px;
+
+.stn__sky { display: flex; flex-direction: column; gap: 4px; }
+.stn__skyrow { display: flex; align-items: baseline; justify-content: space-between; font-size: 12px; color: var(--text-dim); }
+.stn__skyrow b { font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--text); }
+
+.stn__tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; }
+.stn__tab {
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.stn__tab:hover { color: var(--text); }
+.stn__tab.is-on { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--text); }
+.stn__ranges { display: flex; gap: 3px; margin-left: auto; }
+.stn__range {
+  padding: 5px 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: transparent;
   color: var(--text-faint);
-  font-family: var(--mono);
-  font-variation-settings: var(--mono-axes);
-  font-size: 10px;
-}
-.stp__range.is-on { border-color: transparent; background: var(--accent); color: #fff; }
-
-.stp__chart { width: 100%; height: 128px; display: block; margin-top: 8px; }
-.stp__grid { stroke: var(--border); stroke-width: 1; }
-.stp__ylab { fill: var(--text-faint); font-size: 8px; font-family: var(--mono); text-anchor: end; }
-.stp__xlab { fill: var(--text-faint); font-size: 8px; font-family: var(--mono); }
-.stp__chart-empty { padding: 22px 0; text-align: center; font-size: 11.5px; color: var(--text-faint); }
-
-.stp__sky { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
-.stp__sky-row { display: flex; align-items: baseline; justify-content: space-between; font-size: 12.5px; color: var(--text-dim); }
-.stp__sky-row b { font-family: var(--mono); font-size: 12px; color: var(--text); font-weight: 600; }
-.stp__sky-row--ceiling { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--border); }
-.stp__sky-row--ceiling span { color: var(--text); }
-
-.stp__copy {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 9px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-faint);
-  font-size: 10.5px;
-}
-.stp__copy:hover { color: var(--text); border-color: rgba(190, 200, 210, 0.3); }
-.stp__raw {
-  margin: 8px 0 0;
-  padding: 9px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
   font-family: var(--mono);
   font-variation-settings: var(--mono-axes);
   font-size: 11px;
-  line-height: 1.55;
+  cursor: pointer;
+}
+.stn__range:hover { color: var(--text); }
+.stn__range.is-on { border-color: transparent; background: var(--accent); color: #fff; }
+
+.stn__loading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 26px 0;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.stn__loading.is-error { color: var(--warn, #f6b93b); }
+
+.stn__copy {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  cursor: pointer;
+}
+.stn__copy:hover:not(:disabled) { color: var(--text); border-color: rgba(190, 200, 210, 0.3); }
+.stn__copy:disabled { opacity: 0.4; cursor: default; }
+
+.stn__reports { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow-y: auto; }
+.stn__report {
+  display: grid;
+  grid-template-columns: 8px 44px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 7px;
+  padding: 4px 6px;
+  border-radius: var(--radius);
+}
+.stn__report:nth-child(odd) { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.stn__dot { width: 6px; height: 6px; border-radius: 50%; align-self: center; }
+.stn__report time { font-family: var(--mono); font-size: 10.5px; color: var(--text-faint); }
+.stn__report code {
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 11px;
   color: var(--text-dim);
-  white-space: pre-wrap;
   word-break: break-word;
 }
-.stp__foot { margin-top: 12px; font-family: var(--mono); font-size: 10px; color: var(--text-faint); text-align: right; }
+.stn__foot { margin-top: 10px; font-family: var(--mono); font-size: 10px; color: var(--text-faint); text-align: right; }
+/* Where an airport shows its flight category: the network a station is in. */
+.stn__net {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+.stn__obs { display: flex; flex-direction: column; gap: 1px; max-height: 260px; overflow-y: auto; }
+.stn__obsrow {
+  display: grid;
+  grid-template-columns: 48px repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.stn__obsrow:nth-child(even) { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.stn__obsrow time { color: var(--text-faint); }
+.stn__obsrow--head { font-family: inherit; font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.05em; }
+
+.stn__charts { transition: opacity var(--t) var(--ease); }
+.stn__charts.is-busy { opacity: 0.45; }
+
+/* The meteogram stack: panels share one time axis and one crosshair. */
+.mgm { position: relative; margin-top: 10px; }
+.mgm__panel { position: relative; }
+.mgm__title {
+  position: absolute;
+  top: 1px;
+  left: 44px;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+.mgm__grid { stroke: var(--border); stroke-width: 1; }
+.mgm__grid--v { stroke: color-mix(in srgb, var(--border) 60%, transparent); }
+.mgm__grid--day { stroke: color-mix(in srgb, var(--text) 22%, transparent); }
+.mgm__cross { stroke: color-mix(in srgb, var(--accent) 70%, transparent); stroke-width: 1; }
+.mgm__ylab { fill: var(--text-faint); font-size: 8.5px; font-family: var(--mono); text-anchor: end; }
+.mgm__xlab { fill: var(--text-faint); font-size: 8.5px; font-family: var(--mono); }
+.mgm__none { fill: var(--text-faint); font-size: 10px; }
+.mgm__arrows path { stroke: #8ea0b6; stroke-width: 1.1; fill: none; }
+.mgm__empty { padding: 26px 0; text-align: center; font-size: 11.5px; color: var(--text-faint); }
+.mgm__tip {
+  position: absolute;
+  top: 4px;
+  z-index: 2;
+  min-width: 128px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+.mgm__tip > b {
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 12px;
+  color: var(--text);
+}
+.mgm__tip > span { margin-left: 6px; font-size: 10px; color: var(--text-faint); }
+.mgm__tiprows { display: flex; flex-direction: column; gap: 2px; margin-top: 5px; }
+.mgm__tiprow { display: grid; grid-template-columns: 7px 1fr auto; align-items: center; gap: 6px; }
+.mgm__tiprow i { width: 6px; height: 6px; border-radius: 50%; }
+.mgm__tiprow span { font-size: 11px; color: var(--text-dim); }
+.mgm__tiprow b { font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--text); }
+.mgm__tiprow--wx { grid-template-columns: 1fr; }
+.mgm__tiprow--wx span { color: var(--text); }
+
+@media (max-width: 880px) {
+  .stn__body { grid-template-columns: minmax(0, 1fr); }
+  .stn__side { border-right: 0; border-bottom: 1px solid var(--border); }
+}
 
 /* ---- Model picker -------------------------------------------------------- */
 /* Sits under the category grid: choose the product, then what feeds it. */
@@ -6208,261 +6492,18 @@ html[data-reduce-motion="true"] .cat__body {
   font-size: 11.5px;
 }
 
-/* ─────────────────────────  MRMS PICKER  ─────────────────────────
-   A hundred products in a 300px column. The list scrolls inside the panel
-   rather than growing it, so the region tabs and the search box stay put
-   while you read down the catalog. */
-.mrms { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
-
-.mrms__err {
-  margin: 0;
-  font-size: 0.74rem;
-  color: var(--danger, #f87171);
-  line-height: 1.4;
-}
-
 /* ---- region ---- */
-.mrms__regions { display: flex; flex-wrap: wrap; gap: 4px; }
-.mrms__region {
-  flex: 1 1 auto;
-  padding: 5px 9px;
-  font-size: 0.7rem;
-  letter-spacing: 0.02em;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-dim);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
-}
-.mrms__region:hover { color: var(--text); border-color: var(--border-strong, var(--border)); }
-.mrms__region.is-on {
-  color: var(--on-accent);
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
 /* ---- search ---- */
-.mrms__search {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 9px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--panel-2, rgba(255, 255, 255, 0.03));
-  color: var(--text-mut);
-}
-.mrms__search:focus-within { border-color: var(--accent); }
-.mrms__search input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  outline: none;
-  color: var(--text);
-  font-size: 0.76rem;
-  padding: 7px 0;
-}
-.mrms__search button {
-  border: 0;
-  background: transparent;
-  color: var(--text-mut);
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-}
-.mrms__search button:hover { color: var(--text); }
-
 /* ---- what is on screen ---- */
-.mrms__meta {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 0.72rem;
-  color: var(--text-mut);
-  min-height: 16px;
-}
-.mrms__meta b { color: var(--text); font-weight: 600; }
 /* The label is the long half; it yields before the timestamp does. */
-.mrms__meta b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mrms__meta span { flex: 0 0 auto; }
-
 /* ---- the catalog ---- */
-.mrms__list {
-  overflow-y: auto;
-  max-height: 46vh;
-  margin: 0 -4px;
-  padding: 0 4px;
-  scrollbar-width: thin;
-}
-.mrms__empty { margin: 10px 2px; font-size: 0.74rem; color: var(--text-mut); }
-
-.mrms__group + .mrms__group { margin-top: 12px; }
-.mrms__grouphead {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  margin: 0 0 4px;
-  padding: 5px 2px 4px;
-  font-size: 0.63rem;
-  color: var(--text-mut);
-  /* Opaque: the rows scroll underneath this. */
-  background: var(--panel, #12161c);
-}
-
-.mrms__item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-dim);
-  font-size: 0.765rem;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-.mrms__item:hover { background: var(--panel-2, rgba(255, 255, 255, 0.04)); color: var(--text); }
-.mrms__item.is-on {
-  color: #fff;
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-}
-.mrms__itemlabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mrms__itemunit {
-  flex: 0 0 auto;
-  font-size: 0.62rem;
-  letter-spacing: 0.03em;
-  color: var(--text-mut);
-}
-.mrms__item.is-on .mrms__itemunit { color: rgba(255, 255, 255, 0.72); }
-
 /* Published nowhere in this region. Dimmed and inert, but still listed, so the
    absence is information rather than a gap. */
-.mrms__item.is-gone { opacity: 0.38; cursor: not-allowed; }
-.mrms__item.is-gone:hover { background: transparent; color: var(--text-dim); }
-.mrms__item.is-gone .mrms__itemlabel { text-decoration: line-through; text-decoration-thickness: 1px; }
-
-.mrms__coverage {
-  margin: 0;
-  font-size: 0.7rem;
-  color: var(--text-mut);
-}
-
 /* ---- frame stepper ---- */
-.mrms__frames {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 5px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--panel-2, rgba(255, 255, 255, 0.03));
-}
-.mrms__frames button {
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 22px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-dim);
-  cursor: pointer;
-  transition: color 0.12s ease, background 0.12s ease;
-}
-.mrms__frames button:hover:not(:disabled) { color: var(--text); background: rgba(255, 255, 255, 0.06); }
-.mrms__frames button:disabled { opacity: 0.3; cursor: default; }
-
-.mrms__frame {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  font-family: var(--mono);
-  font-variation-settings: var(--mono-axes);
-  font-size: 0.68rem;
-  letter-spacing: 0.01em;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-}
 /* Live is a state, not a timestamp — it reads as a badge so the eye does not
    try to parse it as part of the time. */
-.mrms__live {
-  flex: 0 0 auto;
-  font-style: normal;
-  font-size: 0.58rem;
-  padding: 1px 5px;
-  border-radius: var(--radius);
-  color: #34d399;
-  background: rgba(52, 211, 153, 0.14);
-  border: 1px solid rgba(52, 211, 153, 0.3);
-}
-
-/* ─────────────────────────  MRMS COLOUR BAR  ─────────────────────────
-   Sits with the radar's own scale at the bottom of the focused pane. It is
-   drawn from stops the backend sent rather than a table repeated here, so it
-   cannot disagree with the pixels it explains. */
-.mrmsbar {
-  pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 7px 10px 6px;
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--panel, #12161c) 88%, transparent);
-  border: 1px solid var(--border);
-  max-width: 420px;
-}
-
-.mrmsbar__head {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-  font-size: 0.7rem;
-  min-width: 0;
-}
-.mrmsbar__head b {
-  color: var(--text);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mrmsbar__unit {
-  flex: 0 0 auto;
-  font-size: 0.62rem;
-  letter-spacing: 0.04em;
-  color: var(--text-mut);
-}
-
-.mrmsbar__ramp {
-  height: 9px;
-  border-radius: var(--radius-sm);
-  border: 1px solid rgba(0, 0, 0, 0.35);
-}
-
 /* Round ticks do not fall at even fractions of the bar, so each label is
    placed at the value it names rather than spaced evenly. */
-.mrmsbar__ticks {
-  position: relative;
-  height: 12px;
-  font-family: var(--mono);
-  font-variation-settings: var(--mono-axes);
-  font-size: 0.6rem;
-  color: var(--text-mut);
-}
-.mrmsbar__tick { position: absolute; top: 0; white-space: nowrap; }
-
 /* ---- "On now" folds, so the sliders stop pushing the catalog off screen ---- */
 .actlayers__head {
   display: flex;
@@ -7303,7 +7344,12 @@ html[data-reduce-motion="true"] .cat__body {
 .obstree__label { flex: 1 1 auto; min-width: 0; }
 .obstree__item.is-elsewhere .obstree__label { color: var(--text-faint); }
 .obstree__where {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 48%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--mono);
   font-variation-settings: var(--mono-axes);
   font-size: 9.5px;
@@ -7839,4 +7885,647 @@ html[data-reduce-motion="true"] .cat__body {
   text-align: center;
   text-shadow: 0 0 2px #000, 0 0 3px #000;
   pointer-events: auto;
+}
+
+/* ============================================================
+   Models compare grid: one valid time from several runs, or from
+   several models, side by side over the map area. Placed like the
+   sounding viewer (inside the side panel and alert rail) and stopping
+   short of the dock so the product's colour bar stays readable below.
+   ============================================================ */
+.obscmp {
+  position: absolute;
+  top: calc(var(--topbar-h) + var(--tabsbar-h) + 10px);
+  left: var(--map-left);
+  right: var(--map-right);
+  bottom: calc(var(--dock-h) + 86px);
+  /* over the search box and the map's own controls, like the sounding viewer;
+     the colour bar stays readable in the strip left below */
+  z-index: 40;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  animation: fade-up var(--t) var(--ease-out) both;
+}
+/* Each window of a models grid carries its own scale, so the grid takes the
+   strip the product's colour bar would have used. */
+.obscmp.is-windows {
+  bottom: calc(var(--dock-h) + 10px);
+}
+.obscmp__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  min-width: 0;
+}
+.obscmp__mode {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.obscmp__what {
+  flex-shrink: 0;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.obscmp__close {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.obscmp__close:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.obscmp__grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 1px;
+  background: var(--border);
+}
+.obscmp__cell {
+  position: relative;
+  min-height: 0;
+  background: var(--bg);
+}
+.obscmp__map {
+  position: absolute;
+  inset: 0;
+}
+.obscmp__label {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-width: calc(100% - 12px);
+  padding: 2px 4px 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.obscmp__picks {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.obscmp__picks > svg {
+  flex: none;
+  margin: 0 3px;
+}
+/* The window's own model and product: a label that opens, not a form field. */
+.uisel.obscmp__pick {
+  /* the model's name whole; the product gives way in a narrow window */
+  flex: none;
+  width: auto;
+  min-width: 0;
+  max-width: 150px;
+  gap: 3px;
+  padding: 2px 4px;
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.uisel.obscmp__pick--product {
+  flex: 0 1 auto;
+  max-width: 210px;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+.uisel.obscmp__pick:hover:not(:disabled),
+.uisel.obscmp__pick.is-open {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.uisel.obscmp__pick .uisel__hint {
+  display: none;
+}
+.uisel.obscmp__pick > svg {
+  width: 12px;
+  height: 12px;
+}
+.obscmp__sub {
+  padding: 0 4px;
+  color: var(--text-dim);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.uisel.obscmp__count {
+  flex: none;
+  width: auto;
+  padding: 3px 7px;
+  font-size: 11.5px;
+}
+.obscmp__reset,
+.obscmp__all {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.obscmp__all:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+.obscmp__reset:hover,
+.obscmp__all:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent);
+}
+/* A window's colour scale, when the windows show different products. */
+.obscmp__bar {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  z-index: 2;
+  padding: 3px 6px 1px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  pointer-events: none;
+}
+.obscmp__strip {
+  height: 6px;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(var(--wash-rgb), 0.1);
+}
+.obscmp__ticks {
+  position: relative;
+  height: 12px;
+  margin-top: 1px;
+  margin-right: 34px;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 9px;
+  color: var(--text-faint);
+}
+.obscmp__ticks span {
+  position: absolute;
+  white-space: nowrap;
+}
+.obscmp__ticks b {
+  position: absolute;
+  right: -34px;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+.obscmp__cell.has-bar .obscmp__err {
+  bottom: 40px;
+}
+.obscmp__err {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  z-index: 2;
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.obscmp__msg {
+  padding: 14px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.obscmp__hint {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.obscmp__hint + .obscmp__close {
+  margin-left: 0;
+}
+.obscmp__map .maplibregl-canvas {
+  cursor: grab;
+}
+.obscmp__map .maplibregl-canvas:active {
+  cursor: grabbing;
+}
+
+/* ============================================================
+   Compare runs strip (ui/RunStrip.tsx): the runs that forecast the
+   valid time on the timeline, oldest first, along the bottom of the
+   map area. The map above it is the main map, flipping between runs.
+   ============================================================ */
+.runstrip {
+  position: absolute;
+  left: var(--map-left);
+  right: var(--map-right);
+  bottom: calc(var(--dock-h) + 10px);
+  z-index: 19;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  animation: fade-up var(--t) var(--ease-out) both;
+}
+.runstrip__when {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-width: 112px;
+  font-size: 10.5px;
+  line-height: 1.3;
+  color: var(--text-dim);
+}
+.runstrip__when b {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.runstrip__ctrl {
+  flex: none;
+  display: flex;
+  gap: 4px;
+}
+.runstrip__ctrl button,
+.runstrip__close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.runstrip__ctrl button:hover:not(:disabled),
+.runstrip__close:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.runstrip__ctrl button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.runstrip__chips {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding-bottom: 2px;
+}
+.runstrip__chip {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 78px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.runstrip__chip b {
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-faint);
+}
+.runstrip__chip:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.runstrip__chip.is-on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel-2));
+  color: var(--text);
+}
+.runstrip__chip.is-on b {
+  color: var(--accent);
+}
+.runstrip__chip > svg {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+}
+.runstrip__msg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+/* The strip takes the place each pane's colour bars sit in (.mappane__cbar,
+   8px off the pane's foot): they go up above it. */
+:root.has-runstrip .mappane__cbar {
+  bottom: 76px;
+}
+
+/* ---------------- Outlooks panel ---------------- */
+.olv-tabs { display: flex; flex-wrap: wrap; gap: 5px; }
+.olv-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.olv-tab:hover { color: var(--text-dim); border-color: rgba(190, 200, 210, 0.28); }
+.olv-tab.is-on {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+}
+/* The day's highest risk, ringed in its own colour. */
+.olv-tab em {
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-style: normal;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+/* Eight days at a glance: each cell the colour of that day's highest risk. */
+.olv-strip {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.olv-strip span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3px 0 2px;
+  border-left: 1px solid var(--border);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.olv-strip span:first-child { border-left: 0; }
+.olv-strip span[style] { color: #111; }
+.olv-strip i { font-style: normal; font-size: 8.5px; min-height: 11px; opacity: 0.85; }
+.olv-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 10px;
+  margin: 0;
+  font-size: 11px;
+}
+.olv-meta dt { color: var(--text-faint); }
+.olv-meta dd {
+  margin: 0;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10.5px;
+}
+.olv-error { font-size: 11px; color: #f0a35c; }
+.olv-dim { font-size: 11px; color: var(--text-faint); }
+.olv-when { display: flex; align-items: center; gap: 5px; }
+.olv-step {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+}
+.olv-step:hover:not(:disabled) { color: var(--text); border-color: rgba(190, 200, 210, 0.28); }
+.olv-step:disabled { opacity: 0.35; }
+.olv-date {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 26px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 11.5px;
+  color-scheme: dark light;
+}
+.olv-toggle { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--text-dim); cursor: pointer; }
+.olv-toggle input { accent-color: var(--accent); margin: 0; }
+.olv-disc-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  text-align: left;
+}
+.olv-disc-btn:hover, .olv-disc-btn.is-on { color: var(--text); border-color: rgba(190, 200, 210, 0.28); }
+.olv-disc pre {
+  max-height: 340px;
+  margin: 0;
+  padding: 9px 10px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+/* The top-bar picker's way into the panel. */
+.outlook-menu__more {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11px;
+  text-align: left;
+}
+.outlook-menu__more:hover { color: var(--text); background: var(--accent-soft); }
+
+/* ---------------- Outlook point popup ---------------- */
+.olpopwrap .maplibregl-popup-content {
+  padding: 0;
+  overflow: hidden;
+  min-width: 240px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--panel-solid);
+  color: var(--text);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.42);
+}
+.olpopwrap .maplibregl-popup-tip { display: none; }
+.olpopwrap .maplibregl-popup-close-button { width: 24px; height: 24px; color: var(--text-dim); font-size: 17px; }
+.olpop { display: flex; flex-direction: column; gap: 5px; padding: 9px 11px 10px; font-size: 11.5px; }
+.olpop__head { display: flex; flex-direction: column; gap: 1px; padding-right: 18px; margin-bottom: 2px; }
+.olpop__head b { font-size: 12px; }
+.olpop__head span {
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10px;
+}
+.olpop__row { display: flex; align-items: flex-start; gap: 7px; line-height: 1.35; color: var(--text-dim); }
+.olpop__row b { color: var(--text); }
+.olpop__row em { font-style: normal; color: var(--text-faint); }
+.olpop__row--dim { opacity: 0.7; }
+.olpop__sw {
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+  margin-top: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  border-radius: 2px;
+}
+.olpop__sw--cig {
+  background: repeating-linear-gradient(135deg, var(--text-dim) 0 1.5px, transparent 1.5px 4px);
+}
+.olpop__sub {
+  margin-top: 3px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 9.5px;
+}
+.olpop__none { color: var(--text-faint); }
+.olv-note {
+  padding: 6px 9px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.ol-card__note {
+  margin: 4px 0 2px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-style: italic;
+}
+
+/* Satellite Level 2 legend: a colour ramp with its values, or category swatches. */
+.satlegend {
+  margin-top: 8px;
+  position: relative;
+  padding-bottom: 14px;
+}
+.satlegend__bar {
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+}
+.satlegend__ticks {
+  position: relative;
+  height: 12px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.satlegend__ticks span {
+  position: absolute;
+  top: 2px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.satlegend__ticks span:first-child {
+  transform: none;
+}
+.satlegend__ticks span:last-child {
+  transform: translateX(-100%);
+}
+.satlegend__units {
+  position: absolute;
+  right: 0;
+  bottom: -2px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.satlegend--cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding-bottom: 0;
+  font-size: 11px;
+}
+.satlegend__cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.satlegend__cat i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
 }

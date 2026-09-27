@@ -5,6 +5,8 @@ import { addRing, removeRing, RING_LINE } from "../nexradRing";
 import { addStorms, removeStorms, STORM_LAYERS } from "../nexradStorms";
 import { paneIdOf } from "../../map/mapInstance";
 import { useNexradStore } from "../../store/useNexradStore";
+import { mapInk } from "../../map/mapInk";
+import { attachRadarHold } from "../radarHold";
 
 const SITE_SRC = "nexrad-sites-src";
 const SITE_LABEL = "nexrad-sites-label";
@@ -19,6 +21,8 @@ interface PaneState {
   onLeave: () => void;
   unsub: () => void;
   glLayer: NexradGlLayer | null;
+  /** Press and hold to switch to the nearest radar (radarHold.ts). */
+  detachHold: () => void;
 }
 const state = new WeakMap<import("maplibre-gl").Map, PaneState>();
 // Opacity is a layer-wide setting, not per-map, so it stays shared.
@@ -75,6 +79,9 @@ function pushMesh(map: import("maplibre-gl").Map) {
 const PILL_BG = "nx-pill";
 const PILL_ACTIVE = "nx-pill-active";
 const PILL_DOWN = "nx-pill-down";
+/** The plain badge follows the basemap: dark on a dark map, paper on a light
+ *  one (see mapInk). Its own image per tone, so a switch never reuses the other. */
+const pillBg = () => `${PILL_BG}-${mapInk().tone}`;
 function registerSitePills(map: import("maplibre-gl").Map) {
   const R = 2; // draw at 2x for crisp edges
   const W = 64 * R;
@@ -111,7 +118,8 @@ function registerSitePills(map: import("maplibre-gl").Map) {
       content: [RAD, 4 * R, W - RAD, H - 4 * R],
     });
   };
-  make(PILL_BG, "rgba(20,20,20,0.85)", "rgba(200,200,200,0.42)");
+  const ink = mapInk();
+  make(pillBg(), ink.badge, ink.badgeEdge);
   make(PILL_ACTIVE, "rgba(250,204,21,0.95)", "rgba(255,255,255,0.7)");
   make(PILL_DOWN, "rgba(222,80,80,0.92)", "rgba(255,155,155,0.9)");
 }
@@ -165,7 +173,7 @@ export const nexradLayer: LayerModule = {
             PILL_DOWN,
             ["get", "active"],
             PILL_ACTIVE,
-            PILL_BG,
+            pillBg(),
           ],
           "icon-text-fit": "both",
           "icon-text-fit-padding": [2, 8, 2, 8],
@@ -183,7 +191,7 @@ export const nexradLayer: LayerModule = {
             "#ffeded",
             ["get", "active"],
             "#121212",
-            "#ececec",
+            mapInk().badgeText,
           ],
         },
       });
@@ -219,7 +227,9 @@ export const nexradLayer: LayerModule = {
       }
     });
 
-    state.set(map, { onClick, onEnter, onLeave, unsub, glLayer });
+    // Added again after a style reload: the gesture from before goes first.
+    state.get(map)?.detachHold();
+    state.set(map, { onClick, onEnter, onLeave, unsub, glLayer, detachHold: attachRadarHold(map) });
     pushSites(map);
     pushMesh(map);
   },
@@ -231,6 +241,7 @@ export const nexradLayer: LayerModule = {
       map.off("mouseenter", SITE_LABEL, st.onEnter);
       map.off("mouseleave", SITE_LABEL, st.onLeave);
       st.unsub();
+      st.detachHold();
       state.delete(map);
     }
     removeRing(map);
@@ -238,7 +249,7 @@ export const nexradLayer: LayerModule = {
     for (const id of [SITE_LABEL, GL_LAYER]) {
       if (map.getLayer(id)) map.removeLayer(id);
     }
-    for (const id of [PILL_BG, PILL_ACTIVE, PILL_DOWN]) {
+    for (const id of [`${PILL_BG}-dark`, `${PILL_BG}-light`, PILL_ACTIVE, PILL_DOWN]) {
       if (map.hasImage(id)) map.removeImage(id);
     }
     if (map.getSource(SITE_SRC)) map.removeSource(SITE_SRC);

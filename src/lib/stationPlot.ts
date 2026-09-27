@@ -4,6 +4,12 @@
 
 import type { Map as MapLibreMap } from "maplibre-gl";
 
+import { mapInk } from "../map/mapInk";
+
+/** The plot's line colour: pale on a dark basemap, ink on a light one. A
+ *  basemap change rebuilds the style, and the icons are drawn again with it. */
+const plotInk = () => (mapInk().tone === "light" ? mapInk().text : "#e8edf4");
+
 const PR = 2; // draw at 2x for crisp icons; addImage told pixelRatio 2
 const BARB_SIZE = 46; // logical px (icon is BARB_SIZE*PR canvas px)
 
@@ -15,14 +21,14 @@ export function barbKey(wspd: number | null | undefined): number {
   return Math.min(100, Math.round(wspd / 5) * 5);
 }
 
-function drawBarb(speed: number): HTMLCanvasElement {
+function drawBarb(speed: number, ink: string): HTMLCanvasElement {
   const S = BARB_SIZE * PR;
   const cv = document.createElement("canvas");
   cv.width = S;
   cv.height = S;
   const ctx = cv.getContext("2d")!;
-  ctx.strokeStyle = "#e8edf4";
-  ctx.fillStyle = "#e8edf4";
+  ctx.strokeStyle = ink;
+  ctx.fillStyle = ink;
   ctx.lineWidth = 1.4 * PR;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -77,7 +83,7 @@ function drawBarb(speed: number): HTMLCanvasElement {
   return cv;
 }
 
-function drawSky(cover: string): HTMLCanvasElement {
+function drawSky(cover: string, ink: string): HTMLCanvasElement {
   const S = 20 * PR;
   const cv = document.createElement("canvas");
   cv.width = S;
@@ -87,13 +93,23 @@ function drawSky(cover: string): HTMLCanvasElement {
   const cy = S / 2;
   const r = 6 * PR;
   ctx.lineWidth = 1.4 * PR;
-  ctx.strokeStyle = "#e8edf4";
-  ctx.fillStyle = "#e8edf4";
+  ctx.strokeStyle = ink;
+  ctx.fillStyle = ink;
 
   // outer ring
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.stroke();
+
+  if (cover === "DOT") {
+    // A station that reports no sky at all (a mesonet, a personal station):
+    // a dot marks where it is, where an empty ring would read "clear".
+    ctx.clearRect(0, 0, S, S);
+    ctx.beginPath();
+    ctx.arc(cx, cy, 2.6 * PR, 0, Math.PI * 2);
+    ctx.fill();
+    return cv;
+  }
 
   const fillFrac: Record<string, number> = { SKC: 0, CLR: 0, FEW: 0.25, SCT: 0.5, BKN: 0.75, OVC: 1 };
   const frac = fillFrac[cover] ?? -1; // -1 = missing -> draw an X-less empty ring
@@ -118,21 +134,22 @@ function canvasToImageData(cv: HTMLCanvasElement) {
   return ctx.getImageData(0, 0, cv.width, cv.height);
 }
 
-export const SKY_COVERS = ["SKC", "CLR", "FEW", "SCT", "BKN", "OVC", "MISSING"] as const;
+export const SKY_COVERS = ["SKC", "CLR", "FEW", "SCT", "BKN", "OVC", "MISSING", "DOT"] as const;
 
 /** Register all barb + sky-cover icons on the map (idempotent). */
 export function registerStationIcons(map: MapLibreMap): void {
+  const ink = plotInk();
   for (const spd of BARB_BINS) {
     const id = `sfc-barb-${spd}`;
     if (!map.hasImage(id)) {
-      map.addImage(id, canvasToImageData(drawBarb(spd)), { pixelRatio: PR });
+      map.addImage(id, canvasToImageData(drawBarb(spd, ink)), { pixelRatio: PR });
     }
   }
   for (const cov of SKY_COVERS) {
     const id = `sfc-sky-${cov}`;
     if (!map.hasImage(id)) {
       const cover = cov === "MISSING" ? "" : cov;
-      map.addImage(id, canvasToImageData(drawSky(cover)), { pixelRatio: PR });
+      map.addImage(id, canvasToImageData(drawSky(cover, ink)), { pixelRatio: PR });
     }
   }
 }

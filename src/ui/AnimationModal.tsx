@@ -2,14 +2,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Film, RefreshCw, Repeat, Type, X } from "lucide-react";
 import { Select } from "./Select";
 
+import { useAppStore } from "../store/useAppStore";
 import { useNexradStore } from "../store/useNexradStore";
+import { useObsStore } from "../store/useObsStore";
+import { useSatStore } from "../store/useSatStore";
+import { useTimelineStore } from "../store/useTimelineStore";
 import {
   MP4_SUPPORTED,
   SIZE_PRESETS,
   selectedIndices,
   useGifStore,
   type AnimFormat,
+  type AnimSubject,
 } from "../store/useGifStore";
+import { fhText } from "../lib/observations";
 import {
   GifCancelled,
   downloadBlob,
@@ -23,7 +29,8 @@ import {
 // The "Customize Animation" dialog + its generation-progress twin. Styled to
 // the app (dark, glass), not the light reference the flow was first modelled on.
 // Beyond format + range it carries: quick range presets, playback direction
-// (forward / boomerang), an info-bar toggle, and an output-size picker.
+// (forward / boomerang), an info-bar toggle, and an output-size picker -- and
+// what to animate: the radar loop, the Models panel's hours, or the satellite.
 
 function fmtLocal(unix: number): string {
   return new Date(unix * 1000).toLocaleString(undefined, {
@@ -37,6 +44,12 @@ function fmtLocal(unix: number): string {
 }
 
 const label = (f: AnimFormat) => (f === "mp4" ? "MP4" : "GIF");
+
+const SUBJECTS: [AnimSubject, string][] = [
+  ["radar", "Radar"],
+  ["models", "Models"],
+  ["satellite", "Satellite"],
+];
 
 export function AnimationModal() {
   const open = useGifStore((s) => s.open);
@@ -57,7 +70,47 @@ export function AnimationModal() {
   const scale = useGifStore((s) => s.scale);
   const setScale = useGifStore((s) => s.setScale);
 
+  const subject = useGifStore((s) => s.subject);
+  const setSubject = useGifStore((s) => s.setSubject);
+
   const scans = useNexradStore((s) => s.scans);
+  const radarOn = useAppStore((s) => s.layers["nexrad"]?.visible ?? false);
+  const obsFrames = useObsStore((s) => s.frames);
+  const obsIndex = useObsStore((s) => s.index);
+  const obsView = useObsStore((s) => s.view);
+  const obsSource = useObsStore((s) => s.catalog?.sources.find((x) => x.id === s.source));
+  const obsOn = useAppStore((s) => s.layers.observations?.visible ?? false);
+  const satFrames = useSatStore((s) => s.frames);
+  const satOn = useAppStore((s) => s.layers.satellite?.visible ?? false);
+  const canRadar = radarOn && scans.length > 0;
+  const canModels = obsOn && obsFrames.length > 0 && !obsSource?.tracks;
+  const canSat = satOn && satFrames.length > 0;
+  const available = SUBJECTS.filter(([v]) => (v === "radar" ? canRadar : v === "models" ? canModels : canSat));
+
+  // What the dialog animates: what the timeline is driving when it opens (the
+  // radar, when several are on -- as on the timeline), and any one by choice.
+  useEffect(() => {
+    if (!open) return;
+    const driver = useTimelineStore.getState().driver;
+    const driving: AnimSubject | null =
+      driver === "radar" ? "radar" : driver === "obs" ? "models" : driver === "sat" ? "satellite" : null;
+    const ok = available.map(([v]) => v);
+    if (driving && ok.includes(driving)) setSubject(driving);
+    else if (ok.length > 0 && !ok.includes(useGifStore.getState().subject)) setSubject(ok[0]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const models = subject === "models";
+  const satellite = subject === "satellite";
+  /** The frames to pick from, as the timeline has them. */
+  const items = useMemo(
+    () =>
+      models
+        ? obsFrames.map((f) => ({ unix: f.unix, text: f.fh != null ? `${fhText(f)} · ${fmtLocal(f.unix)}` : fmtLocal(f.unix) }))
+        : satellite
+          ? satFrames.map((f) => ({ unix: f.unix, text: fmtLocal(f.unix) }))
+          : scans.map((sc) => ({ unix: sc.time, text: fmtLocal(sc.time) })),
+    [models, satellite, obsFrames, satFrames, scans],
+  );
 
   const [progress, setProgress] = useState<GifProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -65,11 +118,15 @@ export function AnimationModal() {
   const [mp4Ok, setMp4Ok] = useState<boolean | null>(null);
   const cancel = useRef<GifCancel>({ cancelled: false });
 
-  // Opening (or the loaded loop changing under it) defaults to the whole loop.
+  // Opening (or the loaded loop changing under it) defaults to the whole radar
+  // loop -- or, for a model, the next day of its hours from the one on screen.
   useEffect(() => {
-    if (!open || scans.length === 0) return;
-    setRange(0, scans.length - 1);
-  }, [open, scans.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!open || items.length === 0) return;
+    if (models) {
+      const from = Math.max(0, Math.min(obsIndex, items.length - 1));
+      setRange(from, Math.min(items.length - 1, from + 24));
+    } else setRange(0, items.length - 1);
+  }, [open, models, items.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Actually test-encode MP4 once the dialog is open. `MP4_SUPPORTED` only means
   // the API exists (Firefox has it but no H.264 encoder); this catches that and
@@ -88,17 +145,25 @@ export function AnimationModal() {
   }, [open, setFormat]);
 
   const indices = useMemo(
-    () => selectedIndices(startIdx, endIdx, step, scans.length, loop),
-    [startIdx, endIdx, step, scans.length, loop],
+    () => selectedIndices(startIdx, endIdx, step, items.length, loop),
+    [startIdx, endIdx, step, items.length, loop],
   );
   const frameCount = indices.length;
-  const dims = useMemo(() => estimateDimensions(scale, caption), [scale, caption, open, frameCount]);
+  const dims = useMemo(
+    () => estimateDimensions(scale, caption, subject),
+    [scale, caption, subject, open, frameCount], // eslint-disable-line react-hooks/exhaustive-deps
+  );
   const fps = delaySec > 0 ? (1 / delaySec).toFixed(1) : "—";
 
   if (!open) return null;
 
-  const last = scans.length - 1;
+  const last = items.length - 1;
   const preset = (n: number) => setRange(Math.max(0, last - n + 1), last);
+  /** A model's next n hours from the one on screen. */
+  const ahead = (n: number) => {
+    const from = Math.max(0, Math.min(obsIndex, last));
+    setRange(from, Math.min(last, from + n));
+  };
 
   const generate = async () => {
     cancel.current = { cancelled: false };
@@ -106,7 +171,7 @@ export function AnimationModal() {
     setProgress({ phase: "capturing", done: 0, total: frameCount });
     try {
       const { blob, name } = await exportAnimation(
-        { indices, delayMs: Math.round(delaySec * 1000), area: null, format, caption, scale },
+        { indices, delayMs: Math.round(delaySec * 1000), area: null, format, caption, scale, subject },
         setProgress,
         cancel.current,
       );
@@ -159,7 +224,14 @@ export function AnimationModal() {
     );
   }
 
-  const noScans = scans.length === 0;
+  const noScans = items.length === 0 || (models && obsView === "models");
+  const empty = models
+    ? obsView === "models"
+      ? "Close Compare models first: the animation records the main map."
+      : "Open a model in the Models panel, and switch its layer on, then come back to export it."
+    : satellite
+      ? "Switch the satellite on and pick a product, then come back to export it."
+      : "Load a radar site and let its loop cache first, then come back to export it.";
 
   // --- customize ---
   return (
@@ -175,8 +247,24 @@ export function AnimationModal() {
         </div>
 
         <div className="animod__body">
+          {available.length > 1 && (
+            <div className="animsec">
+              <div className="animsec__label">Animate</div>
+              <div className="animseg">
+                {available.map(([v, text]) => (
+                  <button
+                    key={v}
+                    className={`animseg__btn${subject === v ? " is-on" : ""}`}
+                    onClick={() => setSubject(v)}
+                  >
+                    {text}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {noScans ? (
-            <p className="animprog__note">Load a radar site and let its loop cache first, then come back to export it.</p>
+            <p className="animprog__note">{empty}</p>
           ) : (
             <>
               <div className="animrow2">
@@ -222,15 +310,23 @@ export function AnimationModal() {
               <div className="animsec__label">
                 Time Range
                 <span className="animpresets">
-                  {[10, 30].map((n) =>
-                    n <= last + 1 ? (
-                      <button key={n} className="animchip" onClick={() => preset(n)}>
-                        Last {n}
-                      </button>
-                    ) : null,
-                  )}
+                  {models
+                    ? [12, 24].map((n) =>
+                        n <= last ? (
+                          <button key={n} className="animchip" onClick={() => ahead(n)}>
+                            Next {n}
+                          </button>
+                        ) : null,
+                      )
+                    : [10, 30].map((n) =>
+                        n <= last + 1 ? (
+                          <button key={n} className="animchip" onClick={() => preset(n)}>
+                            Last {n}
+                          </button>
+                        ) : null,
+                      )}
                   <button className="animchip" onClick={() => setRange(0, last)}>
-                    Full loop
+                    {models ? "Whole run" : "Full loop"}
                   </button>
                 </span>
               </div>
@@ -241,7 +337,7 @@ export function AnimationModal() {
                     value={String(startIdx)}
                     onChange={(value) => setRange(Math.min(Number(value), endIdx), endIdx)}
                     aria-label="First frame"
-                    options={scans.map((s, i) => ({ value: String(i), label: fmtLocal(s.time) }))}
+                    options={items.map((it, i) => ({ value: String(i), label: it.text }))}
                   />
                 </label>
                 <label className="animfield">
@@ -250,7 +346,7 @@ export function AnimationModal() {
                     value={String(endIdx)}
                     onChange={(value) => setRange(startIdx, Math.max(Number(value), startIdx))}
                     aria-label="Last frame"
-                    options={scans.map((s, i) => ({ value: String(i), label: fmtLocal(s.time) }))}
+                    options={items.map((it, i) => ({ value: String(i), label: it.text }))}
                   />
                 </label>
               </div>
@@ -287,7 +383,7 @@ export function AnimationModal() {
                 <button
                   className={`animtoggle${loop === "boomerang" ? " is-on" : ""}`}
                   onClick={() => setLoop(loop === "boomerang" ? "forward" : "boomerang")}
-                  title="Play forward, then back — a seamless radar loop"
+                  title="Play forward, then back — a seamless loop"
                 >
                   <Repeat size={13} /> Boomerang
                 </button>

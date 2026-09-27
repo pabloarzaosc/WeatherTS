@@ -2,6 +2,9 @@ import type { ExpressionSpecification, Map as MapLibreMap } from "maplibre-gl";
 
 import { getLayerModules } from "../layers/registry";
 import { holdBasemapLabels } from "../map/basemapLabels";
+import { chartInk } from "../map/basemaps";
+import { mapInk } from "../map/mapInk";
+import { useAppStore } from "../store/useAppStore";
 import { useAcarsStore } from "../store/useAcarsStore";
 import { useLsrStore } from "../store/useLsrStore";
 import { ALERT_COLOR_EVENTS, alertColorKey } from "./schema";
@@ -51,7 +54,10 @@ const SAT_LABEL_PREFIX = "sat";
 function mapRules(): Rule[] {
   const k = num("map.labelScale");
   const bw = num("map.borderWidth");
-  const border = color("map.borderColor");
+  // On a chart basemap the borders over the products are its ink, unless a
+  // colour of one's own was picked in Settings.
+  const ink = chartInk(useAppStore.getState().basemapId);
+  const border = ink && !("map.borderColor" in useSettingsStore.getState().values) ? ink : color("map.borderColor");
   const names = on("map.placeLabels");
   const gw = num("map.graticuleWidth");
   const placeSizes: [string, number[]][] = [
@@ -73,14 +79,15 @@ function mapRules(): Rule[] {
       layout: { visibility: visibility("map.stateLines") },
     },
     {
-      layers: ["ref-coastline"],
+      layers: ["ref-coastline", "ref-lakes"],
       paint: { "line-color": border, "line-width": zoomRamp(bw, 2, 0.35, 6, 0.8, 10, 1.3) },
       layout: { visibility: visibility("map.coastlines") },
     },
     {
       layers: ["ref-country-casing"],
       paint: { "line-width": zoomRamp(bw, 2, 1.4, 6, 2.4, 10, 3.4) },
-      layout: { visibility: visibility("map.borderCasing") },
+      // The dark edge is for imagery; on a chart it is a smudge beside the line.
+      layout: { visibility: ink ? "none" : visibility("map.borderCasing") },
     },
     { layers: ["ne-countries-line"], paint: { "line-color": border, "line-width": zoomRamp(bw, 1, 0.4, 5, 1, 9, 1.8) } },
     {
@@ -172,6 +179,8 @@ function alertRules(): Rule[] {
         "line-width": strokeWidth,
       },
     },
+    // The watches' dashes and the advisories' dots take the colours of their fill.
+    { layers: ["alerts-watch-line", "alerts-advisory-line"], paint: { "line-color": colorExpr } },
   ];
 }
 
@@ -185,10 +194,13 @@ function productRules(): Rule[] {
   ];
   const outlookRules = getLayerModules()
     .filter((m) => m.category === "outlooks")
-    .map((m): Rule => ({ layers: [`${m.id}-line`], paint: { "line-width": num("outlooks.lineWidth") } }));
+    .flatMap((m): Rule[] => [
+      { layers: [`${m.id}-line`], paint: { "line-width": num("outlooks.lineWidth") } },
+      // The dark edge under it stays a little wider than the line.
+      { layers: [`${m.id}-casing`], paint: { "line-width": num("outlooks.lineWidth") + 1.6 } },
+    ]);
   const mslpBand = (low: string, high: string): ExpressionSpecification => ["case", ["==", ["get", "band"], "low"], low, high];
   const mslpSize = num("mslp.labelSize");
-  const thickSize = num("thickness.labelSize");
   const li = num("lsr.iconScale");
   return [
     { layers: ["lsr-icons"], layout: { "icon-size": zoomRamp(li, 3, 0.55, 6, 0.7, 10, 0.9) } },
@@ -196,31 +208,25 @@ function productRules(): Rule[] {
     {
       layers: ["lsr-labels"],
       layout: { visibility: on("lsr.labels") && useLsrStore.getState().showLabels ? "visible" : "none" },
-      paint: { "text-color": color("lsr.labelColor") },
+      // Its default is the map's label ink; a colour picked in Settings wins.
+      paint: { "text-color": "lsr.labelColor" in useSettingsStore.getState().values ? color("lsr.labelColor") : mapInk().text },
     },
     { layers: ["spc-md-fill"], paint: { "fill-color": hazard } },
     { layers: ["spc-md-line"], paint: { "line-color": hazard, "line-width": num("md.lineWidth") } },
     { layers: ["spc-md-label"], layout: { visibility: visibility("md.labels") }, paint: { "text-color": hazard } },
     ...outlookRules,
-    { layers: ["mslp-line"], paint: { "line-color": mslpBand(color("mslp.lowColor"), color("mslp.highColor")) } },
+    // The isobar settings now dress the pressure map that rides on the MSLP
+    // analysis products; the standalone pressure chart they were made for is gone.
+    { layers: ["obs-isobar"], paint: { "line-color": mslpBand(color("mslp.lowColor"), color("mslp.highColor")) } },
     {
-      layers: ["mslp-label"],
+      layers: ["obs-isobar-label"],
       layout: { "text-size": mslpSize },
       paint: { "text-color": mslpBand(color("mslp.lowColor"), color("mslp.highColor")) },
     },
     {
-      layers: ["mslp-centre"],
+      layers: ["obs-centre"],
       layout: { "text-size": mslpSize + 1 },
       paint: { "text-color": ["case", ["==", ["get", "kind"], "H"], color("mslp.hColor"), color("mslp.lColor")] },
-    },
-    {
-      layers: ["thickness-line"],
-      paint: { "line-color": mslpBand(color("thickness.coldColor"), color("thickness.warmColor")) },
-    },
-    {
-      layers: ["thickness-label"],
-      layout: { "text-size": thickSize },
-      paint: { "text-color": mslpBand(color("thickness.coldColor"), color("thickness.warmColor")) },
     },
     { layers: ["raob-dots"], paint: { "circle-radius": zoomRamp(num("markers.raobScale"), 1, 2.2, 4, 3.2, 8, 5.5) } },
     { layers: ["acars-dots"], paint: { "circle-radius": zoomRamp(num("markers.acarsScale"), 2, 3, 5, 5.5, 9, 8) } },
@@ -242,13 +248,15 @@ const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.s
  * The rules for the current settings, built once per change rather than on
  * every style change: the alert colours alone are a 27-way expression.
  */
-let built: { values: unknown; lsrLabels: boolean; acarsLabels: boolean; rules: Rule[] } | null = null;
+let built: { values: unknown; lsrLabels: boolean; acarsLabels: boolean; basemap: string; rules: Rule[] } | null = null;
 function currentRules(): Rule[] {
   const values = useSettingsStore.getState().values;
   const lsrLabels = useLsrStore.getState().showLabels;
   const acarsLabels = useAcarsStore.getState().showLabels;
-  if (!built || built.values !== values || built.lsrLabels !== lsrLabels || built.acarsLabels !== acarsLabels) {
-    built = { values, lsrLabels, acarsLabels, rules: [...mapRules(), ...radarRules(), ...alertRules(), ...productRules()] };
+  const basemap = useAppStore.getState().basemapId;
+  if (!built || built.values !== values || built.lsrLabels !== lsrLabels || built.acarsLabels !== acarsLabels ||
+      built.basemap !== basemap) {
+    built = { values, lsrLabels, acarsLabels, basemap, rules: [...mapRules(), ...radarRules(), ...alertRules(), ...productRules()] };
   }
   return built.rules;
 }

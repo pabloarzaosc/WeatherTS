@@ -6,18 +6,21 @@ Run (from backend/):
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
 import struct
 import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import anyio
-from fastapi import Body, FastAPI, HTTPException, Query, Response
+from fastapi import Body, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
+import fast_tls
 import sounding_core
 import sounding_upload
 import vwp_panel
@@ -25,12 +28,12 @@ import vwp_sounding
 import sounding_view
 import model_fields
 import nadocast_core
+import cpc_hazards
 import raob_core
+import stations
 import surface_obs
 import nexrad_core
-import mrms_core
 import observations
-import satellite
 import nexrad_level2
 import nexrad_availability
 import nexrad_storms
@@ -42,6 +45,12 @@ import fronts_model
 import spc_md
 import acars_core
 import area_sounding
+import satellite
+import sat_net
+
+# Certificates loaded once, and new connections opened a dozen at a time, for
+# every module's sessions -- those made above too (see fast_tls).
+fast_tls.install()
 
 app = FastAPI(title="WeatherTS Sounding API", version="0.1.0")
 
@@ -50,6 +59,7 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["GET"],
     allow_headers=["*"],
+    expose_headers=["X-Sat-Detail"],
 )
 # Polar scans are ~5 MB of float32 that is >80% NaN -> compresses to a fraction.
 # level 6, not the default 9: on a radar scan 9 costs ~600 ms of CPU to save
@@ -57,10 +67,32 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 
 
+# An analysis endpoint waits on downloads for seconds. Run as a plain `def`,
+# each one holds a thread of the request pool for that whole wait -- and a
+# browser giving up does not end it, so clicking through a few products filled
+# the pool and even /api/obs/frames queued behind the downloads. The work goes
+# to a pool of its own and the handlers await it: when the browser moves on,
+# the request is let go at once, and the download finishes into the cache for
+# whenever that product is asked for again.
+_OBS_POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix="obs-api")
+# Satellite pictures wait on downloads the same way; a pool of their own, so a
+# loop coming in never holds up the analyses (or the other way round).
+_SAT_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="sat-api")
+# Frame lists apart from the pictures: a product switch must not wait for the
+# old product's pictures to finish before it learns its own times.
+_SAT_LIST_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="sat-list")
+
+
+async def _obs_call(fn, *args, **kwargs):
+    return await asyncio.wrap_future(_OBS_POOL.submit(fn, *args, **kwargs))
+
+
 def _drop_queued_work() -> None:
     """Background queues let go on shutdown, so the process can exit."""
-    satellite.shutdown()
     observations.shutdown()
+    _OBS_POOL.shutdown(wait=False, cancel_futures=True)
+    _SAT_POOL.shutdown(wait=False, cancel_futures=True)
+    _SAT_LIST_POOL.shutdown(wait=False, cancel_futures=True)
 
 
 app.router.on_shutdown.append(_drop_queued_work)
@@ -89,12 +121,26 @@ if hasattr(threading, "_register_atexit"):
 def _roomier_thread_pool() -> None:
     """Plain handlers run on a pool of forty threads, and several of them wait on
     a download: a loop being made, the frame a timeline landed on. Forty such
-    waits and every endpoint queued -- the satellite panel then opened with no
+    waits and every endpoint queued -- a panel then opened with no
     catalogue at all. Threads that only wait cost next to nothing."""
     anyio.to_thread.current_default_thread_limiter().total_tokens = 256
 
 
 app.router.on_startup.append(_roomier_thread_pool)
+
+
+def _warm_satellite() -> None:
+    """The satellite's frame list and sector placements, fetched while the app
+    is still opening instead of when the layer is turned on."""
+    _SAT_POOL.submit(satellite.warm)
+    # The station networks behind the plots: the WMO list and the SYNOP set,
+    # then the mesonets' 32 MB hour, in the background.
+    import station_networks  # noqa: PLC0415
+
+    station_networks.warm()
+
+
+app.router.on_startup.append(_warm_satellite)
 
 
 @app.get("/health")
@@ -251,8 +297,9 @@ def lsr(
     hours: int = Query(12, ge=1, le=lsr_core.MAX_HOURS),
     end: float | None = Query(None, ge=0),
     bbox: str = Query(""),
+    start: float | None = Query(None, ge=0),
 ):
-    """NWS Local Storm Reports over a trailing window."""
+    """NWS Local Storm Reports over a trailing window, or from `start` to `end`."""
     try:
         box = None
         if bbox:
@@ -261,7 +308,7 @@ def lsr(
                 raise ValueError("bbox must be lat0,lon0,lat1,lon1")
             box = (min(parts[0], parts[2]), min(parts[1], parts[3]),
                    max(parts[0], parts[2]), max(parts[1], parts[3]))
-        return lsr_core.fetch_lsr(hours=hours, end_unix=end, bbox=box)
+        return lsr_core.fetch_lsr(hours=hours, end_unix=end, bbox=box, start_unix=start)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
@@ -560,134 +607,10 @@ def nexrad_render(
 
 
 # ---------------------------------------------------------------------------
-# MRMS — the national mosaic
-# ---------------------------------------------------------------------------
-
-@app.get("/api/mrms/catalog")
-def mrms_catalog(region: str = Query(mrms_core.DEFAULT_REGION)):
-    return mrms_core.catalog(region)
-
-
-@app.get("/api/mrms/frames")
-def mrms_frames(
-    product: str = Query(mrms_core.DEFAULT_PRODUCT),
-    limit: int = Query(60),
-    region: str = Query(mrms_core.DEFAULT_REGION),
-):
-    try:
-        return {"frames": mrms_core.frames(product, limit=max(1, min(limit, 400)), region=region)}
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=str(exc))
-
-
-@app.get("/api/mrms/render")
-def mrms_render(
-    product: str = Query(mrms_core.DEFAULT_PRODUCT),
-    key: str = Query(""),
-    width: int = Query(2048),
-    region: str = Query(mrms_core.DEFAULT_REGION),
-    bbox: str = Query("", description="west,south,east,north — the visible window"),
-):
-    """One frame as a Mercator-warped PNG plus the corners to place it at.
-
-    The image is already in the projection the map draws in, so the four
-    coordinates below are exact rather than approximate -- see the note on
-    _mercator_rows in mrms_core.
-    """
-    try:
-        box = None
-        if bbox:
-            parts = [float(v) for v in bbox.split(",")]
-            if len(parts) == 4:
-                box = (parts[0], parts[1], parts[2], parts[3])
-        out = mrms_core.render(
-            product,
-            key=key,
-            # 4096 is the texture size every WebGL implementation is required
-            # to manage; past it the browser may quietly refuse the image.
-            width=max(500, min(width, 4096)),
-            region=region,
-            bbox=box,
-        )
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=str(exc))
-    return {
-        "image": base64.b64encode(out["png"]).decode("ascii"),
-        "coordinates": out["coordinates"],
-        "meta": out["meta"],
-    }
-
-
-# ---------------------------------------------------------------------------
 # Observations — the hourly analyses, as timeline frames
 # ---------------------------------------------------------------------------
 
-# The satellite services' capabilities are slow (EUMETView takes six seconds);
-# read them in the background now so the panel opens onto a frame list.
-satellite.warm()
 nexrad_core.warm_site_status()
-
-
-@app.get("/api/sat/catalog")
-def sat_catalog():
-    """Every satellite, every product, and the tile URL each is drawn from."""
-    return satellite.catalog()
-
-
-@app.get("/api/sat/frames")
-def sat_frames(
-    product: str = Query(satellite.DEFAULT_PRODUCT),
-    hours: float = Query(3.0, ge=0.5, le=24.0 * 7, description="how long a loop, for the geostationary products"),
-):
-    """The times one product has in the loop, oldest first."""
-    try:
-        return satellite.frames(product, hours)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-
-@app.get("/api/sat/image")
-async def sat_image(
-    product: str = Query(...),
-    time: str = Query(..., description="the frame's time, as the frame list gives it"),
-    west: float = Query(...),
-    south: float = Query(...),
-    east: float = Query(...),
-    north: float = Query(...),
-    width: int = Query(1280),
-    height: int = Query(800),
-):
-    """One frame of a loop for a box: the provider's picture, cached here."""
-    try:
-        body, ctype = await satellite.image(product, time, west, south, east, north, width, height)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=str(exc))
-    if ctype == "empty":
-        # Listed but not published yet: nothing to draw, and not to be cached.
-        return Response(status_code=204, headers={"Cache-Control": "no-store"})
-    return Response(content=body, media_type=ctype, headers={"Cache-Control": "public, max-age=86400"})
-
-
-@app.post("/api/sat/prefetch")
-def sat_prefetch(payload: dict = Body(...)):
-    """Start fetching a whole loop: {product, times, west, south, east, north, width, height}."""
-    try:
-        return satellite.prefetch(
-            str(payload.get("product")),
-            [str(x) for x in (payload.get("times") or [])],
-            float(payload["west"]), float(payload["south"]), float(payload["east"]), float(payload["north"]),
-            int(payload.get("width", 1280)), int(payload.get("height", 800)),
-        )
-    except (ValueError, KeyError, TypeError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-
-@app.post("/api/sat/cancel")
-def sat_cancel():
-    """Stop fetching the loop being loaded."""
-    return satellite.cancel()
 
 
 @app.get("/api/obs/catalog")
@@ -696,15 +619,102 @@ def obs_catalog():
     return observations.catalog()
 
 
+@app.get("/api/obs/bar")
+def obs_bar(field: str = Query(...)):
+    """A product's colour scale on its own: a compare view shows it before any
+    picture has been drawn."""
+    if field not in observations.PRODUCTS:
+        raise HTTPException(status_code=400, detail=f"Unknown product: {field}")
+    return observations.colour_bar(field)
+
+
+@app.get("/api/obs/tracks")
+async def obs_tracks(source: str = Query("atcf"), field: str = Query("trk_sel"), key: str = Query(...)):
+    """An ATCF source's model tracks for the storm and cycle `key` names."""
+    try:
+        return await _obs_call(observations.track_data, source, field, key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/obs/compare")
+async def obs_compare(
+    source: str = Query(...),
+    field: str = Query(...),
+    unix: int = Query(..., description="the valid time to compare at"),
+    mode: str = Query("models", pattern="^models$"),
+    run: str = Query(""),
+):
+    """Every model with the product at one valid time (Compare models' "All models")."""
+    try:
+        return {"cells": await _obs_call(observations.compare, source, field, unix, mode, run)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/obs/strip")
+def obs_strip(
+    source: str = Query(...),
+    run: str = Query("", description="the run on screen: a storm model's strip is that storm's runs"),
+):
+    """The runs Compare runs picks from, oldest first, each with its hours.
+    A plain handler, not _obs_call: on the obs pool it queued behind the map's
+    pictures while they downloaded."""
+    try:
+        runs, partial = observations.strip(source, run)
+        return {"runs": runs, "partial": partial}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/obs/window")
+async def obs_window(
+    source: str = Query(...),
+    field: str = Query(...),
+    unix: int = Query(..., description="the timeline's valid time"),
+    run: str = Query("", description="keep this run while it reaches the time; the newest otherwise"),
+):
+    """One window of a custom compare grid: any model, any product, at the
+    timeline's valid time (or the model's nearest hour). Null when it has none."""
+    try:
+        return {"cell": await _obs_call(observations.window_at, source, field, unix, run)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/obs/runs")
+def obs_runs(source: str = Query(...)):
+    """A forecast model's runs that can be opened, newest first."""
+    try:
+        return {"runs": observations.runs(source)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
 @app.get("/api/obs/frames")
 def obs_frames(
     source: str = Query(observations.DEFAULT_SOURCE),
     field: str = Query("", description="the field about to be drawn — its newest hour starts warming"),
     hours: float = Query(0, ge=0, le=24 * 7, description="only the last this many hours, thinned to a loop"),
+    run: str = Query("", description="a forecast model's run (YYYYMMDDHH); the newest when empty"),
 ):
     """The timeline's frames, oldest first: the last `hours` of them, or every
-    hour the source keeps."""
+    hour the source keeps -- or, for a forecast model, one run's hours."""
     try:
+        # A model opened is a strip made ahead: Compare runs then opens at once.
+        observations.warm_strip(source, run)
+        if run:
+            return {"frames": observations.run_frames(source, run)}
         out = observations.frames_for(source, hours) if hours > 0 else observations.frames(source)
         if field:
             observations.warm_newest(source, field)
@@ -716,7 +726,7 @@ def obs_frames(
 
 
 @app.get("/api/obs/value")
-def obs_value(
+async def obs_value(
     source: str = Query(observations.DEFAULT_SOURCE),
     field: str = Query(observations.DEFAULT_FIELD),
     key: str = Query(""),
@@ -725,7 +735,7 @@ def obs_value(
 ):
     """The analysed value at one point — what the pointer is over."""
     try:
-        return observations.value_at(source, field, key, lat, lon)
+        return await _obs_call(observations.value_at, source, field, key, lat, lon)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
@@ -733,14 +743,14 @@ def obs_value(
 
 
 @app.get("/api/obs/vectors")
-def obs_vectors(
+async def obs_vectors(
     source: str = Query(observations.DEFAULT_SOURCE),
     field: str = Query(observations.DEFAULT_FIELD),
     key: str = Query(""),
 ):
     """Labelled contours over the field, and the outline of the analysed area."""
     try:
-        body = observations.vectors(source, field, key)
+        body = await _obs_call(observations.vectors, source, field, key)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
@@ -749,7 +759,7 @@ def obs_vectors(
 
 
 @app.get("/api/obs/meta")
-def obs_meta(
+async def obs_meta(
     source: str = Query(observations.DEFAULT_SOURCE),
     field: str = Query(observations.DEFAULT_FIELD),
     key: str = Query(""),
@@ -762,7 +772,7 @@ def obs_meta(
     the map can fetch and decode a PNG natively, and the browser can cache it.
     """
     try:
-        out = observations.render(source=source, field=field, key=key, width=width)
+        out = await _obs_call(observations.render, source=source, field=field, key=key, width=width)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
@@ -780,7 +790,7 @@ def obs_meta(
 
 
 @app.get("/api/obs/image")
-def obs_image(
+async def obs_image(
     source: str = Query(observations.DEFAULT_SOURCE),
     field: str = Query(observations.DEFAULT_FIELD),
     key: str = Query(...),
@@ -788,7 +798,7 @@ def obs_image(
 ):
     """The picture for one hour, as the PNG itself."""
     try:
-        out = observations.render(source=source, field=field, key=key, width=width, warm=False)
+        out = await _obs_call(observations.render, source=source, field=field, key=key, width=width, warm=False)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
@@ -800,12 +810,15 @@ def obs_image(
 
 @app.post("/api/obs/prefetch")
 def obs_prefetch(payload: dict = Body(...)):
-    """Start making a loop of analysis frames: {source, field, keys}."""
+    """Start making a loop of analysis frames: {source, field, keys, view?}.
+    `view` ({west, south, east, north, width, height}) also makes each frame's
+    sharp picture of that box -- what the timeline plays when zoomed in."""
     try:
         return observations.prefetch(
             str(payload.get("source") or observations.DEFAULT_SOURCE),
             str(payload.get("field") or observations.DEFAULT_FIELD),
             [str(k) for k in (payload.get("keys") or [])],
+            payload.get("view"),
         )
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -831,11 +844,12 @@ def obs_loop_status(payload: dict = Body(...)):
 
 
 @app.post("/api/obs/points")
-def obs_points(payload: dict = Body(...)):
+async def obs_points(payload: dict = Body(...)):
     """Values under a list of places: {source, field, key, points: [[lat, lon], ...]}."""
     try:
         points = [[float(a), float(b)] for a, b in (payload.get("points") or [])]
-        return observations.points_at(
+        return await _obs_call(
+            observations.points_at,
             str(payload.get("source") or observations.DEFAULT_SOURCE),
             str(payload.get("field") or observations.DEFAULT_FIELD),
             str(payload.get("key") or ""),
@@ -848,7 +862,7 @@ def obs_points(payload: dict = Body(...)):
 
 
 @app.get("/api/obs/view")
-def obs_view(
+async def obs_view(
     source: str = Query(observations.DEFAULT_SOURCE),
     field: str = Query(observations.DEFAULT_FIELD),
     key: str = Query(...),
@@ -856,21 +870,22 @@ def obs_view(
     south: float = Query(..., ge=-90, le=90),
     east: float = Query(..., ge=-540, le=540),
     north: float = Query(..., ge=-90, le=90),
-    width: int = Query(1024, ge=64, le=2048),
-    height: int = Query(768, ge=64, le=2048),
+    width: int = Query(1024, ge=64, le=3072),
+    height: int = Query(768, ge=64, le=3072),
 ):
     """The part of one hour on screen, sharp at the zoom it is looked at."""
     try:
-        png = observations.render_view(source, field, key, west, south, east, north, width, height)
+        png = await _obs_call(observations.render_view, source, field, key, west, south, east, north, width, height)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
-    return Response(content=png, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+    return Response(content=png, media_type=observations.VIEW_MEDIA,
+                    headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.get("/api/obs/render")
-def obs_render(
+async def obs_render(
     source: str = Query(observations.DEFAULT_SOURCE),
     field: str = Query(observations.DEFAULT_FIELD),
     key: str = Query("", description="YYYYMMDDHH — blank means the newest hour"),
@@ -878,7 +893,7 @@ def obs_render(
 ):
     """One hour of one field as a Mercator PNG plus the corners to place it at."""
     try:
-        out = observations.render(source=source, field=field, key=key, width=width)
+        out = await _obs_call(observations.render, source=source, field=field, key=key, width=width)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
@@ -898,17 +913,156 @@ def obs_render(
 
 
 @app.get("/api/surface-obs")
-def surface_obs_endpoint(bbox: str = Query(...)):
+def surface_obs_endpoint(
+    bbox: str = Query(...),
+    cell: float | None = Query(None, gt=0, le=20, description="One station per cell this many degrees across"),
+    networks: str = Query("metar,synop,mesonet"),
+):
     try:
-        return surface_obs.fetch_surface_obs(bbox)
+        return surface_obs.fetch_surface_obs(bbox, cell=cell, networks=networks)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/stations/networks")
+def stations_networks_status():
+    """How many stations each network has now, and the INMET token's state."""
+    import station_networks  # noqa: PLC0415
+
+    return station_networks.networks_status()
+
+
+@app.post("/api/stations/inmet-token")
+def stations_inmet_token(payload: dict = Body(...)):
+    """Keep the user's INMET token (empty clears it) and read the network with it."""
+    import station_networks  # noqa: PLC0415
+
+    return station_networks.set_inmet_token(str(payload.get("token") or ""))
 
 
 @app.get("/api/surface-obs/history")
 def surface_obs_history(station: str = Query(..., min_length=2), hours: int = Query(24, ge=1, le=48)):
     try:
         return {"observations": surface_obs.fetch_surface_history(station, hours)}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/stations/directory")
+def stations_directory(refresh: bool = Query(False)):
+    try:
+        return stations.station_directory(force=refresh)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/stations/series")
+def stations_series(
+    station: str = Query(..., min_length=2),
+    hours: int = Query(24, ge=6, le=168),
+    network: str = Query(""),
+):
+    try:
+        return stations.station_series(station, hours, network)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/sat/catalog")
+def sat_catalog():
+    """Satellites, their regions, and each region's products."""
+    return satellite.catalog()
+
+
+@app.get("/api/sat/frames")
+async def sat_frames(
+    sat: str = Query(...),
+    region: str = Query(...),
+    product: str = Query(...),
+    count: int = Query(24, ge=1, le=400),
+):
+    """The newest `count` times of a product, oldest first, and where the region is."""
+    try:
+        return await asyncio.wrap_future(_SAT_LIST_POOL.submit(satellite.frames, sat, region, product, count))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/sat/image")
+async def sat_image(
+    request: Request,
+    sat: str = Query(...),
+    region: str = Query(...),
+    product: str = Query(...),
+    time: str = Query(..., description="YYYY-MM-DDTHH:MM:SSZ"),
+    west: float = Query(..., ge=-540, le=540),
+    south: float = Query(..., ge=-90, le=90),
+    east: float = Query(..., ge=-540, le=540),
+    north: float = Query(..., ge=-90, le=90),
+    width: int = Query(1024, ge=32, le=3072),
+    height: int = Query(768, ge=32, le=3072),
+    detail: str = Query("full", pattern="^(full|coarse)$"),
+):
+    """One frame over a box of the map, as a Web Mercator WebP. 204 when the
+    source lists the time but has no picture for it. `detail=coarse` asks for
+    a quick picture first; X-Sat-Detail says which one came."""
+    fut = _SAT_POOL.submit(satellite.image, sat, region, product, time, (west, south, east, north),
+                           width, height, detail)
+    try:
+        # The layer drops the requests of a view or product left behind; one
+        # still queued here is let go too, or eight of them held every worker
+        # and the picture now wanted waited behind them.
+        waiting = asyncio.wrap_future(fut)
+        while True:
+            done, _ = await asyncio.wait({waiting}, timeout=0.4)
+            if done:
+                data, media, got = waiting.result()
+                break
+            if await request.is_disconnected():
+                fut.cancel()
+                return Response(status_code=204)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except sat_net.Missing:
+        return Response(status_code=204)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+    # "identity": the GZip middleware skips a response that says how it is
+    # encoded. A WebP does not shrink, and gzipping 1-2 MB of it on the event
+    # loop held every other request for ~0.1 s a frame while a loop came in.
+    return Response(content=data, media_type=media,
+                    headers={"Cache-Control": "public, max-age=3600", "X-Sat-Detail": got,
+                             "Content-Encoding": "identity"})
+
+
+@app.post("/api/sat/prefetch")
+def sat_prefetch(payload: dict = Body(...)):
+    """Start making a loop: {sat, region, product, times, west, south, east, north, width, height}."""
+    try:
+        return satellite.prefetch(
+            str(payload["sat"]), str(payload["region"]), str(payload["product"]),
+            [str(t) for t in (payload.get("times") or [])],
+            (float(payload["west"]), float(payload["south"]), float(payload["east"]), float(payload["north"])),
+            int(payload["width"]), int(payload["height"]),
+            coarse_first=bool(payload.get("coarse", True)),
+        )
+    except (KeyError, ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/sat/cancel")
+def sat_cancel():
+    """Stop making the loop being loaded."""
+    return satellite.cancel()
+
+
+@app.get("/api/outlooks/cpc-hazards")
+def outlooks_cpc_hazards():
+    """CPC's 8-14 day hazards, from its own shapefiles (see cpc_hazards)."""
+    try:
+        return cpc_hazards.hazards_8_14()
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
 
@@ -928,41 +1082,6 @@ def nadocast(
 def model_field_models():
     """The sidebar's model picker: every model that can back a model field."""
     return {"models": model_fields.list_models(), "default": model_fields.DEFAULT_MODEL}
-
-
-@app.get("/api/model-fields/thickness")
-def model_field_thickness(
-    model: str = Query(model_fields.DEFAULT_MODEL),
-    hour: int = Query(0, ge=0, le=384),
-    interval: float = Query(6.0, gt=0, le=30),
-    smooth: float = Query(1.0, ge=0, le=4),
-):
-    """1000-500 hPa thickness contours for one model run hour, as GeoJSON."""
-    try:
-        return model_fields.build_thickness(model=model, hour=hour, interval=interval, smooth=smooth)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=str(exc))
-
-
-@app.get("/api/model-fields/mslp")
-def model_field_mslp(
-    model: str = Query(model_fields.DEFAULT_MODEL),
-    hour: int = Query(0, ge=0, le=384),
-    interval: float = Query(4.0, gt=0, le=50),
-    centres: bool = Query(True),
-    smooth: float = Query(1.0, ge=0, le=4),
-):
-    """Isobars + H/L centres for one model run hour, as GeoJSON."""
-    try:
-        return model_fields.build_mslp(
-            model=model, hour=hour, interval=interval, centres=centres, smooth=smooth
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=str(exc))
 
 
 if __name__ == "__main__":

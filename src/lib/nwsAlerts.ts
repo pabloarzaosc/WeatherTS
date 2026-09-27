@@ -1,5 +1,7 @@
 /** Live alerts from the US National Weather Service (api.weather.gov, public domain). */
 
+import { simplifyGeometry } from "./simplify";
+
 export type AlertParameters = Record<string, string[] | undefined>;
 
 export interface NwsAlert {
@@ -58,6 +60,15 @@ const COUNTY_LAYER = 2;
 const MARINE_ZONE_LAYERS = [5, 6, 10] as const;
 
 const zoneGeometryCache = new Map<string, GeoJSON.Geometry | null>();
+
+/** A zone's shape into the cache, simplified once (see lib/simplify: the raw
+ *  outlines ran to millions of vertices, which the map chewed on at every
+ *  change of the alerts). What is stored in IndexedDB is the simplified one. */
+function keepZone(url: string, geometry: GeoJSON.Geometry | null): GeoJSON.Geometry | null {
+  const simple = simplifyGeometry(geometry);
+  zoneGeometryCache.set(url, simple);
+  return simple;
+}
 let zoneDbPromise: Promise<IDBDatabase | null> | null = null;
 
 const str = (v: unknown, fallback = ""): string => (typeof v === "string" ? v : fallback);
@@ -203,8 +214,24 @@ export async function fetchAlertsAt(
   unix: number,
   signal?: AbortSignal,
 ): Promise<AlertFeature[]> {
-  const end = new Date(unix * 1000);
-  const start = new Date((unix - ISSUE_LOOKBACK_S) * 1000);
+  // Issued within the window is not the same as running at `unix`; most of what
+  // came back had already expired by then.
+  const issued = await fetchAlertsIssued(unix - ISSUE_LOOKBACK_S, unix, signal);
+  return issued.filter((f) => alertInForceAt(f.alert, unix));
+}
+
+/**
+ * Every alert ISSUED between two instants (unix seconds), whatever became of
+ * it. A timeline plays through these: the alerts in force at each frame are
+ * then a filter on the map, not a request per frame (see AlertController).
+ */
+export async function fetchAlertsIssued(
+  startUnix: number,
+  endUnix: number,
+  signal?: AbortSignal,
+): Promise<AlertFeature[]> {
+  const end = new Date(endUnix * 1000);
+  const start = new Date(startUnix * 1000);
 
   const url = new URL(NWS_ALERTS_URL);
   url.searchParams.set("start", start.toISOString());
@@ -228,10 +255,7 @@ export async function fetchAlertsAt(
     collected.push(...parseAlertFeatures(data.features));
     next = data.pagination?.next ?? null;
   }
-
-  // Issued within the window is not the same as running at `unix`; most of what
-  // came back had already expired by then.
-  return dedupeById(collected).filter((f) => alertInForceAt(f.alert, unix));
+  return dedupeById(collected);
 }
 
 /** How far back to look for the ISSUE time of something still running at the
@@ -243,7 +267,7 @@ export async function fetchAlertsAt(
  *  warnings and none of the watches around them. Measured against the live API
  *  at twenty hours back, widening this to twelve found 151 alerts in force
  *  instead of 86, for one extra page of results. */
-const ISSUE_LOOKBACK_S = 12 * 3600;
+export const ISSUE_LOOKBACK_S = 12 * 3600;
 const MAX_ARCHIVE_PAGES = 6;
 
 function parseAlertFeatures(features: RawFeature[] | undefined): AlertFeature[] {
@@ -458,7 +482,7 @@ async function loadZoneFromDb(db: IDBDatabase, url: string): Promise<void> {
     req.onsuccess = () => {
       const record = req.result as ZoneGeometryRecord | undefined;
       if (record && Date.now() - record.storedAt < ZONE_CACHE_MAX_AGE_MS) {
-        zoneGeometryCache.set(url, record.geometry);
+        keepZone(url, record.geometry);
       }
       resolve();
     };
@@ -620,9 +644,9 @@ async function fetchReferenceMapZoneGeometries(
 
       for (const url of urls) {
         if (zoneGeometryCache.has(url)) continue;
-        zoneGeometryCache.set(url, geometry);
+        const simple = keepZone(url, geometry);
         if (!saved.has(url)) {
-          records.push({ url, geometry, storedAt });
+          records.push({ url, geometry: simple, storedAt });
           saved.add(url);
         }
       }
@@ -644,8 +668,7 @@ async function fetchZoneGeometry(url: string, signal?: AbortSignal): Promise<Geo
       return null;
     }
     const data = (await res.json()) as { geometry?: GeoJSON.Geometry | null };
-    const geometry = data.geometry ?? null;
-    zoneGeometryCache.set(url, geometry);
+    const geometry = keepZone(url, data.geometry ?? null);
     void saveZoneToDb(url, geometry);
     return geometry;
   } catch (err) {

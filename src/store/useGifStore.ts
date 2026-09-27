@@ -16,6 +16,8 @@ export interface GifArea {
 }
 
 export type AnimFormat = "mp4" | "gif";
+/** What the animation steps through: the radar's scans, a model's hours, or the satellite's frames. */
+export type AnimSubject = "radar" | "models" | "satellite";
 export type LoopStyle = "forward" | "boomerang";
 
 /** Output size presets: a fraction of the native capture size. */
@@ -33,6 +35,7 @@ interface GifState {
   /** The Customize Animation dialog. */
   open: boolean;
   format: AnimFormat;
+  subject: AnimSubject;
   /** Frame window, as indices into the current scan list (inclusive). */
   startIdx: number;
   endIdx: number;
@@ -53,6 +56,7 @@ interface GifState {
 
   setOpen: (open: boolean) => void;
   setFormat: (format: AnimFormat) => void;
+  setSubject: (subject: AnimSubject) => void;
   setRange: (startIdx: number, endIdx: number) => void;
   setStep: (step: number) => void;
   setDelaySec: (delaySec: number) => void;
@@ -66,6 +70,7 @@ interface GifState {
 export const useGifStore = create<GifState>()((set) => ({
   open: false,
   format: MP4_SUPPORTED ? "mp4" : "gif",
+  subject: "radar",
   startIdx: 0,
   endIdx: 0,
   step: 1,
@@ -79,6 +84,7 @@ export const useGifStore = create<GifState>()((set) => ({
 
   setOpen: (open) => set({ open }),
   setFormat: (format) => set({ format }),
+  setSubject: (subject) => set({ subject }),
   setRange: (startIdx, endIdx) => set({ startIdx, endIdx }),
   setStep: (step) => set({ step }),
   setDelaySec: (delaySec) => set({ delaySec }),

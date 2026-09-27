@@ -18,7 +18,7 @@ export const BASEMAP_PLACE_LAYERS = ["place-country", "place-state", "place-city
 const GLYPHS = "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf";
 const OFM_ATTRIB = "© OpenFreeMap · OpenStreetMap";
 
-export type BasemapGroup = "Vector" | "Imagery" | "Terrain";
+export type BasemapGroup = "Vector" | "Chart" | "Imagery" | "Terrain";
 
 export interface BasemapInfo {
   id: string;
@@ -317,6 +317,270 @@ function vectorStyle(p: Palette): StyleSpecification {
   };
 }
 
+// ----------------------------------------------------------------- chart ---
+
+/**
+ * The weather-chart base: paper, and in ink only the coastlines, lakes,
+ * country and state lines -- the map under every NCEP, SPC and GEMPAK chart,
+ * and under most of the model images shared around. Nothing else: no land
+ * colour, no roads, no names, so whatever is drawn on it is the only thing
+ * read.
+ */
+interface Chart {
+  paper: string;
+  ink: string;
+  /** Its names: set in ink, and haloed in the paper so a line under one parts. */
+  labels: Palette;
+  /** What comes in as the map is zoomed to a city -- towns, water, counties,
+   *  roads -- in greys a step off the paper, so the chart's own lines and the
+   *  data over them stay the first thing read. */
+  town: string;
+  water: string;
+  county: string;
+  motorway: string;
+  trunk: string;
+  primary: string;
+  secondary: string;
+  minor: string;
+  roadName: string;
+}
+
+const CHART_WHITE: Chart = {
+  paper: "#ffffff",
+  ink: "#000000",
+  labels: { ...LIGHT, text: "#111111", textDim: "#1c1c1c", halo: "#ffffff" },
+  town: "#ededed",
+  water: "#e6ebef",
+  county: "#9a9a9a",
+  motorway: "#7d7d7d",
+  trunk: "#959595",
+  primary: "#adadad",
+  secondary: "#c4c4c4",
+  minor: "#d9d9d9",
+  roadName: "#5a5a5a",
+};
+const CHART_DARK: Chart = {
+  paper: "#0e0e0e",
+  ink: "#ededed",
+  labels: { ...DARK, text: "#f2f2f2", textDim: "#dcdcdc", halo: "#0e0e0e" },
+  town: "#1b1b1b",
+  water: "#141a1e",
+  county: "#555555",
+  motorway: "#6e6e6e",
+  trunk: "#5c5c5c",
+  primary: "#4a4a4a",
+  secondary: "#3b3b3b",
+  minor: "#2c2c2c",
+  roadName: "#a8a8a8",
+};
+
+/** US counties, from the outlines bundled for the analyses: the tiles carry
+ *  them only from zoom 9, and a radar is read county by county from 6 in. */
+// Relative to the page, as the raob layer's is: the desktop app loads the
+// page from a file:// path, where "/data/..." would mean the drive's root.
+const COUNTY_DATA = `${import.meta.env.BASE_URL}data/borders.geojson`;
+const CHARTS: Record<string, Chart> = { chart: CHART_WHITE, "chart-dark": CHART_DARK };
+
+/** The ink of a chart basemap, for the borders drawn over products to match
+ *  it; null for every other basemap. */
+export function chartInk(id: string): string | null {
+  return CHARTS[id]?.ink ?? null;
+}
+
+const zoomWidth = (...stops: number[]) => ["interpolate", ["linear"], ["zoom"], ...stops] as never;
+
+/**
+ * The same tiles, never asked for past zoom 5, for a chart's lakes. Up to 5 the
+ * water is Natural Earth's -- the lakes a chart shows -- and from 6 it is every
+ * reservoir in OpenStreetMap: at chase zoom a state is freckled with a hundred
+ * outlines. Held at 5, the big lakes keep their shores at every zoom and the
+ * rest never arrive. The tiles carry no area to filter on instead.
+ */
+export const LAKES_SOURCE = "openmaptiles-lakes";
+const lakesSource = {
+  type: "vector" as const,
+  url: "https://tiles.openfreemap.org/planet",
+  // An explicit maxzoom wins over the TileJSON's: tiles past it are the z5 ones, overzoomed.
+  maxzoom: 5,
+};
+
+/**
+ * Roads by rank, each from the zoom its class starts to matter at: interstates
+ * across a state, highways across a county, streets across a town. Names come
+ * with them further in -- the route numbers first, street names at city zoom.
+ */
+function chartRoads(c: Chart): LayerSpecification[] {
+  const road = (
+    id: string,
+    classes: string[],
+    minzoom: number,
+    color: string,
+    widths: number[],
+  ): LayerSpecification => ({
+    id,
+    type: "line",
+    source: VECTOR_SOURCE,
+    "source-layer": "transportation",
+    minzoom,
+    filter: ["in", ["get", "class"], ["literal", classes]],
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": color, "line-width": zoomWidth(...widths) },
+  });
+  return [
+    road("chart-road-minor", ["minor", "service"], 12, c.minor, [12, 0.4, 14, 1.2, 17, 3]),
+    road("chart-road-tertiary", ["tertiary"], 10, c.minor, [10, 0.35, 13, 1, 16, 2.6]),
+    road("chart-road-secondary", ["secondary"], 8.5, c.secondary, [8.5, 0.35, 12, 1, 16, 3]),
+    road("chart-road-primary", ["primary"], 7, c.primary, [7, 0.35, 10, 0.9, 14, 2.4, 17, 4.5]),
+    road("chart-road-trunk", ["trunk"], 6, c.trunk, [6, 0.35, 10, 1, 14, 2.8, 17, 5]),
+    road("chart-road-motorway", ["motorway"], 5, c.motorway, [5, 0.4, 8, 0.9, 12, 1.8, 16, 4.5]),
+    {
+      id: "chart-road-ref",
+      type: "symbol",
+      source: VECTOR_SOURCE,
+      "source-layer": "transportation_name",
+      minzoom: 8,
+      filter: ["all", ["in", ["get", "class"], ["literal", ["motorway", "trunk"]]], ["has", "ref"]],
+      layout: {
+        "symbol-placement": "line",
+        "symbol-spacing": 320,
+        "text-field": ["get", "ref"],
+        "text-font": ["Noto Sans Bold"],
+        "text-size": zoomWidth(8, 9, 12, 11),
+        "text-rotation-alignment": "viewport",
+      },
+      paint: { "text-color": c.roadName, "text-halo-color": c.paper, "text-halo-width": 1.6 },
+    },
+    {
+      id: "chart-road-name",
+      type: "symbol",
+      source: VECTOR_SOURCE,
+      "source-layer": "transportation_name",
+      minzoom: 12,
+      filter: ["in", ["get", "class"], ["literal", ["primary", "secondary", "tertiary", "minor"]]],
+      layout: {
+        "symbol-placement": "line",
+        "text-field": nameField,
+        "text-font": ["Noto Sans Regular"],
+        "text-size": zoomWidth(12, 9.5, 16, 12),
+      },
+      paint: { "text-color": c.roadName, "text-halo-color": c.paper, "text-halo-width": 1.4 },
+    },
+  ];
+}
+
+function chartStyle(c: Chart): StyleSpecification {
+  return {
+    version: 8,
+    glyphs: GLYPHS,
+    sources: {
+      [VECTOR_SOURCE]: { type: "vector", url: "https://tiles.openfreemap.org/planet", attribution: OFM_ATTRIB },
+      [LAKES_SOURCE]: lakesSource,
+      "chart-counties": { type: "geojson", data: COUNTY_DATA },
+    },
+    layers: [
+      { id: "background", type: "background", paint: { "background-color": c.paper } },
+      // --- what zooming in adds, under the chart's own lines ---------------
+      {
+        // Built-up land: the town itself, not only its name.
+        id: "chart-town",
+        type: "fill",
+        source: VECTOR_SOURCE,
+        "source-layer": "landuse",
+        minzoom: 6,
+        filter: ["in", ["get", "class"], ["literal", ["residential", "suburb", "neighbourhood", "quarter", "commercial", "industrial", "retail"]]],
+        paint: { "fill-color": c.town, "fill-opacity": zoomWidth(6, 0.7, 9, 1) },
+      },
+      {
+        // Water as a tint once lakes and rivers are big enough to be places.
+        id: "chart-water",
+        type: "fill",
+        source: VECTOR_SOURCE,
+        "source-layer": "water",
+        minzoom: 9,
+        filter: ["!=", ["get", "class"], "ocean"],
+        paint: { "fill-color": c.water },
+      },
+      {
+        id: "chart-river",
+        type: "line",
+        source: VECTOR_SOURCE,
+        "source-layer": "waterway",
+        minzoom: 9,
+        filter: ["in", ["get", "class"], ["literal", ["river", "canal"]]],
+        paint: { "line-color": c.water, "line-width": zoomWidth(9, 0.6, 14, 2.4) },
+      },
+      {
+        id: "chart-county",
+        type: "line",
+        source: "chart-counties",
+        minzoom: 5.5,
+        filter: ["==", ["get", "kind"], "county"],
+        layout: { "line-join": "round" },
+        paint: {
+          "line-color": c.county,
+          "line-width": zoomWidth(5.5, 0.3, 8, 0.6, 12, 1),
+          "line-opacity": zoomWidth(5.5, 0, 6.5, 1),
+        },
+      },
+      ...chartRoads(c),
+      // --- the chart ---------------------------------------------------------
+      {
+        // The outline of the water, not a fill: sea and land are the same paper.
+        id: "chart-coast",
+        type: "line",
+        source: VECTOR_SOURCE,
+        "source-layer": "water",
+        filter: ["==", ["get", "class"], "ocean"],
+        layout: { "line-join": "round" },
+        paint: { "line-color": c.ink, "line-width": zoomWidth(2, 0.5, 5, 0.8, 8, 1.1, 12, 1.6) },
+      },
+      {
+        id: "chart-lakes",
+        type: "line",
+        source: LAKES_SOURCE,
+        "source-layer": "water",
+        filter: ["==", ["get", "class"], "lake"],
+        layout: { "line-join": "round" },
+        paint: { "line-color": c.ink, "line-width": zoomWidth(2, 0.4, 5, 0.7, 8, 1, 12, 1.4) },
+      },
+      {
+        id: "chart-state",
+        type: "line",
+        source: VECTOR_SOURCE,
+        "source-layer": "boundary",
+        filter: ["all", ["==", ["get", "admin_level"], 4], ["!=", ["get", "maritime"], 1]],
+        layout: { "line-join": "round" },
+        paint: { "line-color": c.ink, "line-width": zoomWidth(2, 0.4, 5, 0.65, 8, 0.9, 12, 1.3) },
+      },
+      {
+        id: "chart-country",
+        type: "line",
+        source: VECTOR_SOURCE,
+        "source-layer": "boundary",
+        filter: ["all", ["==", ["get", "admin_level"], 2], ["!=", ["get", "maritime"], 1]],
+        layout: { "line-join": "round" },
+        paint: { "line-color": c.ink, "line-width": zoomWidth(2, 0.7, 5, 1.05, 8, 1.4, 12, 2) },
+      },
+      // Country, state and city names, as every basemap has them (and under the
+      // same ids, so Settings and the products that hide them find them).
+      ...referenceLayers(c.labels).filter((l) => l.id.startsWith("place-")),
+    ],
+  };
+}
+
+/**
+ * Whether a basemap is a light surface or a dark one, for what is drawn over
+ * it: a label in pale text on a dark halo is made for a dark map, and on white
+ * paper it is a grey smudge -- names, radar badges, report magnitudes turn to
+ * dark ink on a light halo instead.
+ */
+export type MapTone = "dark" | "light";
+const LIGHT_TONE = new Set(["light", "chart", "hillshade", "topo", "ocean"]);
+
+export function basemapTone(id: string): MapTone {
+  return LIGHT_TONE.has(id) ? "light" : "dark";
+}
+
 /** No tiles at all: a flat canvas for reading a data field with nothing behind it. */
 function blankStyle(): StyleSpecification {
   return {
@@ -385,6 +649,8 @@ export const BASEMAPS: BasemapInfo[] = [
   { id: "dark", label: "Dark", group: "Vector", hint: "The workstation default — near-black, lets radar and satellite carry the colour.", attribution: OFM_ATTRIB },
   { id: "light", label: "Light", group: "Vector", hint: "Pale base for bright rooms and printing.", attribution: OFM_ATTRIB },
   { id: "blank", label: "Blank", group: "Vector", hint: "No tiles at all — just the data field.", attribution: "" },
+  { id: "chart", label: "Chart", group: "Chart", hint: "White paper, black coastlines and borders — the classic weather chart.", attribution: OFM_ATTRIB },
+  { id: "chart-dark", label: "Chart (dark)", group: "Chart", hint: "The same chart in white ink on black.", attribution: OFM_ATTRIB },
   { id: "satellite", label: "Satellite", group: "Imagery", hint: "High-resolution imagery, borders drawn over it.", attribution: "Imagery © Esri, Maxar, Earthstar Geographics" },
   { id: "truecolor", label: "True colour (daily)", group: "Imagery", hint: "NASA VIIRS mosaic — yesterday's actual clouds.", attribution: "NASA EOSDIS GIBS · VIIRS/SNPP" },
   { id: "bluemarble", label: "Blue Marble", group: "Imagery", hint: "Cloud-free relief and bathymetry, no date.", attribution: "NASA EOSDIS GIBS · Blue Marble" },
@@ -399,19 +665,24 @@ export const basemapInfo = (id: string): BasemapInfo =>
   BASEMAPS.find((b) => b.id === id) ?? BASEMAPS[0];
 
 /**
- * The two vector basemaps built to sit under a light or dark app chrome --
- * their ids double as the theme names they match. When the UI theme flips,
- * whichever of these two is on screen swaps to match it. Everything else --
- * imagery, terrain, "blank" -- has no light/dark counterpart and is a
- * deliberate choice, so it's left alone.
+ * The basemaps that come as a light and a dark pair, to sit under a light or
+ * dark app chrome. When the UI theme flips, whichever of a pair is on screen
+ * swaps to its twin. Everything else -- imagery, terrain, "blank", and the
+ * charts, whose paper is picked for the picture being made rather than for the
+ * room -- is a deliberate choice, so it's left alone. (The theme is also synced
+ * at start-up, so a linked chart would turn dark again on every launch.)
  */
-const THEME_LINKED_BASEMAPS = new Set(["light", "dark"]);
+const THEME_PAIRS: Record<string, { light: string; dark: string }> = {
+  light: { light: "light", dark: "dark" },
+  dark: { light: "light", dark: "dark" },
+};
 
 /** Next basemap id to switch to for this theme, or null if this basemap
  *  isn't theme-linked or already matches. */
 export function themeLinkedBasemap(theme: "light" | "dark", currentId: string): string | null {
-  if (!THEME_LINKED_BASEMAPS.has(currentId)) return null;
-  return theme === currentId ? null : theme;
+  const pair = THEME_PAIRS[currentId];
+  if (!pair) return null;
+  return pair[theme] === currentId ? null : pair[theme];
 }
 
 /** Fresh style object per call — MapLibre takes ownership of what it is given. */
@@ -423,6 +694,9 @@ export function buildBasemapStyle(id: string): StyleSpecification {
       return vectorStyle(LIGHT);
     case "blank":
       return blankStyle();
+    case "chart":
+    case "chart-dark":
+      return chartStyle(CHARTS[id]);
     case "satellite":
       return rasterStyle({
         tiles: [`${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`],

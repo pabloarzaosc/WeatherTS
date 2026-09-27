@@ -84,7 +84,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     description: "Borders, place names, the grid and the night shading.",
     items: [
       { key: "map.placeLabels", label: "Place names", type: "toggle", default: true, group: "Place names",
-        hint: "Country, state and city names on the basemap and over satellite." },
+        hint: "Country, state and city names on the basemap." },
       scale("map.labelScale", "Name size", 1, undefined, "Place names"),
       { key: "map.borderColor", label: "Border colour", type: "color", default: "#a9c1e6", group: "Borders" },
       scale("map.borderWidth", "Border width", 1, undefined, "Borders"),
@@ -169,17 +169,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "pressure",
-    label: "Pressure & thickness",
-    description: "Isobars, pressure centres and 1000–500 mb thickness.",
+    label: "Pressure",
+    description: "Isobars and pressure centres, on the model products that carry sea-level pressure.",
     items: [
       { key: "mslp.lowColor", label: "Isobars below 1013 hPa", type: "color", default: "#8ab4ff", group: "Isobars" },
       { key: "mslp.highColor", label: "Isobars from 1013 hPa", type: "color", default: "#f0f3f8", group: "Isobars" },
       { key: "mslp.hColor", label: "High (H) centres", type: "color", default: "#6ea8ff", group: "Isobars" },
       { key: "mslp.lColor", label: "Low (L) centres", type: "color", default: "#ff6b6b", group: "Isobars" },
       { key: "mslp.labelSize", label: "Label size", type: "slider", default: 10, min: 8, max: 18, step: 1, unit: " px", group: "Isobars" },
-      { key: "thickness.coldColor", label: "Below 540 dam", type: "color", default: "#7cb3ff", group: "Thickness" },
-      { key: "thickness.warmColor", label: "540 dam and above", type: "color", default: "#ff8f8f", group: "Thickness" },
-      { key: "thickness.labelSize", label: "Label size", type: "slider", default: 10, min: 8, max: 18, step: 1, unit: " px", group: "Thickness" },
     ],
   },
   {
@@ -215,8 +212,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       },
       ms("timeline.radarMs", "Radar", 700),
       ms("timeline.satMs", "Satellite", 350),
-      ms("timeline.obsMs", "Observations", 400),
-      ms("timeline.modelMs", "Model fields", 600),
+      ms("timeline.obsMs", "Models", 400),
       ms("timeline.lsrMs", "Storm reports", 900),
       ms("timeline.frontsMs", "Fronts", 1100),
       ms("timeline.soundingMs", "Soundings", 2800),

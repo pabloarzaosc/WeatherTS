@@ -1,10 +1,12 @@
 """
-Surface observations (METAR station plots).
+Surface observations for the station plots.
 
-Proxies the Aviation Weather Center METAR API (global, free, no key) for a map
-bounding box and returns a GeoJSON FeatureCollection with the decoded fields a
-station-plot renderer needs: temp/dewpoint (C), wind dir/speed/gust (kt),
-altimeter (mb), visibility, sky cover, plus a couple of derived values.
+The airports come from the Aviation Weather Center METAR API (global, free, no
+key); the stations away from them from station_networks (WMO SYNOP and NOAA
+MADIS's mesonets). For a map box this returns one GeoJSON FeatureCollection
+with the decoded fields a station-plot renderer needs: temp/dewpoint (C), wind
+dir/speed/gust (kt), pressure (mb), visibility, sky cover, plus derived values
+-- each feature marked with its `kind` ("metar", "synop", "mesonet").
 """
 from __future__ import annotations
 
@@ -81,13 +83,69 @@ def _theta_e(temp: Optional[float], dewp: Optional[float], pres_mb: Optional[flo
     return round(theta * math.exp(lv * w / (cp * tk)), 0)
 
 
-def fetch_surface_obs(bbox: str) -> dict:
-    """bbox = 'lat0,lon0,lat1,lon1'. Returns a GeoJSON FeatureCollection."""
+# Which kind of station wins a crowded spot: an airport's full report, then a
+# synoptic station, then the mesonets (the complete ones first).
+_KIND_RANK = {"metar": 0, "inmet": 1, "synop": 1, "mesonet": 2}
+# Stations closer than this (degrees, ~2 km) are the same site in two feeds.
+_SAME_SITE = 0.02
+
+
+def _rank(f: dict) -> tuple:
+    p = f["properties"]
+    have = sum(p.get(k) is not None for k in ("temp", "dewp", "wspd", "altim"))
+    t = _timestamp_value(p.get("obsTime")) or 0
+    return (_KIND_RANK.get(p.get("kind"), 3), -have, -t)
+
+
+def fetch_surface_obs(bbox: str, cell: Optional[float] = None, networks: str = "metar,synop,mesonet") -> dict:
+    """bbox = 'lat0,lon0,lat1,lon1'. Returns a GeoJSON FeatureCollection of
+    every network asked for, a site reported by two of them once, and -- with
+    `cell` (degrees) -- one station per cell, the best-ranked (see _rank)."""
+    import station_networks  # noqa: PLC0415
+
+    want = {n.strip() for n in networks.split(",") if n.strip()}
+    feats: list[dict] = []
+    if "metar" in want:
+        for f in _metar_features(bbox):
+            f["properties"].setdefault("kind", "metar")
+            f["properties"].setdefault("network", "METAR")
+            feats.append(f)
+    if want & {"synop", "mesonet"}:
+        lat0, lon0, lat1, lon1 = (float(x) for x in bbox.split(","))
+        extra = station_networks.features_in_box(lat0, lon0, lat1, lon1, cell=cell,
+                                                 synop="synop" in want, mesonet="mesonet" in want)
+        feats.extend(extra)
+    feats.sort(key=_rank)
+    kept: list[dict] = []
+    sites: dict[tuple[int, int], list[tuple[float, float]]] = {}
+    cells: set[tuple[int, int]] = set()
+    for f in feats:
+        lon, lat = f["geometry"]["coordinates"]
+        key = (int(math.floor(lat / _SAME_SITE)), int(math.floor(lon / _SAME_SITE)))
+        near = any(
+            abs(lat - a) < _SAME_SITE and abs(lon - b) < _SAME_SITE
+            for dy in (-1, 0, 1) for dx in (-1, 0, 1)
+            for a, b in sites.get((key[0] + dy, key[1] + dx), ())
+        )
+        if near:
+            continue
+        if cell:
+            c = (int(math.floor(lat / cell)), int(math.floor(lon / cell)))
+            if c in cells:
+                continue
+            cells.add(c)
+        sites.setdefault(key, []).append((lat, lon))
+        kept.append(f)
+    pending = bool(want & {"synop", "mesonet"}) and station_networks.feeds_pending()
+    return {"type": "FeatureCollection", "features": kept, "pending": pending}
+
+
+def _metar_features(bbox: str) -> list[dict]:
     key = bbox
     now = time.time()
     hit = _CACHE.get(key)
     if hit and now - hit[0] < _TTL:
-        return hit[1]
+        return [dict(f, properties=dict(f["properties"])) for f in hit[1]["features"]]
 
     resp = _SESSION.get(AWC_URL, params={"bbox": bbox, "format": "json"}, timeout=_HTTP_TIMEOUT)
     resp.raise_for_status()
@@ -102,7 +160,7 @@ def fetch_surface_obs(bbox: str) -> dict:
     features = [f for f in features if f is not None]
     fc = {"type": "FeatureCollection", "features": features}
     _CACHE[key] = (now, fc)
-    return fc
+    return [dict(f, properties=dict(f["properties"])) for f in fc["features"]]
 
 
 def fetch_surface_history(station: str, hours: int = 24) -> list[dict]:

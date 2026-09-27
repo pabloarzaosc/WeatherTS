@@ -5,6 +5,7 @@ import { fetchAcarsProfiles, type AcarsAirport } from "../../lib/soundingViewer"
 import { useSoundingViewerStore } from "../../store/useSoundingViewerStore";
 import { useAcarsStore } from "../../store/useAcarsStore";
 import { registerMarkerLayers, unregisterMarkerLayers } from "../clickPriority";
+import { mapInk } from "../../map/mapInk";
 
 const SRC = "acars-src";
 const DOTS = "acars-dots";
@@ -142,8 +143,8 @@ export const acarsLayer: LayerModule = {
           "text-optional": true,
         },
         paint: {
-          "text-color": "#dfe9f5",
-          "text-halo-color": "rgba(8,12,18,0.9)",
+          "text-color": mapInk().text,
+          "text-halo-color": mapInk().halo,
           "text-halo-width": 1.2,
         },
       });

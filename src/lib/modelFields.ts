@@ -70,70 +70,9 @@ export interface CentreProps {
   label: string;
 }
 
-export interface MslpField {
-  source: string;
-  model: string;
-  modelLabel: string;
-  coverage: string;
-  variable: string;
-  units: string;
-  /** Model run, preformatted for display ("Wed 2026-07-29 12Z"). */
-  run: string;
-  runIso: string;
-  /** What this frame is valid for, preformatted. */
-  valid: string;
-  validIso: string;
-  hour: number;
-  interval: number;
-  geojson: GeoJSON.FeatureCollection;
-}
-
-/** 1000-500 hPa thickness contours, in decametres. */
-export interface ThicknessField {
-  source: string;
-  model: string;
-  modelLabel: string;
-  variable: string;
-  units: string;
-  run: string;
-  runIso: string;
-  valid: string;
-  validIso: string;
-  hour: number;
-  interval: number;
-  geojson: GeoJSON.FeatureCollection;
-}
-
 export async function fetchModels(signal?: AbortSignal): Promise<{ models: ModelInfo[]; default: string }> {
   const res = await fetch(`${BASE}/api/model-fields/models`, { signal });
   if (!res.ok) throw new Error(`models ${res.status}`);
-  return res.json();
-}
-
-/** Reads the backend's error detail, which says *why* a run is unavailable. */
-async function detail(res: Response): Promise<string> {
-  try {
-    const body = await res.json();
-    if (body && typeof body.detail === "string") return body.detail;
-  } catch {
-    /* fall through to the status code */
-  }
-  return `HTTP ${res.status}`;
-}
-
-export async function fetchMslp(
-  opts: { model: string; hour: number; interval: number; centres: boolean; smooth: number },
-  signal?: AbortSignal,
-): Promise<MslpField> {
-  const q = new URLSearchParams({
-    model: opts.model,
-    hour: String(opts.hour),
-    interval: String(opts.interval),
-    centres: String(opts.centres),
-    smooth: String(opts.smooth),
-  });
-  const res = await fetch(`${BASE}/api/model-fields/mslp?${q}`, { signal });
-  if (!res.ok) throw new Error(await detail(res));
   return res.json();
 }
 
@@ -143,16 +82,3 @@ export function snapHour(model: ModelInfo | null, hour: number): number {
   return model.hours.reduce((best, h) => (Math.abs(h - hour) < Math.abs(best - hour) ? h : best), model.hours[0]);
 }
 
-export async function fetchThickness(
-  opts: { model: string; hour: number; interval: number },
-  signal?: AbortSignal,
-): Promise<ThicknessField> {
-  const q = new URLSearchParams({
-    model: opts.model,
-    hour: String(opts.hour),
-    interval: String(opts.interval),
-  });
-  const res = await fetch(`${BASE}/api/model-fields/thickness?${q}`, { signal });
-  if (!res.ok) throw new Error(await detail(res));
-  return res.json();
-}

@@ -4,17 +4,25 @@ import { ChevronLeft, ChevronRight, Pause, Play, Repeat, SkipBack, SkipForward }
 import { getSetting } from "../settings/useSettingsStore";
 import { useSoundingViewerStore } from "../store/useSoundingViewerStore";
 import { useAlertStore } from "../store/useAlertStore";
+import { useTimelineStore } from "../store/useTimelineStore";
 import { useAppStore } from "../store/useAppStore";
 import { useNexradStore } from "../store/useNexradStore";
-import { selectCurrentModel, useModelStore } from "../store/useModelStore";
-import { useMslpStore } from "../store/useMslpStore";
 import { useLsrStore } from "../store/useLsrStore";
 import { useFrontsStore } from "../store/useFrontsStore";
-import { useObsStore } from "../store/useObsStore";
+import { obsFramesFailed, obsFramesHere, useObsStore } from "../store/useObsStore";
+import { obsSharpBusy, obsSharpReady } from "../layers/modules/obsLayer";
+import { satFrameFailed, satFrameHere } from "../layers/modules/satelliteLayer";
 import { useSatStore } from "../store/useSatStore";
+import { fhText } from "../lib/observations";
 
-/** Stable empty array so the selector doesn't rerender on every store tick. */
-const NO_HOURS: number[] = [];
+/** Frames a play buffers ahead before it steps, like a video: radar scans,
+ *  and Models frames. Past BUFFER_MAX_MS of waiting it plays what it has. */
+const RADAR_BUFFER = 10;
+const RADAR_MESHES_READY = 2;
+const BUFFER_MAX_MS = 12_000;
+/** Satellite and analyses: frames on this machine before a play of a loop
+ *  still downloading starts (anywhere ahead: see runFrames). */
+const START_BUFFER = 3;
 
 const PLAY_SPEEDS = [1, 2, 4, 8, 12, 16, 20] as const;
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -95,8 +103,12 @@ export function MapTimeline() {
   const satFrames = useSatStore((s) => s.frames);
   const satIndex = useSatStore((s) => s.index);
   const satBusy = useSatStore((s) => s.busy);
+  const satDaily = useSatStore(
+    (s) => (s.catalog?.satellites.find((x) => x.id === s.sat)?.regions.find((r) => r.id === s.region)?.cadence ?? 0) >= 86400,
+  );
   const obsVisible = useAppStore((s) => s.layers["observations"]?.visible ?? false);
   const obsFrames = useObsStore((s) => s.frames);
+  const obsForecast = useObsStore((s) => s.catalog?.sources.find((x) => x.id === s.source)?.forecast ?? false);
   const obsIndex = useObsStore((s) => s.index);
   const obsBusy = useObsStore((s) => s.busy);
   const lsrVisible = useAppStore((s) => s.layers["lsr"]?.visible ?? false);
@@ -106,11 +118,6 @@ export function MapTimeline() {
   const frontBusy = useFrontsStore((s) => s.busy);
   const lsrEndUnix = useLsrStore((s) => s.endUnix);
   const lsrBusy = useLsrStore((s) => s.busy);
-  const mslpVisible = useAppStore((s) => s.layers["mslp"]?.visible ?? false);
-  const modelHours = useModelStore((s) => selectCurrentModel(s)?.hours ?? NO_HOURS);
-  const modelHour = useModelStore((s) => s.hour);
-  const modelBusy = useMslpStore((s) => s.busy);
-  const modelRunIso = useMslpStore((s) => s.runIso);
 
   const [playing, setPlaying] = useState(false);
   // Where playback starts comes from Settings; the buttons change it for the session.
@@ -124,30 +131,29 @@ export function MapTimeline() {
   const lsrTimes = recentQuarterHours(lsrEndUnix ?? lsrNow);
 
   // What drives the timeline: an open sounding wins; then radar scans (the
-  // live product); then a model field; else the closed sounding axis.
+  // live product); then the analyses, storm reports and fronts; else the
+  // closed sounding axis.
   const isRadar = !open && radarVisible && radarScans.length > 0;
+  // Satellite is observed too, and its scans are the axis when radar is off.
+  const isSat = !open && !isRadar && satVisible && satFrames.length > 0;
   // The analyses are an observed product like radar, and their hours ARE the
   // axis -- so they take it before any forecast clock does.
-  // Satellite next: its frames are minutes apart, finer than any analysis, so
-  // when both are on the loop is the axis and the analysis follows it.
-  const isSat = !open && !isRadar && satVisible && satFrames.length > 0;
   const isObs = !open && !isRadar && !isSat && obsVisible && obsFrames.length > 0;
-  const isModel = !open && !isRadar && !isSat && !isObs && mslpVisible && modelHours.length > 0;
   // Storm reports drive the axis only when nothing more specific does; the rest
   // of the time they FOLLOW whatever does (see the sync effect below), which is
   // what keeps every product on one clock.
-  const isLsr = !open && !isRadar && !isSat && !isObs && !isModel && lsrVisible;
+  const isLsr = !open && !isRadar && !isSat && !isObs && lsrVisible;
   // Fronts drive the axis when nothing more specific does; the frames ARE the
   // axis (3-hourly analyses plus the 12 h and 24 h progs), so there is no grid
   // to invent.
   const isFronts =
-    !open && !isRadar && !isSat && !isObs && !isModel && !isLsr && frontsVisible && frontFrames.length > 0;
-  const active = open || isRadar || isSat || isObs || isModel || isLsr || isFronts;
+    !open && !isRadar && !isSat && !isObs && !isLsr && frontsVisible && frontFrames.length > 0;
+  const active = open || isRadar || isSat || isObs || isLsr || isFronts;
   // Which axis the closed viewer would use. Area soundings scrub forecast hours
   // exactly like a point sounding, so only RAOB (and ACARS, which is observed)
   // need the observation axis.
   const effectiveMode = open ? mode : raobVisible ? "raob" : "model";
-  const isRaob = !isRadar && !isModel && effectiveMode === "raob";
+  const isRaob = !isRadar && effectiveMode === "raob";
 
   // Time axis for the current context.
   let times: number[] | null = null;
@@ -162,12 +168,6 @@ export function MapTimeline() {
     // The analysis hours the server still holds, oldest first.
     times = obsFrames.map((f) => f.unix);
     maxHour = Math.max(obsFrames.length - 1, 0);
-  } else if (isModel) {
-    // Forecast hours become real clock times off the run, so the readout and
-    // NOW behave the same as they do for every other context.
-    const base = modelRunIso ? Date.parse(modelRunIso) / 1000 : null;
-    times = base ? modelHours.map((h) => base + h * 3600) : null;
-    maxHour = Math.max(modelHours.length - 1, 0);
   } else if (isFronts) {
     times = frontFrames.map((f) => f.validUnix ?? 0);
     maxHour = Math.max(frontFrames.length - 1, 0);
@@ -187,7 +187,6 @@ export function MapTimeline() {
     maxHour = MODEL_PLACEHOLDER_MAX;
   }
 
-  const modelIndex = isModel ? Math.max(0, modelHours.indexOf(modelHour)) : 0;
   const lsrIndex = isLsr
     ? Math.max(0, lsrTimes.indexOf(lsrEndUnix ?? lsrTimes[lsrTimes.length - 1]))
     : 0;
@@ -200,8 +199,6 @@ export function MapTimeline() {
           ? Math.max(satIndex, 0)
           : isObs
           ? Math.max(obsIndex, 0)
-          : isModel
-          ? modelIndex
           : isLsr
             ? lsrIndex
             : isFronts
@@ -212,7 +209,7 @@ export function MapTimeline() {
   );
   const selectedUnix = times ? times[value] ?? null : null;
   const canPlay =
-    isRadar || isSat || isObs || isModel || isLsr || isFronts
+    isRadar || isSat || isObs || isLsr || isFronts
       ? maxHour > 0
       : active && !!data && maxHour > 0;
 
@@ -226,16 +223,35 @@ export function MapTimeline() {
   // like alerts came and went with the site picker.
   //
   // An archive day is genuinely history, and a scrubbed-back frame is a
-  // deliberate look at the past -- both still filter.
-  const atLiveEdge = isRadar && radarArchiveDay === null && value >= maxHour;
+  // deliberate look at the past -- both still filter. The same holds for every
+  // OBSERVED loop's newest frame (the latest analysis or mosaic, the storm
+  // reports up to now, the latest surface analysis of the fronts, the latest
+  // balloon run): it stands for now. A forecast hour never does.
+  const lastFrontAnalysis = frontFrames.reduce((b, f, i) => (f.kind === "analysis" ? i : b), -1);
+  const atLiveEdge =
+    (isRadar && radarArchiveDay === null && value >= maxHour) ||
+    (isSat && value >= maxHour) ||
+    (isObs && !obsForecast && value >= maxHour) ||
+    (isLsr && value >= maxHour) ||
+    (isFronts && value === lastFrontAnalysis) ||
+    (!active && isRaob && value >= maxHour);
 
-  // Keep alerts on the same clock as the scan underneath them: a warning issued
-  // after the frame you're looking at shouldn't be drawn over it. Only while
-  // radar drives the timeline -- `isRadar` already means no sounding is open, so
-  // opening one releases the alerts back to live and closing it re-syncs them.
+  // Keep alerts on the same clock as whatever the timeline shows: a warning
+  // issued after the frame you're looking at shouldn't be drawn over it, and one
+  // that expires before a forecast hour shouldn't be drawn over that. Every
+  // timeline with a play button drives it -- radar, the Models frames, storm
+  // reports, fronts, a sounding -- and the whole span goes to the alerts too, so
+  // they read it ahead and a play finds each frame's alerts already here.
+  const followsTime = active || isRaob;
+  const spanFirst = followsTime && times && times.length > 1 ? times[0] : null;
+  const spanLast = followsTime && times && times.length > 1 ? times[times.length - 1] : null;
   useEffect(() => {
-    useAlertStore.getState().setTimeFilter(isRadar && !atLiveEdge ? selectedUnix : null);
-  }, [isRadar, atLiveEdge, selectedUnix]);
+    const alerts = useAlertStore.getState();
+    // While a play runs, the newest frame is a time like the others: "now"
+    // there swapped the map's alerts for the live set and back on every lap.
+    alerts.setTimeFilter(followsTime && (!atLiveEdge || playing) ? selectedUnix : null);
+    alerts.setTimeRange(spanFirst !== null && spanLast !== null ? [spanFirst, spanLast] : null);
+  }, [followsTime, atLiveEdge, playing, selectedUnix, spanFirst, spanLast]);
 
   // Storm reports ride the same clock: while an OBSERVED product drives the
   // axis, the LSR window ends at the frame on screen, so a report filed after it
@@ -249,21 +265,22 @@ export function MapTimeline() {
   // analysis or prog nearest the frame on screen is the one drawn.
   useEffect(() => {
     if (!frontsVisible || isFronts) return;
-    useFrontsStore.getState().goToUnix(isRadar || isModel || open ? selectedUnix : null);
-  }, [frontsVisible, isFronts, isRadar, isModel, open, selectedUnix]);
+    useFrontsStore.getState().goToUnix(isRadar || open ? selectedUnix : null);
+  }, [frontsVisible, isFronts, isRadar, open, selectedUnix]);
 
-  // Satellite and the analyses are observed too: while something else drives
-  // the axis they park on the frame nearest the instant on screen, so a radar
-  // loop scrubbed back to 21Z shows the 21Z visible and the 21Z analysis.
-  useEffect(() => {
-    if (!satVisible || isSat) return;
-    useSatStore.getState().goToUnix(isRadar || isObs ? selectedUnix : null);
-  }, [satVisible, isSat, isRadar, isObs, selectedUnix]);
-
+  // The analyses are observed too: while something else drives the axis they
+  // park on the frame nearest the instant on screen, so a radar loop scrubbed
+  // back to 21Z shows the 21Z analysis.
   useEffect(() => {
     if (!obsVisible || isObs) return;
     if (isRadar || isSat) useObsStore.getState().goToUnix(selectedUnix);
   }, [obsVisible, isObs, isRadar, isSat, selectedUnix]);
+
+  // Satellite follows radar the same way: the scan nearest the radar frame.
+  useEffect(() => {
+    if (!satVisible || isSat) return;
+    useSatStore.getState().goToUnix(isRadar ? selectedUnix : null);
+  }, [satVisible, isSat, isRadar, selectedUnix]);
 
   useEffect(() => {
     if (!lsrVisible || isLsr) return;
@@ -277,14 +294,13 @@ export function MapTimeline() {
     if (isRadar) void useNexradStore.getState().showIndex(clamped);
     else if (isSat) useSatStore.getState().setIndex(clamped);
     else if (isObs) useObsStore.getState().setIndex(clamped);
-    else if (isModel) useModelStore.getState().setHour(modelHours[clamped] ?? 0);
     else if (isLsr) useLsrStore.getState().setEndUnix(times?.[clamped] ?? null);
     else if (isFronts) useFrontsStore.getState().setIndex(clamped);
     else if (open) setHour(clamped);
     else setPreselectHour(clamped);
   };
   const step = (delta: number) => {
-    if (isRadar || isSat || isObs || isModel || isLsr || isFronts) scrub(value + delta);
+    if (isRadar || isSat || isObs || isLsr || isFronts) scrub(value + delta);
     else if (open) stepHour(delta);
     else scrub(value + delta);
   };
@@ -327,18 +343,76 @@ export function MapTimeline() {
     // Radar: frames are cached and meshed locally (~65 ms), but a cold one still
     // has to be fetched, so keep waiting for the commit before advancing --
     // same rule as soundings: never run ahead of what's drawn.
+    // Play pressed on the last frame plays from the first, repeat on or off:
+    // with repeat off, the end check took the frame it started on for the end
+    // of the play and stopped at once -- play on the live scan did nothing.
+    //
+    // It also buffers, like a video. A scan not yet cached costs its download
+    // at the moment it is due, so the first pass through a loop stepped at the
+    // speed of downloads -- 800 ms a frame where the setting says 250 -- and
+    // only ran smoothly the second time round. Play holds instead (the loading
+    // card shows the loop coming in) until the next RADAR_BUFFER scans are
+    // cached, then plays at its own pace; the warm-up runs well ahead of that.
     async function runRadar() {
+      let stepped = false;
+      let buffering = true;
+      let bufferSince = performance.now();
+      const nextOf = (index: number, max: number) => (index >= max ? 0 : index + 1);
+      /** How many scans after the one on screen pass `ok`, in play order. */
+      const countAhead = (rs: ReturnType<typeof useNexradStore.getState>, want: number, ok: (i: number) => boolean) => {
+        const max = Math.max(rs.scans.length - 1, 0);
+        let i = rs.index;
+        let n = 0;
+        while (n < want) {
+          i = nextOf(i, max);
+          if (!ok(i)) break;
+          n++;
+        }
+        return n;
+      };
+      // The warm-up runs outward from the scan on screen, and play usually
+      // starts on the newest -- whose "ahead" is the start of the loop, warmed
+      // last. Aim it where the play is going; it also builds the meshes there.
+      {
+        const rs = useNexradStore.getState();
+        rs.prefetch(nextOf(rs.index, Math.max(rs.scans.length - 1, 0)));
+      }
       while (!cancelled) {
+        if (buffering) {
+          const rs = useNexradStore.getState();
+          const want = Math.min(RADAR_BUFFER, Math.max(rs.scans.length - 1, 0));
+          // The data of the next RADAR_BUFFER scans, and the meshes of the next
+          // few: the rest are built on the workers as the play goes.
+          const meshes = Math.min(RADAR_MESHES_READY, want);
+          const done =
+            (rs.warm >= rs.scans.length || countAhead(rs, want, rs.isWarmAt) >= want) &&
+            countAhead(rs, meshes, rs.isMeshedAt) >= meshes;
+          if (!done && performance.now() - bufferSince < BUFFER_MAX_MS) {
+            await wait(120);
+            continue;
+          }
+          buffering = false;
+        }
         await wait(getSetting<number>("timeline.radarMs") / speed);
         if (cancelled) return;
         const rs = useNexradStore.getState();
         const max = Math.max(rs.scans.length - 1, 0);
         const atEnd = rs.index >= max;
-        if (atEnd && !loop) {
+        if (atEnd && !loop && stepped) {
           setPlaying(false);
           return;
         }
-        const ok = await rs.showIndex(atEnd ? 0 : rs.index + 1);
+        const target = atEnd ? 0 : rs.index + 1;
+        // Caught up with the warm-up: hold for another buffer's worth, asking
+        // for the scans from here on first.
+        if (!rs.isWarmAt(target) && rs.warm < rs.scans.length) {
+          rs.prefetch(target);
+          buffering = true;
+          bufferSince = performance.now();
+          continue;
+        }
+        stepped = true;
+        const ok = await rs.showIndex(target);
         if (cancelled) return;
         if (!ok) {
           setPlaying(false);
@@ -348,6 +422,7 @@ export function MapTimeline() {
     }
 
     async function run() {
+      let stepped = false;
       while (!cancelled) {
         await wait(getSetting<number>("timeline.soundingMs") / speed);
         if (cancelled) return;
@@ -355,10 +430,11 @@ export function MapTimeline() {
         if (!st.data) return;
         const max = Math.max(st.data.meta.forecastMaxHour ?? st.data.meta.nTimes - 1, 0);
         const atEnd = st.hour >= max;
-        if (atEnd && !(loop && max > 0)) {
+        if (atEnd && !((loop || !stepped) && max > 0)) {
           setPlaying(false);
           return;
         }
+        stepped = true;
         const target = atEnd ? 0 : st.hour + 1;
         setPendingHour(target);
         const ok = await st.gotoPlaybackHour(target);
@@ -370,34 +446,10 @@ export function MapTimeline() {
         }
       }
     }
-    // Model fields: each hour is a fresh contour job on the backend, so wait for
-    // the draw to commit before stepping instead of queueing requests.
-    async function runModel() {
-      while (!cancelled) {
-        await wait(getSetting<number>("timeline.modelMs") / speed);
-        if (cancelled) return;
-        const ms = useModelStore.getState();
-        const hours = selectCurrentModel(ms)?.hours ?? [];
-        if (hours.length === 0) return;
-        const i = hours.indexOf(ms.hour);
-        const atEnd = i >= hours.length - 1;
-        if (atEnd && !loop) {
-          setPlaying(false);
-          return;
-        }
-        ms.setHour(hours[atEnd ? 0 : Math.max(i, 0) + 1]);
-        // Give the layer a tick to flip `busy`, then hold until it clears.
-        await wait(80);
-        for (let k = 0; k < 250 && useMslpStore.getState().busy; k++) {
-          if (cancelled) return;
-          await wait(100);
-        }
-      }
-    }
-
     // Storm reports step the 15-minute grid; each frame is a
     // fresh window fetch, so wait for it to land before advancing.
     async function runLsr() {
+      let stepped = false;
       while (!cancelled) {
         await wait(getSetting<number>("timeline.lsrMs") / speed);
         if (cancelled) return;
@@ -405,10 +457,11 @@ export function MapTimeline() {
         const current = ls.endUnix ?? lsrTimes[lsrTimes.length - 1];
         const i = Math.max(0, lsrTimes.indexOf(current));
         const atEnd = i >= lsrTimes.length - 1;
-        if (atEnd && !loop) {
+        if (atEnd && !loop && stepped) {
           setPlaying(false);
           return;
         }
+        stepped = true;
         ls.setEndUnix(lsrTimes[atEnd ? 0 : i + 1]);
         await wait(120);
         for (let k = 0; k < 250 && useLsrStore.getState().busy; k++) {
@@ -418,8 +471,13 @@ export function MapTimeline() {
       }
     }
 
-    // Satellite and the analyses step, then hold until the frame is on the map:
-    // a loop must never run ahead of what is drawn.
+    // The analyses play while the rest of the loop downloads, in order, like a
+    // video buffering: the next frame shows as soon as it is on this machine,
+    // play holds only while it is still coming, and a frame that failed is
+    // stepped past. The loop downloads from the frame on screen onward, twelve
+    // at a time, so on a cold run the frames arrive about as fast as they are
+    // played. (It used to step onto the next frame and wait there for that one
+    // download.) With `here` left out, every frame counts as here.
     async function runFrames(
       read: () => { index: number; length: number; busy: boolean },
       go: (i: number) => void,
@@ -427,27 +485,107 @@ export function MapTimeline() {
       dwell: () => number,
       /** First frame of the loop; the end wraps back here. */
       first = 0,
+      /** Whether frame i can be shown at once. */
+      here: (i: number) => boolean = () => true,
+      /** Whether everything the loop will bring has come (made, or failed). */
+      settled: () => boolean = () => true,
+      /** Whether frame i failed to come: stepped past rather than waited on. */
+      failed: (i: number) => boolean = () => false,
     ) {
+      /** The next frame after `index` to show -- round to `first` when looping,
+       *  past any that failed; -1 while the next one is still on its way.
+       *  While the loop downloads (`loading`) it also steps past frames not here
+       *  yet, and goes round even with looping off: the play keeps its speed
+       *  over what has come instead of stopping at the gap. The loop downloads
+       *  spread over its whole span (lib/loopOrder), so what has come covers it
+       *  all, a little coarser in time until the rest is in. Holding at the gap
+       *  (for six frames, then slowing down to the download's pace instead)
+       *  read as the loop freezing every few seconds: an MRMS loop of 240
+       *  frames comes in at ~1.3 a second, the play shows 2.5 (Pablo, 2026-09-26). */
+      const nextFrom = (index: number, length: number, loading = false): number => {
+        const order: number[] = [];
+        for (let i = index + 1; i < length; i++) order.push(i);
+        if (loop || loading) for (let i = first; i < Math.min(index, length); i++) order.push(i);
+        for (const i of order) {
+          if (here(i)) return i;
+          if (!failed(i) && !loading) return -1;
+        }
+        return -1;
+      };
       // Pressing play on the newest frame means "play the loop", not "stop at
-      // once because this is the end": start from its first frame.
+      // once because this is the end": start from its first frame here.
       {
         const { index, length } = read();
         if (length > 0 && (index >= length - 1 || index < first)) {
-          go(first);
+          // The first frame that is here -- or the first one, when none has
+          // come yet (a loop just starting to download): staying on the newest
+          // frame, the loop below took it for the end and stopped the play.
+          // Not the newest itself: it is here (it is on screen), and going
+          // "back" to it stayed at the end.
+          let to = first;
+          for (let i = first; i < length - 1; i++) {
+            if (here(i)) {
+              to = i;
+              break;
+            }
+          }
+          go(to);
           await wait(60);
         }
       }
+      /** Frames here in the rest of the loop, in play order, up to `want`
+       *  (past the ones still downloading: see nextFrom). */
+      const readyAhead = (index: number, length: number, want: number): number => {
+        let n = 0;
+        let i = index;
+        for (let k = 0; k < length && n < want; k++) {
+          i = i + 1 < length ? i + 1 : first;
+          if (i === index) break;
+          if (here(i)) n++;
+        }
+        return n;
+      };
+      // At the start it holds until a few frames are here rather than stepping
+      // each one the moment it lands, which read as a stutter at the start of
+      // every play. From then on it never holds while anything is here.
+      let buffering = true;
+      let bufferSince = performance.now();
       while (!cancelled) {
+        if (buffering) {
+          const { index, length } = read();
+          const want = Math.min(START_BUFFER, Math.max(length - 1, 0));
+          if (!settled() && readyAhead(index, length, want) < want && performance.now() - bufferSince < BUFFER_MAX_MS) {
+            await wait(100);
+            continue;
+          }
+          buffering = false;
+        }
         await wait(dwell() / speed);
         if (cancelled) return;
         const { index, length } = read();
         if (length === 0) return;
-        const atEnd = index >= length - 1;
-        if (atEnd && !loop) {
+        const loading = !settled();
+        if (index >= length - 1 && !loop && !loading) {
           setPlaying(false);
           return;
         }
-        go(atEnd ? first : index + 1);
+        let next = nextFrom(index, length, loading);
+        if (next < 0) {
+          // Nothing else here yet: wait for anything while the loop is still
+          // coming in. Once it has all come, what is missing failed on the way
+          // (an hour not out yet when asked): step onto it the plain way, which
+          // asks for it again, rather than wait forever.
+          if (loading) {
+            await wait(100);
+            continue;
+          }
+          if (index >= length - 1 && !loop) {
+            setPlaying(false);
+            return;
+          }
+          next = index >= length - 1 ? first : index + 1;
+        }
+        go(next);
         await wait(60);
         for (let k = 0; k < 300 && read().busy; k++) {
           if (cancelled) return;
@@ -459,15 +597,17 @@ export function MapTimeline() {
     // Fronts step frame by frame; each is already in memory, so the only wait
     // is the paint.
     async function runFronts() {
+      let stepped = false;
       while (!cancelled) {
         await wait(getSetting<number>("timeline.frontsMs") / speed);
         if (cancelled) return;
         const fs = useFrontsStore.getState();
         const atEnd = fs.index >= fs.frames.length - 1;
-        if (atEnd && !loop) {
+        if (atEnd && !loop && stepped) {
           setPlaying(false);
           return;
         }
+        stepped = true;
         fs.setIndex(atEnd ? 0 : fs.index + 1);
       }
     }
@@ -482,6 +622,19 @@ export function MapTimeline() {
             },
             (i) => useSatStore.getState().setIndex(i),
             () => getSetting<number>("timeline.satMs"),
+            0,
+            (i) => {
+              const f = useSatStore.getState().frames[i];
+              return !!f && satFrameHere(f.time);
+            },
+            () => {
+              const s = useSatStore.getState();
+              return s.loopTotal === 0 || s.loopLoaded >= s.loopTotal;
+            },
+            (i) => {
+              const f = useSatStore.getState().frames[i];
+              return !!f && satFrameFailed(f.time);
+            },
           )
       : isObs
         ? runFrames(
@@ -490,12 +643,27 @@ export function MapTimeline() {
               return { index: s.index, length: s.frames.length, busy: s.busy };
             },
             (i) => useObsStore.getState().setIndex(i),
-            // The whole timeline is the loop now -- its length is picked in the
-            // panel -- and its frames are made ahead, so it steps like satellite.
+            // The whole timeline is the loop now -- its length is picked in
+            // the panel -- and its frames are made ahead of the play.
             () => getSetting<number>("timeline.obsMs"),
+            0,
+            (i) => {
+              const s = useObsStore.getState();
+              const f = s.frames[i];
+              const want = f ? `${s.source}|${s.field}|${f.key}` : "";
+              // Zoomed in, a frame is ready once its sharp picture is too.
+              return !!f && obsFramesHere.has(want) && obsSharpReady(want);
+            },
+            () => {
+              const s = useObsStore.getState();
+              return (s.loopTotal === 0 || s.loopLoaded >= s.loopTotal) && !obsSharpBusy();
+            },
+            (i) => {
+              const s = useObsStore.getState();
+              const f = s.frames[i];
+              return !!f && obsFramesFailed.has(`${s.source}|${s.field}|${f.key}`);
+            },
           )
-      : isModel
-        ? runModel()
           : isLsr
             ? runLsr()
             : isFronts
@@ -504,28 +672,40 @@ export function MapTimeline() {
     return () => {
       cancelled = true;
     };
-  }, [playing, speed, loop, canPlay, isRadar, isSat, isObs, isModel, isLsr, isFronts, gotoPlaybackHour, setPendingHour]);
+  }, [playing, speed, loop, canPlay, isRadar, isSat, isObs, isLsr, isFronts, gotoPlaybackHour, setPendingHour]);
 
   // Stopping a loop's download from its loading card pauses the play: frames
   // that will not arrive are not worth waiting on.
   useEffect(() => {
-    const offSat = useSatStore.subscribe((s, prev) => {
-      if (s.loopStops !== prev.loopStops) setPlaying(false);
-    });
     const offObs = useObsStore.subscribe((s, prev) => {
       if (s.loopStops !== prev.loopStops) setPlaying(false);
     });
+    const offSat = useSatStore.subscribe((s, prev) => {
+      if (s.loopStops !== prev.loopStops) setPlaying(false);
+    });
     return () => {
-      offSat();
       offObs();
+      offSat();
     };
   }, []);
 
   // The analyses layer hides its zoom detail while a loop plays.
   useEffect(() => {
     useObsStore.getState().setPlaying(playing && isObs);
-    useSatStore.getState().setPlaying(playing && isSat);
   }, [playing, isObs]);
+  useEffect(() => {
+    useSatStore.getState().setPlaying(playing && isSat);
+  }, [playing, isSat]);
+
+  // The rest of the app follows a play through here (the loading card shows a
+  // radar loop coming in), and its Stop pauses it.
+  const driver = isRadar ? "radar" : isSat ? "sat" : isObs ? "obs" : isLsr ? "lsr" : isFronts ? "fronts" : active ? "sounding" : null;
+  useEffect(() => {
+    useTimelineStore.getState().setPlaying(playing, driver);
+  }, [playing, driver]);
+  useEffect(() => useTimelineStore.subscribe((s, prev) => {
+    if (s.stops !== prev.stops) setPlaying(false);
+  }), []);
 
   // Stop playing if the context can no longer play (e.g. viewer closed).
   useEffect(() => {
@@ -544,12 +724,13 @@ export function MapTimeline() {
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  // Observed products read as a clock time, not a forecast hour.
-  const chip = isRadar || isSat || isObs
-    ? fmtScan(selectedUnix)
-    : isModel
-      ? `F${String(modelHour).padStart(3, "0")}`
-      : isFronts
+  // Observed products read as a clock time; a model forecast leads with its hour.
+  const obsFrame = isObs ? obsFrames[value] : undefined;
+  const chip = isSat && satDaily
+    ? fmtObsShort(selectedUnix)
+    : isRadar || isSat || isObs
+    ? `${obsFrame?.fh != null ? `${fhText(obsFrame)} · ` : ""}${fmtScan(selectedUnix)}`
+    : isFronts
         ? (frontFrames[value]?.kind === "forecast" ? frontFrames[value]?.label ?? "PROG" : "ANALYSIS")
       : isLsr
         ? fmtScan(selectedUnix)
@@ -560,10 +741,8 @@ export function MapTimeline() {
     ? radarLoading
     : isSat
       ? satBusy
-    : isObs
+      : isObs
       ? obsBusy
-      : isModel
-      ? modelBusy
       : isLsr
         ? lsrBusy
         : isFronts
@@ -579,8 +758,8 @@ export function MapTimeline() {
         onClick={() => {
           // Play after a stopped download means "load it after all".
           // Play is what downloads a loop: the area on screen, now.
-          if (!playing && isSat) useSatStore.getState().armLoop();
           if (!playing && isObs) useObsStore.getState().armLoop();
+          if (!playing && isSat) useSatStore.getState().armLoop();
           setPlaying((v) => !v);
         }}
         disabled={!canPlay}

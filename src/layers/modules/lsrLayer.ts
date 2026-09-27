@@ -1,30 +1,52 @@
-import type { GeoJSONSource, Map as MapLibreMap, MapLayerMouseEvent } from "maplibre-gl";
+import maplibregl from "maplibre-gl";
+import type {
+  ExpressionSpecification,
+  GeoJSONSource,
+  Map as MapLibreMap,
+  MapLayerMouseEvent,
+} from "maplibre-gl";
 
 import type { LayerModule } from "../types";
+import { registerMarkerLayers, unregisterMarkerLayers } from "../clickPriority";
 import {
   LSR_CATEGORIES,
   LSR_COLORS,
   LSR_SHAPES,
   LSR_SHAPE_PATHS,
+  lsrHm,
+  lsrKey,
+  lsrPlace,
+  lsrSeverity,
   type LsrProps,
 } from "../../lib/lsr";
-import { useLsrStore } from "../../store/useLsrStore";
+import { isNewLsr, lsrWindow, selectVisibleLsr, useLsrStore } from "../../store/useLsrStore";
+import { mapInk } from "../../map/mapInk";
 
 const SRC = "lsr-src";
+const HL_SRC = "lsr-hl-src";
 const ICONS = "lsr-icons";
 const LABELS = "lsr-labels";
+/** A ring under each report that came in while the feed was being watched. */
+const NEW_RING = "lsr-new";
+/** A ring under the report the card is open on, or the list row under the pointer. */
+const HL_RING = "lsr-hl";
 const DEFAULT_OPACITY = 1;
+/** How faint the oldest report of the window gets with "fade older" on. */
+const FADE_TO = 0.3;
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
 interface PaneState {
   unsub: () => void;
   onClick: (e: MapLayerMouseEvent) => void;
-  onEnter: () => void;
+  onMove: (e: MapLayerMouseEvent) => void;
   onLeave: () => void;
+  popup: maplibregl.Popup;
 }
 const state = new WeakMap<MapLibreMap, PaneState>();
 let opacity = DEFAULT_OPACITY;
+/** Panes the layer is on: the feed polls while there is at least one. */
+let attached = 0;
 
 // ---------------------------------------------------------------------------
 // Icons. Shape carries the category family, colour the category within it, the
@@ -65,11 +87,27 @@ function registerIcons(map: MapLibreMap) {
   }
 }
 
+/** The theme's accent, for the rings: they are app chrome, not data colours. */
+function accent(): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+  return v || "#6c9dff";
+}
+
+function iconOpacity(): number | ExpressionSpecification {
+  if (!useLsrStore.getState().fadeOld) return opacity;
+  return ["*", opacity, ["-", 1, ["*", 1 - FADE_TO, ["get", "age"]]]];
+}
+
 function push(map: MapLibreMap) {
   const src = map.getSource(SRC) as GeoJSONSource | undefined;
   if (!src) return;
   const s = useLsrStore.getState();
   const all = s.data?.features ?? [];
+  const shown = new Set(selectVisibleLsr(s));
+  const { start, end } = s.data
+    ? { start: s.data.meta.startUnix, end: s.data.meta.endUnix }
+    : lsrWindow(s.span, s.endUnix);
+  const span = Math.max(1, end - start);
   // Carry each report's index INTO `data.features`, not into the filtered list,
   // so a click can find the original by position instead of by matching
   // coordinates. Coordinate matching looked fine and was not: MapLibre returns
@@ -78,7 +116,8 @@ function push(map: MapLibreMap) {
   // silently found nothing -- which is a click that does nothing at all.
   const features: GeoJSON.Feature[] = [];
   all.forEach((f, i) => {
-    if (s.cats[f.properties.cat] === false) return;
+    if (!shown.has(f)) return;
+    const key = lsrKey(f);
     features.push({
       ...f,
       properties: {
@@ -86,11 +125,54 @@ function push(map: MapLibreMap) {
         idx: i,
         // symbol-sort-key wants "smaller draws first"; rank is severity, so flip
         // it -- a tornado report must survive a collision with a rain total.
-        sort: 1000 - f.properties.rank,
+        sort: 1000 - f.properties.rank - lsrSeverity(f.properties) * 100,
+        // 0 at the window's end, 1 at its start: how far faded it is.
+        age: Math.min(1, Math.max(0, (end - f.properties.unix) / span)),
+        fresh: isNewLsr(s.arrived, key),
       },
     });
   });
   src.setData({ type: "FeatureCollection", features } as GeoJSON.FeatureCollection);
+}
+
+/** The ring under the report being looked at: the open card's, else the row
+ *  under the pointer in the list. */
+function pushHighlight(map: MapLibreMap) {
+  const src = map.getSource(HL_SRC) as GeoJSONSource | undefined;
+  if (!src) return;
+  const s = useLsrStore.getState();
+  const feats: GeoJSON.Feature[] = [];
+  if (s.selected) feats.push({ ...s.selected, properties: { kind: "selected" } });
+  if (s.hovered && (!s.selected || lsrKey(s.selected) !== s.hovered)) {
+    const f = s.data?.features.find((x) => lsrKey(x) === s.hovered);
+    if (f) feats.push({ ...f, properties: { kind: "hover" } });
+  }
+  src.setData({ type: "FeatureCollection", features: feats });
+}
+
+function esc(s: string): string {
+  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c);
+}
+
+function ago(unix: number): string {
+  const m = (Date.now() / 1000 - unix) / 60;
+  if (m < 60) return `${Math.max(0, Math.round(m))} min ago`;
+  if (m < 36 * 60) return `${(m / 60).toFixed(m < 600 ? 1 : 0)} h ago`;
+  return `${Math.round(m / 1440)} d ago`;
+}
+
+/** The hover preview: enough to know whether the report is worth a click. */
+function tipHtml(p: LsrProps): string {
+  const color = LSR_COLORS[p.cat] ?? LSR_COLORS.other;
+  const sev = lsrSeverity(p);
+  return (
+    `<div class="lsrtip">` +
+    `<b style="color:${color}">${esc(p.typeName || p.label)}${p.mag ? ` <em>${esc(p.mag)}</em>` : ""}</b>` +
+    (sev ? `<i class="lsrtip__sev lsrtip__sev--${sev}">${sev === 2 ? "SIG" : "SEVERE"}</i>` : "") +
+    `<span>${esc(lsrPlace(p))}</span>` +
+    `<span class="lsrtip__time">${lsrHm(p.unix)} · ${ago(p.unix)}</span>` +
+    `</div>`
+  );
 }
 
 /** NWS Local Storm Reports: what people on the ground actually observed. */
@@ -107,7 +189,38 @@ export const lsrLayer: LayerModule = {
   addTo(map) {
     registerIcons(map);
     if (!map.getSource(SRC)) map.addSource(SRC, { type: "geojson", data: EMPTY });
+    if (!map.getSource(HL_SRC)) map.addSource(HL_SRC, { type: "geojson", data: EMPTY });
+    const ring = accent();
 
+    if (!map.getLayer(NEW_RING)) {
+      map.addLayer({
+        id: NEW_RING,
+        type: "circle",
+        source: SRC,
+        filter: ["==", ["get", "fresh"], true],
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 3, 8, 6, 10, 10, 13],
+          "circle-color": "rgba(0,0,0,0)",
+          "circle-stroke-color": ring,
+          "circle-stroke-width": 1.6,
+          "circle-stroke-opacity": opacity,
+        },
+      });
+    }
+    if (!map.getLayer(HL_RING)) {
+      map.addLayer({
+        id: HL_RING,
+        type: "circle",
+        source: HL_SRC,
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 3, 11, 6, 13, 10, 16],
+          "circle-color": ring,
+          "circle-opacity": ["match", ["get", "kind"], "selected", 0.16, 0],
+          "circle-stroke-color": ring,
+          "circle-stroke-width": ["match", ["get", "kind"], "selected", 2.4, 1.6],
+        },
+      });
+    }
     if (!map.getLayer(ICONS)) {
       map.addLayer({
         id: ICONS,
@@ -123,7 +236,7 @@ export const lsrLayer: LayerModule = {
           "icon-ignore-placement": true,
           "symbol-sort-key": ["get", "sort"],
         },
-        paint: { "icon-opacity": opacity },
+        paint: { "icon-opacity": iconOpacity() },
       });
     }
     if (!map.getLayer(LABELS)) {
@@ -143,8 +256,8 @@ export const lsrLayer: LayerModule = {
           "symbol-sort-key": ["get", "sort"],
         },
         paint: {
-          "text-color": "#f2f7ff",
-          "text-halo-color": "rgba(8,12,18,0.92)",
+          "text-color": mapInk().text,
+          "text-halo-color": mapInk().halo,
           "text-halo-width": 1.3,
           "text-opacity": opacity,
         },
@@ -172,27 +285,59 @@ export const lsrLayer: LayerModule = {
       });
     };
 
-    const onEnter = () => {
+    const popup = new maplibregl.Popup({
+      closeButton: false,
+      closeOnClick: false,
+      offset: 12,
+      className: "raobpop",
+    });
+    let tipFor = -1;
+    const onMove = (e: MapLayerMouseEvent) => {
       map.getCanvas().style.cursor = "pointer";
+      const f = e.features?.[0];
+      if (!f || f.geometry.type !== "Point") return;
+      const idx = Number(f.properties?.idx);
+      if (idx === tipFor && popup.isOpen()) return;
+      const report = useLsrStore.getState().data?.features[idx];
+      if (!report) return;
+      tipFor = idx;
+      popup
+        .setLngLat(f.geometry.coordinates as [number, number])
+        .setHTML(tipHtml(report.properties))
+        .addTo(map);
     };
     const onLeave = () => {
       map.getCanvas().style.cursor = "";
+      tipFor = -1;
+      popup.remove();
     };
     // Bind BOTH layers: the magnitude label reads as part of the marker, so a
     // click on "58 mph" must open the same report as a click on the diamond.
     for (const id of [ICONS, LABELS]) {
       map.on("click", id, onClick);
-      map.on("mouseenter", id, onEnter);
+      map.on("mousemove", id, onMove);
       map.on("mouseleave", id, onLeave);
     }
+    // A report is a small deliberate target: it wins a click over the alert or
+    // outlook polygon it sits in.
+    registerMarkerLayers([ICONS, LABELS]);
 
     const unsub = useLsrStore.subscribe((s, prev) => {
-      if (s.data !== prev.data || s.cats !== prev.cats) push(map);
+      if (s.data !== prev.data || s.cats !== prev.cats || s.minSeverity !== prev.minSeverity ||
+          s.arrived !== prev.arrived) {
+        push(map);
+      }
+      if (s.fadeOld !== prev.fadeOld && map.getLayer(ICONS)) {
+        map.setPaintProperty(ICONS, "icon-opacity", iconOpacity());
+      }
+      if (s.selected !== prev.selected || s.hovered !== prev.hovered || s.data !== prev.data) {
+        pushHighlight(map);
+      }
       if (s.showLabels !== prev.showLabels && map.getLayer(LABELS)) {
         map.setLayoutProperty(LABELS, "visibility", s.showLabels ? "visible" : "none");
       }
     });
-    state.set(map, { unsub, onClick, onEnter, onLeave });
+    state.set(map, { unsub, onClick, onMove, onLeave, popup });
 
     if (map.getLayer(LABELS)) {
       map.setLayoutProperty(
@@ -202,6 +347,9 @@ export const lsrLayer: LayerModule = {
       );
     }
     push(map);
+    pushHighlight(map);
+    attached += 1;
+    useLsrStore.getState().startPolling();
     // Only fetch if nothing is loaded yet: a second pane must not restart the
     // request the first one is already waiting on.
     if (!useLsrStore.getState().data) void useLsrStore.getState().load();
@@ -212,31 +360,36 @@ export const lsrLayer: LayerModule = {
     if (st) {
       for (const id of [ICONS, LABELS]) {
         map.off("click", id, st.onClick);
-        map.off("mouseenter", id, st.onEnter);
+        map.off("mousemove", id, st.onMove);
         map.off("mouseleave", id, st.onLeave);
       }
+      st.popup.remove();
       st.unsub();
       state.delete(map);
+      attached = Math.max(0, attached - 1);
+      if (attached === 0) useLsrStore.getState().stopPolling();
     }
-    for (const id of [LABELS, ICONS]) if (map.getLayer(id)) map.removeLayer(id);
-    if (map.getSource(SRC)) map.removeSource(SRC);
+    unregisterMarkerLayers([ICONS, LABELS]);
+    for (const id of [LABELS, ICONS, HL_RING, NEW_RING]) if (map.getLayer(id)) map.removeLayer(id);
+    for (const id of [SRC, HL_SRC]) if (map.getSource(id)) map.removeSource(id);
     useLsrStore.getState().select(null);
   },
 
   setOpacity(map, o) {
     opacity = o;
-    if (map.getLayer(ICONS)) map.setPaintProperty(ICONS, "icon-opacity", o);
+    if (map.getLayer(ICONS)) map.setPaintProperty(ICONS, "icon-opacity", iconOpacity());
     if (map.getLayer(LABELS)) map.setPaintProperty(LABELS, "text-opacity", o);
+    if (map.getLayer(NEW_RING)) map.setPaintProperty(NEW_RING, "circle-stroke-opacity", o);
   },
 
   getLayerIds() {
-    return [ICONS, LABELS];
+    return [NEW_RING, HL_RING, ICONS, LABELS];
   },
 
   topLayerIds() {
     // Reports are the ground truth over whatever product is being examined;
     // they must never be buried under radar or an alert fill.
-    return [ICONS, LABELS];
+    return [NEW_RING, HL_RING, ICONS, LABELS];
   },
   // Above radar (20) and the mesoscale discussion outline (10): a filed report
   // is what actually happened, which outranks a tracked cell or a forecaster's

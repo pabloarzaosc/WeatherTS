@@ -1,147 +1,55 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Tornado } from "lucide-react";
+import { Check, ChevronDown, PanelLeftOpen, Tornado } from "lucide-react";
 
-import { getLayerModules } from "../layers/registry";
-import type { LayerModule } from "../layers/types";
+import { OUTLOOK_PRODUCTS, outlookOfModule, type OutlookProduct } from "../layers/modules/outlooksLayer";
 import { useAppStore } from "../store/useAppStore";
+import { useOutlookStore } from "../store/useOutlookStore";
 
-const OUTLOOK_MODULES = getLayerModules().filter((module) => module.category === "outlooks");
+const ALL_IDS = OUTLOOK_PRODUCTS.flatMap((p) => (p.variants.length ? p.variants.map((v) => p.moduleId(v.key)) : [p.moduleId("")]));
 
-interface OutlookOption {
-  module: LayerModule;
-  group: string;
-  label: string;
-  productKey: string;
-  day?: number;
-}
-
-const LABELS: Record<string, string> = {
-  categorical: "Categorical",
-  tornado: "Tornado",
-  wind: "Wind",
-  hail: "Hail",
-  probabilistic: "Probabilistic",
-};
-
-function title(value: string): string {
-  return value
-    .split("-")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function optionFromModule(module: LayerModule): OutlookOption {
-  const spc = /^spc-d([1-5])-(.+)$/.exec(module.id);
-  if (spc) {
-    const day = Number(spc[1]);
-    const kind = spc[2];
-    return {
-      module,
-      group: "SPC Convective/Severe Weather",
-      label: LABELS[kind] ?? title(kind),
-      productKey: `spc-${kind}`,
-      day,
-    };
-  }
-
-  const wpc = /^wpc-ero-d([123])$/.exec(module.id);
-  if (wpc) {
-    return {
-      module,
-      group: "WPC Excessive Rainfall",
-      label: "Excessive Rainfall",
-      productKey: "wpc-ero",
-      day: Number(wpc[1]),
-    };
-  }
-
-  if (module.id.startsWith("cpc-")) {
-    return {
-      module,
-      group: "CPC Outlooks",
-      label: module.name.replace(/^CPC\s+/, ""),
-      productKey: module.id,
-    };
-  }
-
-  if (module.id.startsWith("nadocast-")) {
-    return {
-      module,
-      group: "NadoCast",
-      label: module.name.replace(/^NadoCast\s+/, ""),
-      productKey: module.id,
-    };
-  }
-
-  return { module, group: "Outlooks", label: module.name, productKey: module.id };
-}
-
-const OUTLOOK_OPTIONS = OUTLOOK_MODULES.map(optionFromModule);
-
-function useOutlookActions() {
+/**
+ * The outlook on the map, and how to change it. One at a time: two outlooks'
+ * colours over each other read as neither. Alerts stay as they are -- turning
+ * an outlook on used to switch the warnings off.
+ */
+export function useOutlookSelection() {
   const layers = useAppStore((s) => s.layers);
   const setLayerVisibilityBatch = useAppStore((s) => s.setLayerVisibilityBatch);
+  const activeId = ALL_IDS.find((id) => layers[id]?.visible) ?? null;
+  const active = activeId ? outlookOfModule(activeId) : null;
 
-  const activeOption = OUTLOOK_OPTIONS.find((option) => layers[option.module.id]?.visible) ?? null;
-  const activeIds = OUTLOOK_OPTIONS.filter((option) => layers[option.module.id]?.visible).map((option) => option.module.id);
-
-  const activateId = (id: string | null) => {
-    const updates: Record<string, boolean> = { "nws-alerts": false };
-    for (const module of OUTLOOK_MODULES) updates[module.id] = false;
-    if (id) updates[id] = true;
+  const show = (moduleId: string | null) => {
+    const updates: Record<string, boolean> = {};
+    for (const id of ALL_IDS) if (layers[id]?.visible || id === moduleId) updates[id] = id === moduleId;
     setLayerVisibilityBatch(updates);
   };
-
-  const activateProduct = (productKey: string | null) => {
-    if (!productKey) {
-      activateId(null);
-      return;
-    }
-    const variants = OUTLOOK_OPTIONS.filter((option) => option.productKey === productKey);
-    const currentDay = activeOption?.productKey === productKey ? activeOption.day : undefined;
-    const id =
-      variants.find((option) => option.day === currentDay)?.module.id ??
-      variants.find((option) => option.day === 1)?.module.id ??
-      variants[0]?.module.id ??
-      null;
-    activateId(id);
+  /** A product, on the variant it had (the same day when switching Tornado ->
+   *  Wind), else its first. */
+  const pick = (product: OutlookProduct | null, variant?: string) => {
+    if (!product) return show(null);
+    const keys = product.variants.map((v) => v.key);
+    const keep = variant ?? (active && keys.includes(active.variant) ? active.variant : keys[0] ?? "");
+    show(product.moduleId(keep));
   };
-
-  return { layers, activeIds, activeOption, activateId, activateProduct };
+  return { active, activeId, pick, show };
 }
 
-function useGroupedProducts(layers: Record<string, { visible: boolean; opacity: number }>) {
+export function useOutlookGroups() {
   return useMemo(() => {
-    const seen = new Set<string>();
-    const products = OUTLOOK_OPTIONS.filter((option) => {
-      if (seen.has(option.productKey)) return false;
-      seen.add(option.productKey);
-      return true;
-    });
-    const grouped = new Map<string, OutlookOption[]>();
-    for (const product of products) {
-      grouped.set(product.group, [...(grouped.get(product.group) ?? []), product]);
-    }
-    return Array.from(grouped.entries()).map(([group, options]) => ({
-      group,
-      options: options.map((option) => ({
-        ...option,
-        active: OUTLOOK_OPTIONS.some((candidate) => candidate.productKey === option.productKey && layers[candidate.module.id]?.visible),
-      })),
-    }));
-  }, [layers]);
+    const groups = new Map<string, OutlookProduct[]>();
+    for (const p of OUTLOOK_PRODUCTS) groups.set(p.group, [...(groups.get(p.group) ?? []), p]);
+    return [...groups.entries()];
+  }, []);
 }
 
-/** Single top-bar entry point for outlooks: a button that reveals a gray dropdown
- *  to pick the product and its valid day variants. Nothing floats over
- *  the map — the panel only exists while the button is pressed open. */
+/** Top-bar entry point: pick a product and its day; everything else is in the
+ *  Outlooks panel of the Catalog. */
 export function OutlookTopButton() {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const { layers, activeIds, activeOption, activateId, activateProduct } = useOutlookActions();
-  const groups = useGroupedProducts(layers);
+  const { active, pick } = useOutlookSelection();
+  const groups = useOutlookGroups();
 
-  // Dismiss on outside click or Escape — it is a transient top-bar popover.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
@@ -158,18 +66,13 @@ export function OutlookTopButton() {
     };
   }, [open]);
 
-  const isActive = activeIds.length > 0 && Boolean(activeOption);
-  const dayVariants = activeOption
-    ? OUTLOOK_OPTIONS.filter((option) => option.productKey === activeOption.productKey && option.day).sort(
-        (a, b) => (a.day ?? 0) - (b.day ?? 0),
-      )
-    : [];
+  const variantLabel = active?.product.variants.find((v) => v.key === active.variant)?.label;
 
   return (
     <div className="outlook-picker" ref={wrapRef}>
       <button
         type="button"
-        className={`outlook-mainbtn${isActive ? " is-active" : ""}`}
+        className={`outlook-mainbtn${active ? " is-active" : ""}`}
         onClick={() => setOpen((value) => !value)}
         title="Outlooks"
         aria-label="Outlooks"
@@ -177,8 +80,8 @@ export function OutlookTopButton() {
         aria-expanded={open}
       >
         <Tornado size={16} />
-        <span className="outlook-mainbtn__label">{isActive && activeOption ? activeOption.label : "Outlooks"}</span>
-        {isActive && activeOption?.day ? <span className="outlook-mainbtn__day">D{activeOption.day}</span> : null}
+        <span className="outlook-mainbtn__label">{active ? active.product.label : "Outlooks"}</span>
+        {active && variantLabel ? <span className="outlook-mainbtn__day">{variantLabel.replace("Day ", "D")}</span> : null}
         <ChevronDown size={14} className="outlook-mainbtn__chev" />
       </button>
 
@@ -186,52 +89,66 @@ export function OutlookTopButton() {
         <div className="outlook-menu" role="menu">
           <div className="outlook-menu__head">
             <span>Choose outlook</span>
-            {isActive && (
-              <button type="button" className="outlook-menu__clear" onClick={() => activateId(null)}>
+            {active && (
+              <button type="button" className="outlook-menu__clear" onClick={() => pick(null)}>
                 Clear
               </button>
             )}
           </div>
 
           <div className="outlook-menu__body">
-            {groups.map(({ group, options }) => (
+            {groups.map(([group, products]) => (
               <section key={group} className="outlook-menu__group">
                 <h3>{group}</h3>
-                {options.map((option) => (
-                  <button
-                    key={option.productKey}
-                    type="button"
-                    className={`outlook-menu__item${option.active ? " is-active" : ""}`}
-                    onClick={() => activateProduct(option.productKey)}
-                    title={option.module.description ?? option.module.name}
-                    role="menuitemradio"
-                    aria-checked={option.active}
-                  >
-                    <span>{option.label}</span>
-                    {option.active && <Check size={13} />}
-                  </button>
-                ))}
+                {products.map((product) => {
+                  const on = active?.product.key === product.key;
+                  return (
+                    <button
+                      key={product.key}
+                      type="button"
+                      className={`outlook-menu__item${on ? " is-active" : ""}`}
+                      onClick={() => pick(product)}
+                      title={product.description}
+                      role="menuitemradio"
+                      aria-checked={on}
+                    >
+                      <span>{product.label}</span>
+                      {on && <Check size={13} />}
+                    </button>
+                  );
+                })}
               </section>
             ))}
           </div>
 
-          {dayVariants.length > 1 && activeOption && (
-            <div className="outlook-menu__days" role="tablist" aria-label={`${activeOption.label} day`}>
-              <span className="outlook-menu__days-label">Day</span>
-              {dayVariants.map((option) => (
+          {active && active.product.variants.length > 1 && (
+            <div className="outlook-menu__days" role="tablist" aria-label={`${active.product.label} day`}>
+              {active.product.variants.map((v) => (
                 <button
-                  key={option.module.id}
+                  key={v.key}
                   type="button"
-                  className={`outlook-daytab${option.module.id === activeOption.module.id ? " is-active" : ""}`}
-                  onClick={() => activateId(option.module.id)}
+                  className={`outlook-daytab${v.key === active.variant ? " is-active" : ""}`}
+                  onClick={() => pick(active.product, v.key)}
                   role="tab"
-                  aria-selected={option.module.id === activeOption.module.id}
+                  aria-selected={v.key === active.variant}
                 >
-                  Day {option.day}
+                  {v.label}
                 </button>
               ))}
             </div>
           )}
+
+          <button
+            type="button"
+            className="outlook-menu__more"
+            onClick={() => {
+              useOutlookStore.getState().openPanel();
+              setOpen(false);
+            }}
+          >
+            <PanelLeftOpen size={13} />
+            <span>Outlooks panel: history, discussion, what changed</span>
+          </button>
         </div>
       )}
     </div>

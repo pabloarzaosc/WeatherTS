@@ -100,6 +100,19 @@
      the grey here; the light theme flips it to ink so the same overlays
      darken instead of vanishing. */
   --wash-rgb: 236, 236, 236;
+
+  /* Meteogram series. A chart line is read against the panel behind it, so each
+     reading needs a shade per theme -- the wind line borrows the text colour
+     because it has no colour of its own to borrow. */
+  --sx-temp: #ff6b5e;
+  --sx-dewp: #4ade80;
+  --sx-feel: #f6b93b;
+  --sx-wind: #ececec;
+  --sx-gust: #f0b429;
+  --sx-pres: #9fb4d6;
+  --sx-precip: #38bdf8;
+  --sx-vis: #c7d2e4;
+  --sx-ceil: #a5b4fc;
 }
 
 /* light: the same sign in daylight */
@@ -128,4 +141,14 @@
   --shadow: 0 0 0 1px rgba(11, 21, 34, 0.2);
   --track: #c3cfdd;
   --wash-rgb: 11, 21, 34;
+
+  --sx-temp: #d23b28;
+  --sx-dewp: #1f8a4c;
+  --sx-feel: #b26a05;
+  --sx-wind: #0b1522;
+  --sx-gust: #c27803;
+  --sx-pres: #45699c;
+  --sx-precip: #0b7fc0;
+  --sx-vis: #4a5b73;
+  --sx-ceil: #5058c0;
 }

@@ -5,8 +5,6 @@ import { useAppStore } from "../../store/useAppStore";
 import { useModelStore } from "../../store/useModelStore";
 import { LayerPower } from "../LayerPower";
 import { Select } from "../Select";
-import { ModelBar } from "../ModelBar";
-import { PressureView } from "./PressureView";
 import { CATEGORY_ORDER, type ModelInfo } from "../../lib/modelFields";
 import {
   DEFAULT_FRONTS_MODEL,
@@ -364,14 +362,6 @@ export function FrontsView() {
         </div>
       )}
 
-      <div className="sfcobs__section">Pressure</div>
-      <p className="frontsv__note">
-        The other half of a surface chart: isobars and the H / L centres, from any model that
-        publishes sea level pressure. It has its own model and its own hour on the timeline, so the
-        pressure pattern can come from a model while the fronts stay WPC's.
-      </p>
-      <ModelBar />
-      <PressureView />
     </div>
   );
 }

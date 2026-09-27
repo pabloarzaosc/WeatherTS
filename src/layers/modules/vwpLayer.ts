@@ -4,6 +4,7 @@ import type { LayerModule } from "../types";
 import { registerMarkerLayers, unregisterMarkerLayers } from "../clickPriority";
 import { fetchNexradSites } from "../../lib/nexrad";
 import { useVwpStore } from "../../store/useVwpStore";
+import { mapInk } from "../../map/mapInk";
 
 const SRC = "vwp-src";
 const DOTS = "vwp-dots";
@@ -72,8 +73,8 @@ export const vwpLayer: LayerModule = {
           "text-optional": true,
         },
         paint: {
-          "text-color": "#dfe9f5",
-          "text-halo-color": "rgba(8,12,18,0.9)",
+          "text-color": mapInk().text,
+          "text-halo-color": mapInk().halo,
           "text-halo-width": 1.2,
         },
       });

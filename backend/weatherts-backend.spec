@@ -156,27 +156,40 @@ a = Analysis(
         'PIL.Image',
         'PIL.ImageDraw',
         'PIL.ImageFont',
+        'PIL.WebPImagePlugin',
+        'PIL.features',
         'sounding_core',
         'raob_core',
         'nexrad_core',
         'nexrad_level2',
         'nadocast_core',
-        'surface_obs',
+        'cpc_hazards',
+        'satellite',
+        'sat_net',
+        'sat_geo',
+        'sat_recipes',
+        'sat_abi',
+        'sat_ahi',
+        'sat_slider',
+        'sat_wms',
+        'stations', 'surface_obs',
+        # SYNOP, MADIS mesonets and INMET beside the METARs (imported lazily).
+        'station_networks', 'scipy.io', 'scipy.io._netcdf',
         'pal_tables',
         'sharppy_renderer',
         # Imported by main.py but never listed, so the packaged backend had
         # no pressure field at all.
         'model_fields',
         # Listed for the same reason: the model roster, automatic fronts, the
-        # hourly analyses and satellite are all imported by main.py, and a
+        # hourly analyses are all imported by main.py, and a
         # missing one takes its whole panel down only in the installed app.
         'model_sources',
         'model_footprints',
         'fronts_model',
-        'mrms_core',
         'observations',
         'obs_products',
-        'satellite',
+        # The NHC's model tracks for the Models panel's ATCF entry.
+        'atcf',
         'contourpy',
         'scipy.ndimage',
     ],

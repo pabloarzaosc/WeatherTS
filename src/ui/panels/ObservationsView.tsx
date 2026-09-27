@@ -4,7 +4,7 @@ import { AlertTriangle, ChevronRight, Loader2, Search, X } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { LayerPower } from "../LayerPower";
 import { Select } from "../Select";
-import type { ObsCatalog, ObsProduct } from "../../lib/observations";
+import { fhText, type ObsCatalog, type ObsProduct, type ObsView } from "../../lib/observations";
 import {
   OBS_LOOP_HOURS,
   selectObsFrame,
@@ -12,18 +12,49 @@ import {
   selectObsProducts,
   useObsStore,
 } from "../../store/useObsStore";
-import { spanLabel, stepLabel } from "../../store/useSatStore";
+import { spanLabel, stepLabel } from "../../lib/loopTime";
 
 const LAYER = "observations";
+/** The spans a forecast model's Replay offers: up to the week its analysis keeps. */
+const REPLAY_HOURS = [24, 48, 72, 168];
 
 /** "HRRR analysis 3 km" -> "HRRR": the badge on a product another source draws. */
+/** "2026092118" -> "Mon 21 Sep 18Z". */
+function fmtRun(run: string): string {
+  // A tropical model's run names its storm too: "2026092212~polo17e".
+  const [stamp, storm] = run.split("~");
+  const d = new Date(Date.UTC(+stamp.slice(0, 4), +stamp.slice(4, 6) - 1, +stamp.slice(6, 8), +stamp.slice(8, 10)));
+  const wd = d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
+  const mo = d.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" });
+  const when = `${wd} ${d.getUTCDate()} ${mo} ${String(d.getUTCHours()).padStart(2, "0")}Z`;
+  if (!storm) return when;
+  const m = /^([a-z]*)(\d\d[a-z])$/.exec(storm);
+  const name = m ? `${m[2].toUpperCase()}${m[1] ? ` ${m[1].toUpperCase()}` : ""}` : storm.toUpperCase();
+  return `${name} · ${when}`;
+}
+
+const VIEWS: [ObsView, string][] = [
+  ["single", "Single"],
+  ["runs", "Compare runs"],
+  ["models", "Compare models"],
+];
+
+/** How long ago a run started: "5 h ago". */
+function ago(unix: number): string {
+  const h = Math.max(0, Math.round((Date.now() / 1000 - unix) / 3600));
+  return h < 48 ? `${h} h ago` : `${Math.round(h / 24)} d ago`;
+}
+
 function shortName(catalog: ObsCatalog | null, id: string): string {
   const label = catalog?.sources.find((s) => s.id === id)?.label ?? id;
   return label.split(" ")[0];
 }
 
-function tick(v: number): string {
-  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+/** Where a product the current model lacks can be had: two models and a count
+ *  ("HRRR · RAP +12"); the full list is in the row's tooltip. */
+function whereText(catalog: ObsCatalog | null, sources: string[]): string {
+  const names = [...new Set(sources.map((s) => shortName(catalog, s)))];
+  return names.length > 2 ? `${names.slice(0, 2).join(" · ")} +${names.length - 2}` : names.join(" · ");
 }
 
 interface Group {
@@ -69,11 +100,16 @@ function ProductTree() {
   const [query, setQuery] = useState("");
 
   const q = query.trim().toLowerCase();
-  const groups = useMemo(
-    () => groupProducts(q ? products.filter((p) => `${p.label} ${p.group} ${p.sub ?? ""}`.toLowerCase().includes(q)) : products),
-    [products, q],
-  );
   const here = catalog?.sources.find((s) => s.id === source);
+  const groups = useMemo(() => {
+    const all = groupProducts(q ? products.filter((p) => `${p.label} ${p.group} ${p.sub ?? ""}`.toLowerCase().includes(q)) : products);
+    // The groups this source draws first: on the radar mosaic its hail and
+    // rotation lead, on a model its surface and upper air, each with the other's
+    // products further down for moving over to.
+    const offers = new Set(here?.products ?? []);
+    const has = (g: Group) => g.subs.some((s) => s.products.some((p) => offers.has(p.id)));
+    return [...all.filter(has), ...all.filter((g) => !has(g))];
+  }, [products, q, here]);
 
   return (
     <div className="obstree">
@@ -130,7 +166,7 @@ function ProductTree() {
                         >
                           <span className="obstree__label">{p.label}</span>
                           {!offered && (
-                            <span className="obstree__where">{p.sources.map((s) => shortName(catalog, s)).join(" · ")}</span>
+                            <span className="obstree__where">{whereText(catalog, p.sources)}</span>
                           )}
                         </button>
                       );
@@ -163,19 +199,22 @@ export function ObservationsView() {
   const setHours = useObsStore((s) => s.setHours);
   const error = useObsStore((s) => s.error);
   const valid = useObsStore((s) => s.valid);
-  const bar = useObsStore((s) => s.bar);
-  const showLines = useObsStore((s) => s.showLines);
   const showEdge = useObsStore((s) => s.showEdge);
   const showBarbs = useObsStore((s) => s.showBarbs);
-  const interval = useObsStore((s) => s.interval);
-  const linesUnit = useObsStore((s) => s.linesUnit);
-  const setShowLines = useObsStore((s) => s.setShowLines);
   const setShowEdge = useObsStore((s) => s.setShowEdge);
   const setShowBarbs = useObsStore((s) => s.setShowBarbs);
   const showPlaces = useObsStore((s) => s.showPlaces);
   const setShowPlaces = useObsStore((s) => s.setShowPlaces);
+  const showRoads = useObsStore((s) => s.showRoads);
+  const setShowRoads = useObsStore((s) => s.setShowRoads);
   const setSource = useObsStore((s) => s.setSource);
+  const replay = useObsStore((s) => s.replay);
   const setIndex = useObsStore((s) => s.setIndex);
+  const pickedRun = useObsStore((s) => s.run);
+  const runs = useObsStore((s) => s.runs);
+  const setRun = useObsStore((s) => s.setRun);
+  const view = useObsStore((s) => s.view);
+  const setView = useObsStore((s) => s.setView);
   const product = useObsStore(selectObsProduct);
   const frame = useObsStore(selectObsFrame);
 
@@ -184,6 +223,27 @@ export function ObservationsView() {
   }, []);
 
   const src = catalog?.sources.find((s) => s.id === source);
+  const forecast = src?.forecast ?? false;
+  // A run only looks ahead; its analysis twin holds every hour of the week.
+  const replaySrc = forecast && src?.replay && product
+    ? catalog?.sources.find((s) => s.id === src.replay && s.products.includes(product.id))
+    : undefined;
+  // And back from the past to the model's forecast of the same product.
+  const forecastSrc = !forecast && product
+    ? catalog?.sources.find((s) => s.forecast && s.replay === source && s.products.includes(product.id) &&
+        !s.id.includes("subh"))
+    : undefined;
+  const run = forecast ? frames[0]?.run : undefined;
+
+  // The runs to pick from, fetched when a forecast model opens and again every
+  // few minutes, as new ones come out.
+  useEffect(() => {
+    if (!forecast) return;
+    const load = () => void useObsStore.getState().loadRuns();
+    load();
+    const timer = window.setInterval(load, 5 * 60_000);
+    return () => window.clearInterval(timer);
+  }, [source, forecast]);
   const step = useMemo(() => stepLabel(frames.map((f) => f.unix)), [frames]);
   const productLabel = product?.label ?? "";
   const span =
@@ -196,7 +256,7 @@ export function ObservationsView() {
   return (
     <div className="sfx">
       <LayerPower
-        label="Observations (analysis)"
+        label="Models"
         on={enabled}
         error={!!error}
         onToggle={() => setLayerVisible(LAYER, !enabled)}
@@ -224,17 +284,18 @@ export function ObservationsView() {
 
       <div className="sfx__block">
         <div className="sfx__head">
-          <span>Analysis</span>
+          <span>Model</span>
           {src && <b>{src.coverage}</b>}
         </div>
         <Select
           value={source}
           onChange={setSource}
-          aria-label="Analysis source"
+          aria-label="Model"
           options={(catalog?.sources ?? []).map((s) => ({
             value: s.id,
             label: s.label,
             hint: `${s.products.length} products`,
+            group: s.group,
           }))}
           placeholder={source}
         />
@@ -253,23 +314,8 @@ export function ObservationsView() {
       <div className="sfx__block">
         <div className="sfx__head">
           <span>Draw</span>
-          {showLines && product?.lines && interval ? (
-            <b>
-              every {tick(interval)} {linesUnit ?? ""}
-            </b>
-          ) : null}
         </div>
         <div className="sfx__chips">
-          <button
-            type="button"
-            className={`sfx__chip${showLines ? " is-on" : ""}`}
-            aria-pressed={showLines}
-            disabled={product ? !product.lines : false}
-            title={product && !product.lines ? "This product is shaded only" : undefined}
-            onClick={() => setShowLines(!showLines)}
-          >
-            Lines and numbers
-          </button>
           <button
             type="button"
             className={`sfx__chip${showBarbs ? " is-on" : ""}`}
@@ -291,6 +337,15 @@ export function ObservationsView() {
           </button>
           <button
             type="button"
+            className={`sfx__chip${showRoads ? " is-on" : ""}`}
+            aria-pressed={showRoads}
+            title="Highways from a state's view in, streets at city zoom, and the towns' built-up area"
+            onClick={() => setShowRoads(!showRoads)}
+          >
+            Roads and towns
+          </button>
+          <button
+            type="button"
             className={`sfx__chip${showEdge ? " is-on" : ""}`}
             aria-pressed={showEdge}
             onClick={() => setShowEdge(!showEdge)}
@@ -303,37 +358,7 @@ export function ObservationsView() {
         </div>
       </div>
 
-      {bar && (
-        <div className="sfx__block sfx__block--tight">
-          <div className="sfx__head">
-            <span>Scale</span>
-            <b>{bar.labels ? "type" : bar.unit || "index"}</b>
-          </div>
-          <div className="obsbar" style={{ background: `linear-gradient(to right, ${bar.colors.join(", ")})` }} />
-          <div className="obsbar__ticks">
-            {bar.labels?.map((l) => (
-              <span
-                key={l.t}
-                className="obsbar__tick"
-                style={{ left: `${((l.v - bar.min) / (bar.max - bar.min)) * 100}%` }}
-              >
-                {l.t}
-              </span>
-            ))}
-            {bar.ticks.map((t) => {
-              const at = bar.max > bar.min ? ((t - bar.min) / (bar.max - bar.min)) * 100 : 0;
-              // The end labels hang inward so they are not cut off by the panel.
-              const edge = at < 4 ? " is-start" : at > 96 ? " is-end" : "";
-              return (
-                <span key={t} className={`obsbar__tick${edge}`} style={{ left: `${at}%` }}>
-                  {tick(t)}
-                </span>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
+      {!forecast && (
       <div className="sfx__block">
         <div className="sfx__head">
           <span>Loop</span>
@@ -357,37 +382,135 @@ export function ObservationsView() {
         </div>
         <div className="sfx__ends">
           <span>
-            Press play to download the loop. Longer loops skip frames to stay near seventy: a week of every hour is
+            Press play to download the loop. Every frame up to 240 of them: a week of every hour is
             hundreds of MB.
           </span>
         </div>
+        {forecastSrc && (
+          <div className="sfx__chips">
+            <button type="button" className="sfx__chip" onClick={() => setSource(forecastSrc.id)}>
+              Back to the {forecastSrc.label} forecast
+            </button>
+          </div>
+        )}
       </div>
+      )}
+
+      {src && !src.tracks && (
+        <div className="sfx__block">
+          <div className="sfx__head">
+            <span>View</span>
+          </div>
+          <div className="sfx__chips">
+            {/* An analysis has no runs to compare, but a models grid can sit beside it. */}
+            {VIEWS.filter(([v]) => forecast || v !== "runs").map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                className={`sfx__chip${view === v ? " is-on" : ""}`}
+                aria-pressed={view === v}
+                onClick={() => setView(v)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="sfx__ends">
+            <span>
+              {view === "runs"
+                ? "The map holds the valid time on the timeline; the strip below it lists the runs that forecast it, oldest first. Pick one, or play them to see how the forecast changed."
+                : view === "models"
+                  ? "Any model and any product in each window, all at the timeline's valid time. Pick them in the windows; the grid is remembered."
+                  : "One map. The compare views keep following the timeline."}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {replaySrc && (
+        <div className="sfx__block">
+          <div className="sfx__head">
+            <span>Replay</span>
+            <b>{product?.label}</b>
+          </div>
+          <div className="sfx__chips">
+            {REPLAY_HOURS.map((h) => (
+              <button key={h} type="button" className="sfx__chip" onClick={() => replay(replaySrc.id, h)}>
+                Last {spanLabel(h)}
+              </button>
+            ))}
+          </div>
+          <div className="sfx__ends">
+            <span>
+              A run only looks ahead. The replay goes back: the first hour of every {src?.label} run, one frame an
+              hour, up to a week ({replaySrc.label}).
+            </span>
+          </div>
+        </div>
+      )}
+
+      {forecast && (
+        <div className="sfx__block">
+          <div className="sfx__head">
+            <span>Run</span>
+            <b>{run ? fmtRun(run) : "—"}</b>
+          </div>
+          <Select
+            value={pickedRun ?? ""}
+            onChange={(value) => setRun(value || null)}
+            aria-label="Run"
+            options={[
+              { value: "", label: "Newest full-length run", hint: !pickedRun && run ? fmtRun(run) : undefined },
+              ...runs.map((r) => ({
+                value: r.run,
+                label: r.label ?? fmtRun(r.run),
+                hint: r.hours != null ? `${r.hours} h · ${ago(r.unix)}` : ago(r.unix),
+              })),
+            ]}
+          />
+          <div className="sfx__ends">
+            <span>
+              Opens on the newest run that goes the whole way (HRRR 48 h, RAP 51 h); another run opens on the same
+              valid time, to see how the forecast changed.
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="sfx__block">
         <div className="sfx__head">
-          <span>Hour</span>
-          <b>{frames.length ? `${index + 1} / ${frames.length}` : "—"}</b>
+          <span>{forecast ? "Forecast hour" : "Hour"}</span>
+          <b>
+            {frames.length
+              ? forecast && frame?.fh != null
+                ? fhText(frame)
+                : `${index + 1} / ${frames.length}`
+              : "—"}
+          </b>
         </div>
         <Select
           value={String(index)}
           onChange={(value) => setIndex(Number(value))}
           disabled={!frames.length}
-          aria-label="Analysis hour"
+          aria-label={forecast ? "Forecast hour" : "Analysis hour"}
           options={frames.map((f, i) => ({ value: String(i), label: f.label }))}
           placeholder="—"
         />
         <div className="sfx__ends">
-          <span>{span}</span>
-          <span>{frames.length} frames</span>
+          <span>{forecast && run ? `Run ${fmtRun(run)}` : span}</span>
+          <span>{frames.length} {forecast ? "hours" : "frames"}</span>
         </div>
       </div>
 
       <div className="sfx__block sfx__block--tight">
         <div className="mslp__note">
-          Every hour of the last three days is a frame on the map timeline at the bottom, the same
-          one radar scrubs on{frame ? ` (showing ${frame.label})` : ""}. RTMA is the finest surface
-          analysis; the HRRR and RAP analyses add the upper air and the severe-weather parameters.
-          An hour already looked at opens instantly, even after a restart.
+          {forecast
+            ? `The run's forecast hours are the frames on the map timeline; the newest run opens on the
+               hour nearest now. A run still coming in shows the hours already out.`
+            : `Every hour of the last three days is a frame on the map timeline at the bottom, the same
+               one radar scrubs on${frame ? ` (showing ${frame.label})` : ""}. RTMA is the finest surface
+               analysis; the HRRR and RAP analyses add the upper air and the severe-weather parameters.
+               An hour already looked at opens instantly, even after a restart.`}
         </div>
       </div>
     </div>

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { getMap, subscribeMaps } from "../map/mapInstance";
 import { useAppStore } from "../store/useAppStore";
 import { useNexradStore } from "../store/useNexradStore";
+import { useObsStore } from "../store/useObsStore";
 import { useObsSample } from "./useObsSample";
 
 /**
@@ -18,6 +19,9 @@ export function ObsReadout() {
   const radarVisible = useAppStore((s) => s.layers["nexrad"]?.visible ?? false);
   const radarReadout = useNexradStore((s) => s.showReadout);
   const cursor = useAppStore((s) => s.cursor);
+  // The compare grid covers the map: a value pinned to a pointer it no longer
+  // has would only float over the grid.
+  const comparing = useObsStore((s) => s.view === "models");
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
@@ -36,7 +40,7 @@ export function ObsReadout() {
     return subscribeMaps(update);
   }, [cursor]);
 
-  if (!sample || !pos || (radarVisible && radarReadout)) return null;
+  if (!sample || !pos || comparing || (radarVisible && radarReadout)) return null;
 
   const W = sample.extra ? 150 : 92;
   const GAP = 16;

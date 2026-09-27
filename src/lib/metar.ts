@@ -104,3 +104,45 @@ export function compassPoint(deg: number | null): string {
   if (deg == null || !Number.isFinite(deg)) return "";
   return COMPASS[Math.round(deg / 22.5) % 16];
 }
+
+const WX_INTENSITY: Record<string, string> = { "-": "Light", "+": "Heavy", VC: "Nearby" };
+const WX_DESCRIPTOR: Record<string, string> = {
+  MI: "shallow", PR: "partial", BC: "patches of", DR: "drifting", BL: "blowing",
+  SH: "showers of", TS: "thunderstorm with", FZ: "freezing",
+};
+const WX_PHENOMENA: Record<string, string> = {
+  DZ: "drizzle", RA: "rain", SN: "snow", SG: "snow grains", IC: "ice crystals", PL: "ice pellets",
+  GR: "hail", GS: "small hail", UP: "unknown precipitation", BR: "mist", FG: "fog", FU: "smoke",
+  VA: "volcanic ash", DU: "dust", SA: "sand", HZ: "haze", PY: "spray", PO: "dust whirls",
+  SQ: "squalls", FC: "funnel cloud", SS: "sandstorm", DS: "duststorm",
+};
+
+/** "TSRA" -> "Thunderstorm with rain". METAR groups read right to left: an
+ *  intensity sign, an optional descriptor, then the phenomenon itself. */
+export function describeWx(codes: string | null | undefined): string[] {
+  if (!codes) return [];
+  const out: string[] = [];
+  for (const token of String(codes).trim().split(/\s+/)) {
+    if (!token) continue;
+    let rest = token.toUpperCase();
+    const words: string[] = [];
+    if (rest.startsWith("-") || rest.startsWith("+")) {
+      words.push(WX_INTENSITY[rest[0]]);
+      rest = rest.slice(1);
+    }
+    if (rest.startsWith("VC")) {
+      words.push(WX_INTENSITY.VC);
+      rest = rest.slice(2);
+    }
+    while (rest.length >= 2) {
+      const pair = rest.slice(0, 2);
+      if (WX_DESCRIPTOR[pair] && rest.length > 2) words.push(WX_DESCRIPTOR[pair]);
+      else if (WX_PHENOMENA[pair]) words.push(WX_PHENOMENA[pair]);
+      else words.push(pair.toLowerCase());
+      rest = rest.slice(2);
+    }
+    const text = words.filter(Boolean).join(" ").trim();
+    if (text) out.push(text.charAt(0).toUpperCase() + text.slice(1));
+  }
+  return out;
+}

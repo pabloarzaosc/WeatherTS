@@ -519,15 +519,13 @@ function AlertCategoryRows() {
 }
 
 function ObservationRows() {
-  const showLines = useObsStore((s) => s.showLines);
   const showBarbs = useObsStore((s) => s.showBarbs);
   const showPlaces = useObsStore((s) => s.showPlaces);
   const showEdge = useObsStore((s) => s.showEdge);
   const o = useObsStore.getState();
-  const s = { showLines, showBarbs, showPlaces, showEdge, setShowLines: o.setShowLines, setShowBarbs: o.setShowBarbs, setShowPlaces: o.setShowPlaces, setShowEdge: o.setShowEdge };
+  const s = { showBarbs, showPlaces, showEdge, setShowBarbs: o.setShowBarbs, setShowPlaces: o.setShowPlaces, setShowEdge: o.setShowEdge };
   return (
     <>
-      <Row label="Contour lines" control={<Switch on={s.showLines} label="Contour lines" onChange={s.setShowLines} />} />
       <Row label="Wind barbs" control={<Switch on={s.showBarbs} label="Wind barbs" onChange={s.setShowBarbs} />} />
       <Row label="Places and values" control={<Switch on={s.showPlaces} label="Places and values" onChange={s.setShowPlaces} />} />
       <Row label="Edge of the analysis" control={<Switch on={s.showEdge} label="Edge of the analysis" onChange={s.setShowEdge} />} />
@@ -640,7 +638,7 @@ const UI_SECTIONS: UiSection[] = [
   { id: "outlooks", label: "Outlooks", icon: <Layers size={14} />, schema: "outlooks" },
   {
     id: "observations",
-    label: "Observations",
+    label: "Models",
     icon: <Eye size={14} />,
     description: "HRRR, RAP and RTMA analyses.",
     before: [{ terms: "contour lines wind barbs places values edge analysis", render: () => <ObservationRows /> }],
@@ -654,7 +652,7 @@ const UI_SECTIONS: UiSection[] = [
       { terms: "metar station plot size spacing declutter age stale units temperature wind pressure visibility", render: () => <SurfaceRows /> },
     ],
   },
-  { id: "pressure", label: "Pressure & thickness", icon: <Gauge size={14} />, schema: "pressure" },
+  { id: "pressure", label: "Pressure", icon: <Gauge size={14} />, schema: "pressure" },
   { id: "markers", label: "Soundings & profilers", icon: <Thermometer size={14} />, schema: "markers" },
   {
     id: "chasers",

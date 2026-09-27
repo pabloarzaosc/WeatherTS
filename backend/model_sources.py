@@ -702,44 +702,155 @@ def _idx_lines(url: str) -> Optional[list[str]]:
     return lines
 
 
-def _fetch_idx(url: str, match: str) -> Optional[tuple[bytes, int]]:
-    """The message holding `match` ("VAR:LEVEL"), and which field of it that is:
-    NCEP packs u and v into one message, listed as N.1 and N.2."""
-    lines = _idx_lines(url)
-    if not lines:
-        return None
+_SPAN = re.compile(r"^(\d+)-(\d+) (hour|day|min) (acc|max|min|ave) fcst$")
+_AT = re.compile(r"^(\d+) (hour|day|min) fcst$")
+_UNIT_HOURS = {"hour": 1.0, "day": 24.0, "min": 1.0 / 60.0}
+
+
+def _span(desc: str) -> Optional[tuple[float, float, str]]:
+    """An .idx time description as (start, end, statistic), in hours:
+    '5-6 hour max fcst' -> (5, 6, 'max'); '6 hour fcst' -> (6, 6, '')."""
+    if desc == "anl":
+        return 0.0, 0.0, ""
+    m = _SPAN.match(desc)
+    if m:
+        k = _UNIT_HOURS[m.group(3)]
+        return float(m.group(1)) * k, float(m.group(2)) * k, m.group(4)
+    m = _AT.match(desc)
+    if m:
+        h = float(m.group(1)) * _UNIT_HOURS[m.group(2)]
+        return h, h, ""
+    return None
+
+
+def _picks(select: str, span: Optional[tuple[float, float, str]], hour: float) -> bool:
+    """Whether a record's time span is the one `select` asks for, in a file
+    whose forecast hour is `hour`.
+
+    The same variable is often listed more than once with different windows:
+    APCP from the start of the run and over the last hour, WEASD as the snow on
+    the ground and as what fell. A selector names which:
+      inst  the value at the hour itself
+      tot   accumulated since the run began
+      Nh    over the last N hours (an accumulation, a maximum or a mean):
+            1h the last hour, 4h the NBM's four-hour hazard windows
+      bktN  the bucket ending at this hour, for files that empty theirs every
+            N hours (the NAM every three, the GEFS every six)
+      tM    the value at forecast minute M, for the sub-hourly files that hold
+            four quarter-hours each ("75 min fcst", "2 hour fcst")
+    """
+    if span is None:
+        return False
+    start, end, stat = span
+    if select == "inst":
+        return not stat
+    if select.startswith("t") and select[1:].isdigit():
+        return not stat and abs(start - int(select[1:]) / 60.0) < 1e-6
+    if not stat or abs(end - hour) > 1e-6:
+        return False
+    if select == "tot":
+        return stat == "acc" and start == 0.0
+    if select.endswith("h") and select[:-1].isdigit():
+        return abs(end - start - float(select[:-1])) < 1e-6
+    if select.startswith("bkt"):
+        every = float(select[3:])
+        return stat == "acc" and abs(start - every * ((hour - 1.0) // every)) < 1e-6
+    return False
+
+
+def find_record(lines: list[str], match: str) -> Optional[int]:
+    """Which line of an .idx holds `match` (see _fetch_idx), or None."""
+    match, _, select = match.partition("|")
+    select, named, what = select.partition("|")
+    hour = 0.0
+    if select:
+        # The file's own forecast hour: the latest time any record reaches.
+        for line in lines:
+            parts = line.split(":")
+            got = _span(parts[5]) if len(parts) > 5 else None
+            if got is not None:
+                hour = max(hour, got[1])
     for i, line in enumerate(lines):
         parts = line.split(":")
         if len(parts) < 5 or f"{parts[3]}:{parts[4]}" != match:
             continue
-        nth = int(parts[0].split(".")[1]) if "." in parts[0] else 1
-        start = int(parts[1])
-        end = ""
-        for nxt in lines[i + 1:]:
-            p = nxt.split(":")
-            if len(p) > 1 and p[1].isdigit() and int(p[1]) > start:
-                end = str(int(p[1]) - 1)
-                break
-        r = _get(url, headers={"Range": f"bytes={start}-{end}"})
-        return (r.content, nth) if r is not None and r.content[:4] == b"GRIB" else None
+        if select and not _picks(select, _span(parts[5]) if len(parts) > 5 else None, hour):
+            continue
+        if named and (parts[6] if len(parts) > 6 else "") != what:
+            continue
+        return i
     return None
 
 
-def _ecmwf_entries(url: str, match: dict) -> list[dict]:
+def _fetch_idx(url: str, match: str) -> Optional[tuple[bytes, int]]:
+    """The message holding `match`, and which field of it that is: NCEP packs u
+    and v into one message, listed as N.1 and N.2.
+
+    `match` is "VAR:LEVEL"; "VAR:LEVEL|window" picks one time window of several
+    (see _picks); "VAR:LEVEL|window|what" also names the record's last field,
+    which ensemble and blend files use to tell apart the plain value from its
+    spread, percentiles and probabilities ("prob >75", "ens std dev", "" for the
+    plain one). The window may be empty: "VAR:LEVEL||prob >75"."""
+    lines = _idx_lines(url)
+    if not lines:
+        return None
+    i = find_record(lines, match)
+    if i is None:
+        return None
+    parts = lines[i].split(":")
+    nth = int(parts[0].split(".")[1]) if "." in parts[0] else 1
+    start = int(parts[1])
+    end = ""
+    for nxt in lines[i + 1:]:
+        p = nxt.split(":")
+        if len(p) > 1 and p[1].isdigit() and int(p[1]) > start:
+            end = str(int(p[1]) - 1)
+            break
+    r = _get(url, headers={"Range": f"bytes={start}-{end}"})
+    return (r.content, nth) if r is not None and r.content[:4] == b"GRIB" else None
+
+
+_INDEX_CACHE: dict[str, list[dict]] = {}
+
+
+def _ecmwf_index(url: str) -> Optional[list[dict]]:
+    """The records of an ECMWF open-data file, from its JSON-lines .index."""
+    with _LOCK:
+        if url in _INDEX_CACHE:
+            return _INDEX_CACHE[url]
     r = _get(url.removesuffix(".grib2") + ".index")
-    if r is None:
+    if r is None or not r.text.startswith("{"):
+        return None
+    entries = []
+    for line in r.text.splitlines():
+        try:
+            entries.append(json.loads(line))
+        except ValueError:
+            continue
+    with _LOCK:
+        _INDEX_CACHE[url] = entries
+        while len(_INDEX_CACHE) > 128:
+            _INDEX_CACHE.pop(next(iter(_INDEX_CACHE)))
+    return entries
+
+
+def has_index(url: str) -> bool:
+    """Whether an ECMWF open-data file is published yet, asked of its .index."""
+    return _ecmwf_index(url) is not None
+
+
+def _ecmwf_entries(url: str, match: dict) -> list[dict]:
+    entries = _ecmwf_index(url)
+    if not entries:
         return []
     want = {k: str(v) for k, v in match.items() if k != "scale"}
     want.setdefault("levtype", "pl" if "levelist" in want else "sfc")
-    out = []
-    for line in r.text.splitlines():
-        try:
-            entry = json.loads(line)
-        except ValueError:
-            continue
-        if all(str(entry.get(k)) == v for k, v in want.items()):
-            out.append(entry)
-    return out
+    return [e for e in entries if all(str(e.get(k)) == v for k, v in want.items())]
+
+
+def ecmwf_match(match: str) -> dict:
+    """'param=gh,levelist=500' -> {'param': 'gh', 'levelist': '500'}."""
+    return dict(kv.split("=", 1) for kv in match.split(","))
 
 
 def _ecmwf_range(url: str, entry: dict) -> Optional[bytes]:
@@ -885,6 +996,26 @@ def _fields_in_message(content: bytes):
             pass
 
 
+def _in_rows(gid, values: np.ndarray, nj: int, ni: int) -> np.ndarray:
+    """The numbers as (Nj, Ni) rows all running the same way.
+
+    A file may code every other row backwards (alternativeRowScanning; the NBM
+    does). eccodes hands the values back as coded, while the latitudes and
+    longitudes it works out run the plain way -- so read as-is, half the rows
+    held the temperatures of the far side of the country, a lattice over the
+    NBM picture (checked against RTMA on the same grid: 4.6 K apart before,
+    1.0 K after).
+    """
+    values = values.reshape(nj, ni)
+    try:
+        snake = bool(ec.codes_get(gid, "alternativeRowScanning"))
+    except Exception:  # noqa: BLE001 - not every template carries the flag
+        snake = False
+    if snake:
+        values[1::2] = values[1::2, ::-1].copy()
+    return values
+
+
 def _to_field(gid, world: bool) -> Field:
     values = ec.codes_get_values(gid).astype(np.float32)
     try:
@@ -897,7 +1028,7 @@ def _to_field(gid, world: bool) -> Field:
     if grid == "unstructured_grid":
         return Field(np.empty(0), np.empty(0), values, world, units=units)
     ni, nj = ec.codes_get(gid, "Ni"), ec.codes_get(gid, "Nj")
-    values = values.reshape(nj, ni)
+    values = _in_rows(gid, values, nj, ni)
     if grid == "regular_ll":
         lat0 = ec.codes_get(gid, "latitudeOfFirstGridPointInDegrees")
         lat1 = ec.codes_get(gid, "latitudeOfLastGridPointInDegrees")
@@ -920,8 +1051,66 @@ def _to_field(gid, world: bool) -> Field:
     return Field(lons, lats, values, world, relative, units)
 
 
+# eccodes reads its definition files the first time it meets a kind of
+# message, with a parser that is not safe on two threads at once: two MRMS
+# fields decoded for the first time together crashed the whole backend
+# ("fatal flex scanner internal error" in grib2/units.def, 2026-09-26). The
+# first message of each kind is decoded alone; once its definitions are
+# loaded, that kind decodes on any number of threads.
+_ECC_FIRST = threading.Lock()
+_ECC_SEEN: set[bytes] = set()
+
+
+def _grib_kinds(content: bytes, most: int = 400) -> set[bytes]:
+    """What decides the definitions each GRIB message in `content` needs:
+    edition and discipline, originating centre and table versions, and for
+    GRIB2 the product template and parameter. Raw header bytes, read without
+    eccodes; an empty set when the bytes are not plain GRIB."""
+    kinds: set[bytes] = set()
+    at = content.find(b"GRIB")
+    while 0 <= at and len(content) >= at + 16 and len(kinds) < most:
+        edition = content[at + 7]
+        if edition == 2:
+            total = int.from_bytes(content[at + 8:at + 16], "big")
+            parts = [content[at + 6:at + 8]]
+            pos = at + 16
+            for _ in range(4):  # sections 1-4
+                if len(content) < pos + 11:
+                    break
+                size = int.from_bytes(content[pos:pos + 4], "big")
+                num = content[pos + 4]
+                if num == 1:
+                    parts.append(content[pos + 5:pos + 11])  # centre, subcentre, table versions
+                elif num == 4:
+                    parts.append(content[pos + 7:pos + 11])  # template, category, parameter
+                    break
+                if size < 5:
+                    break
+                pos += size
+            kinds.add(b"|".join(parts))
+        elif edition == 1:
+            total = int.from_bytes(content[at + 4:at + 7], "big")
+            kinds.add(b"1" + content[at + 8:at + 20])
+        else:
+            return set()
+        if total < 16:
+            return set()
+        at = content.find(b"GRIB", at + total)
+    return kinds
+
+
 def _decode(content: bytes, select: Optional[dict], world: bool, nth: int = 1) -> Optional[Field]:
     """The first field matching `select`, or the `nth` field of a message."""
+    kinds = _grib_kinds(content)
+    if kinds and kinds <= _ECC_SEEN:
+        return _decode_now(content, select, world, nth)
+    with _ECC_FIRST:
+        out = _decode_now(content, select, world, nth)
+        _ECC_SEEN.update(kinds)
+        return out
+
+
+def _decode_now(content: bytes, select: Optional[dict], world: bool, nth: int = 1) -> Optional[Field]:
     handles = _messages(content) if nth == 1 else _fields_in_message(content)
     try:
         for i, gid in enumerate(handles, 1):
@@ -1065,19 +1254,201 @@ def values_at(url: str, match: str) -> Optional[np.ndarray]:
     got = _fetch_idx(url, match)
     if got is None:
         return None
-    raw, nth = got
+    return _values_of(*got)
+
+
+def _missing_managed(gid) -> bool:
+    """Complex packing can mark missing points without a bitmap (the NDFD
+    does): eccodes then hands them back as missingValue, 9999."""
+    try:
+        return bool(ec.codes_get(gid, "missingValueManagementUsed"))
+    except Exception:  # noqa: BLE001 - simple packing has no such key
+        return False
+
+
+def _values_of(raw: bytes, nth: int = 1) -> Optional[np.ndarray]:
     handles = _messages(raw) if nth == 1 else _fields_in_message(raw)
     try:
         for i, gid in enumerate(handles, 1):
             if i < nth:
                 continue
             values = ec.codes_get_values(gid).astype(np.float32)
-            if ec.codes_get(gid, "bitmapPresent"):
+            if ec.codes_get(gid, "bitmapPresent") or _missing_managed(gid):
                 values[values == ec.codes_get(gid, "missingValue")] = np.nan
+            if ec.codes_get(gid, "gridType") == "unstructured_grid":
+                return values  # ICON's cells: a list, with no rows or columns
             ni, nj = int(ec.codes_get(gid, "Ni")), int(ec.codes_get(gid, "Nj"))
-            return values.reshape(nj, ni)
+            return _in_rows(gid, values, nj, ni)
     finally:
         handles.close()
+    return None
+
+
+def ecmwf_values_at(url: str, match: str) -> Optional[np.ndarray]:
+    """values_at for an ECMWF open-data file: `match` is 'param=t,levelist=850'."""
+    raw = _fetch_ecmwf(url, ecmwf_match(match))
+    return _values_of(raw) if raw else None
+
+
+def ecmwf_fetch_at(url: str, match: str) -> Optional[Field]:
+    raw = _fetch_ecmwf(url, ecmwf_match(match))
+    return _decode(raw, None, False) if raw else None
+
+
+_THERE: set[str] = set()
+
+
+def has_file(url: str) -> bool:
+    """Whether a one-variable file is published yet (the MSC and DWD servers
+    publish a file per variable per hour, with no index beside it)."""
+    with _LOCK:
+        if url in _THERE:
+            return True
+    _throttle(url)
+    try:
+        r = _SESSION.head(url, timeout=_TIMEOUT, allow_redirects=True)
+    except (requests.ConnectionError, requests.Timeout):
+        return False
+    if r.status_code != 200:
+        return False
+    with _LOCK:
+        _THERE.add(url)
+        while len(_THERE) > 4096:
+            _THERE.pop()
+    return True
+
+
+def file_values_at(url: str) -> Optional[np.ndarray]:
+    """values_at for a file holding one variable, bzip2-compressed or not."""
+    raw = _fetch_direct(url, url.endswith(".bz2"))
+    return _values_of(raw) if raw else None
+
+
+def file_fetch_at(url: str) -> Optional[Field]:
+    raw = _fetch_direct(url, url.endswith(".bz2"))
+    return _decode(raw, None, False) if raw else None
+
+
+# ---------------------------------------------------------------------------
+# Files with no index at all (the NDFD's ds.*.bin, one variable, every valid
+# time, tens of MB): the index is made here, from each message's first bytes.
+# ---------------------------------------------------------------------------
+_SCANS: dict[str, tuple[str, list[dict]]] = {}
+_HEADS: dict[str, tuple[float, int, str]] = {}
+_UNIT_SECONDS = {0: 60, 1: 3600, 2: 86400, 10: 3 * 3600, 11: 6 * 3600, 12: 12 * 3600, 13: 1}
+
+
+def _head(url: str) -> Optional[tuple[int, str]]:
+    """Size and Last-Modified of a file, looked at no more than once a minute."""
+    with _LOCK:
+        hit = _HEADS.get(url)
+    if hit and time.time() - hit[0] < 60:
+        return hit[1], hit[2]
+    _throttle(url)
+    try:
+        r = _SESSION.head(url, timeout=_TIMEOUT)
+    except (requests.ConnectionError, requests.Timeout):
+        return None
+    if r.status_code != 200:
+        return None
+    size, stamp = int(r.headers.get("Content-Length", 0)), r.headers.get("Last-Modified", "")
+    with _LOCK:
+        _HEADS[url] = (time.time(), size, stamp)
+    return size, stamp
+
+
+def _grib2_times(b: bytes) -> Optional[tuple[datetime, datetime]]:
+    """Reference and valid time of a GRIB2 message from its first bytes:
+    sections 1 (reference) and 4 (forecast time, or the end of the period for
+    an accumulation (template 4.8) or a probability over a period (4.9))."""
+    pos, found = 16, {}
+    while pos + 5 <= len(b):
+        n, num = int.from_bytes(b[pos:pos + 4], "big"), b[pos + 4]
+        if n <= 0 or num > 7:
+            return None
+        found.setdefault(num, pos)
+        if num >= 4:
+            break
+        pos += n
+    if 1 not in found or 4 not in found or found[4] + 54 > len(b):
+        return None
+    s1, s4 = found[1], found[4]
+
+    def when(at: int) -> datetime:
+        return datetime(int.from_bytes(b[at:at + 2], "big"), b[at + 2], b[at + 3], b[at + 4], b[at + 5], b[at + 6],
+                        tzinfo=timezone.utc)
+
+    ref = when(s1 + 12)
+    template = int.from_bytes(b[s4 + 7:s4 + 9], "big")
+    if template == 8:
+        return ref, when(s4 + 34)
+    if template == 9:
+        return ref, when(s4 + 47)
+    unit = _UNIT_SECONDS.get(b[s4 + 17], 3600)
+    return ref, ref + timedelta(seconds=unit * int.from_bytes(b[s4 + 18:s4 + 22], "big", signed=True))
+
+
+def scan_messages(url: str) -> list[dict]:
+    """Every message of a file with no index: where it starts, how long it is,
+    and its reference and valid times. Kept until the file changes."""
+    head = _head(url)
+    if head is None:
+        return []
+    size, stamp = head
+    with _LOCK:
+        hit = _SCANS.get(url)
+    if hit and hit[0] == stamp:
+        return hit[1]
+    out: list[dict] = []
+    off = 0
+    while off + 16 <= size:
+        # Each message sits behind a WMO heading ("****0001089738****",
+        # "YEUB00 KWBN 222247"): the GRIB starts a few dozen bytes in.
+        r = _get(url, headers={"Range": f"bytes={off}-{off + 1023}"})
+        at = r.content.find(b"GRIB") if r is not None else -1
+        if at < 0:
+            break
+        head = r.content[at:]
+        total = int.from_bytes(head[8:16], "big")
+        if total <= 0:
+            break
+        times = _grib2_times(head)
+        if times is not None:
+            out.append({"offset": off + at, "length": total, "ref": times[0], "valid": times[1]})
+        off += at + total
+    with _LOCK:
+        _SCANS[url] = (stamp, out)
+    return out
+
+
+def _scan_find(url: str, valid: datetime) -> Optional[bytes]:
+    for m in scan_messages(url):
+        if m["valid"] == valid:
+            r = _get(url, headers={"Range": f"bytes={m['offset']}-{m['offset'] + m['length'] - 1}"})
+            return r.content if r is not None and r.content[:4] == b"GRIB" else None
+    return None
+
+
+def scan_values_at(urls: list[str], valid: datetime) -> Optional[np.ndarray]:
+    """values_at for files with no index: the message valid at `valid`, from
+    the first of `urls` that has it."""
+    for url in urls:
+        raw = _scan_find(url, valid)
+        if raw:
+            values = _values_of(raw)
+            # Off the NDFD's land and coastal waters some elements carry no
+            # missing marker at all, just a nonsense value (visibility: -16 091 830 m).
+            if values is not None:
+                values[values < -1e6] = np.nan
+            return values
+    return None
+
+
+def scan_fetch_at(urls: list[str], valid: datetime) -> Optional[Field]:
+    for url in urls:
+        raw = _scan_find(url, valid)
+        if raw:
+            return _decode(raw, None, False)
     return None
 
 

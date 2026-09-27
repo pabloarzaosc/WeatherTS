@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 
 import { useAppStore } from "../store/useAppStore";
+import { useNexradStore } from "../store/useNexradStore";
 import { selectObsProduct, useObsStore } from "../store/useObsStore";
-import { selectSatProduct, selectSatSatellite, useSatStore } from "../store/useSatStore";
+import { selectSatProduct, selectSatRegion, selectSatSatellite, useSatStore } from "../store/useSatStore";
+import { useTimelineStore } from "../store/useTimelineStore";
 
 /**
- * Progress of a satellite or analysis loop while its frames come in, with a way
+ * Progress of an analysis loop while its frames come in, with a way
  * to stop it. A loop downloads only once play is pressed. Unlike the archived
  * radar day this does not block the map: a loop
  * loads in seconds and the map stays usable meanwhile. Closing it stops the
@@ -17,7 +19,7 @@ import { selectSatProduct, selectSatSatellite, useSatStore } from "../store/useS
 const APPEAR_AFTER_MS = 600;
 
 interface Job {
-  id: "sat" | "obs";
+  id: "obs" | "radar" | "sat";
   title: string;
   detail: string;
   done: number;
@@ -26,14 +28,15 @@ interface Job {
 }
 
 export function LoopLoadCard() {
-  const satOn = useAppStore((s) => s.layers["satellite"]?.visible ?? false);
   const obsOn = useAppStore((s) => s.layers["observations"]?.visible ?? false);
+  const satOn = useAppStore((s) => s.layers["satellite"]?.visible ?? false);
 
   const satLoaded = useSatStore((s) => s.loopLoaded);
   const satTotal = useSatStore((s) => s.loopTotal);
   const satArmed = useSatStore((s) => s.loopArmed);
-  const satProduct = useSatStore(selectSatProduct);
   const satellite = useSatStore(selectSatSatellite);
+  const satRegion = useSatStore(selectSatRegion);
+  const satProduct = useSatStore(selectSatProduct);
 
   const obsLoaded = useObsStore((s) => s.loopLoaded);
   const obsTotal = useObsStore((s) => s.loopTotal);
@@ -41,12 +44,33 @@ export function LoopLoadCard() {
   const obsProduct = useObsStore(selectObsProduct);
   const obsSource = useObsStore((s) => s.catalog?.sources.find((x) => x.id === s.source) ?? null);
 
+  // A radar loop plays from its cache, filled in the background from the frame
+  // on screen: while it is still filling, a play steps as fast as scans come,
+  // and without this nothing said so.
+  const playing = useTimelineStore((s) => s.playing);
+  const driver = useTimelineStore((s) => s.driver);
+  const radarScans = useNexradStore((s) => s.scans.length);
+  const radarWarm = useNexradStore((s) => s.warm);
+  const radarSite = useNexradStore((s) => s.site);
+  const radarProduct = useNexradStore((s) => s.product);
+  const radarArchive = useNexradStore((s) => s.archiveDate);
+
   const jobs: Job[] = [];
+  if (playing && driver === "radar" && radarScans > 1 && radarWarm < radarScans) {
+    jobs.push({
+      id: "radar",
+      title: "Loading radar loop",
+      detail: [radarSite, radarProduct, radarArchive].filter(Boolean).join(" · "),
+      done: radarWarm,
+      total: radarScans,
+      stop: () => useTimelineStore.getState().stop(),
+    });
+  }
   if (satOn && satArmed && satTotal > 1 && satLoaded < satTotal) {
     jobs.push({
       id: "sat",
       title: "Loading satellite loop",
-      detail: [satellite?.label, satProduct?.label].filter(Boolean).join(" · "),
+      detail: [satellite?.label, satRegion?.label, satProduct?.label].filter(Boolean).join(" · "),
       done: satLoaded,
       total: satTotal,
       stop: () => useSatStore.getState().stopLoop(),
@@ -55,7 +79,7 @@ export function LoopLoadCard() {
   if (obsOn && obsArmed && obsTotal > 1 && obsLoaded < obsTotal) {
     jobs.push({
       id: "obs",
-      title: "Loading analysis loop",
+      title: obsSource?.forecast ? "Loading forecast loop" : "Loading analysis loop",
       detail: [obsSource?.label, obsProduct?.label].filter(Boolean).join(" · "),
       done: obsLoaded,
       total: obsTotal,

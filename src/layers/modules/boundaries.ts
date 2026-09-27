@@ -1,7 +1,8 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
 
 import type { LayerModule } from "../types";
-import { VECTOR_SOURCE } from "../../map/basemaps";
+import { LAKES_SOURCE, VECTOR_SOURCE, chartInk } from "../../map/basemaps";
+import { useAppStore } from "../../store/useAppStore";
 
 const SOURCE_ID = "ne-countries";
 const LINE_LAYER = "ne-countries-line";
@@ -9,19 +10,25 @@ const COAST = "ref-coastline";
 const COUNTRY = "ref-country-line";
 const STATE = "ref-state-line";
 const CASING = "ref-country-casing";
-const ALL = [CASING, COAST, STATE, COUNTRY, LINE_LAYER];
+/** A chart's lakes, from its zoom-5 copy of the tiles (see LAKES_SOURCE). */
+const LAKES = "ref-lakes";
+const ALL = [CASING, COAST, LAKES, STATE, COUNTRY, LINE_LAYER];
 
 // Bundled at build time from public/ -- used only where the basemap has no
 // vector tiles to draw from (the Blank basemap).
-const DATA_URL = "/data/ne_110m_admin_0_countries.geojson";
+const DATA_URL = `${import.meta.env.BASE_URL}data/ne_110m_admin_0_countries.geojson`;
 const LINE_COLOR = "#7d97bd"; // tuned for the gray basemap
-/** Over satellite the lines sit on white cloud as often as on dark ground; a
+/** Over bright imagery the lines sit on white as often as on dark ground; a
  *  faint dark edge under them keeps them readable on both. */
 const VECTOR_LINE = "#a9c1e6";
 const CASING_COLOR = "rgba(6, 10, 16, 0.55)";
 
 const width = (a: number, b: number, c: number) =>
   ["interpolate", ["linear"], ["zoom"], 2, a, 6, b, 10, c] as never;
+
+/** On a chart basemap the lines over the products are the chart's own: the
+ *  same weight for every kind, and state lines solid, as a chart draws them. */
+const onChart = () => chartInk(useAppStore.getState().basemapId) !== null;
 
 /**
  * Country, state and province borders and the coastline, drawn over every
@@ -71,12 +78,15 @@ export const boundariesLayer: LayerModule = {
   },
 
   setOpacity(map, opacity) {
+    const chart = onChart();
     if (map.getLayer(LINE_LAYER)) map.setPaintProperty(LINE_LAYER, "line-opacity", opacity);
     if (map.getLayer(CASING)) map.setPaintProperty(CASING, "line-opacity", opacity * 0.7);
     if (map.getLayer(COUNTRY)) map.setPaintProperty(COUNTRY, "line-opacity", opacity);
-    if (map.getLayer(COAST)) map.setPaintProperty(COAST, "line-opacity", opacity * 0.9);
-    // States and provinces are the secondary line and stay lighter than borders.
-    if (map.getLayer(STATE)) map.setPaintProperty(STATE, "line-opacity", opacity * 0.6);
+    if (map.getLayer(COAST)) map.setPaintProperty(COAST, "line-opacity", opacity * (chart ? 1 : 0.9));
+    if (map.getLayer(LAKES)) map.setPaintProperty(LAKES, "line-opacity", opacity);
+    // States and provinces are the secondary line and stay lighter than borders
+    // -- except on a chart, where they are ink like the rest and only thinner.
+    if (map.getLayer(STATE)) map.setPaintProperty(STATE, "line-opacity", opacity * (chart ? 1 : 0.6));
   },
 
   getLayerIds() {
@@ -101,13 +111,31 @@ function addVectorLines(map: MapLibreMap): void {
       },
     });
   }
+  // A chart draws its lakes from their own source, only the big ones; the
+  // coast here is then the sea's alone, or every reservoir would be back.
+  const chartLakes = Boolean(map.getSource(LAKES_SOURCE));
+  if (chartLakes && !map.getLayer(LAKES)) {
+    map.addLayer({
+      id: LAKES,
+      type: "line",
+      source: LAKES_SOURCE,
+      "source-layer": "water",
+      filter: ["==", ["get", "class"], "lake"],
+      layout: { "line-join": "round" },
+      paint: {
+        "line-color": VECTOR_LINE,
+        "line-width": width(0.35, 0.8, 1.3),
+        "line-opacity": 0.68,
+      },
+    });
+  }
   if (!map.getLayer(COAST)) {
     map.addLayer({
       id: COAST,
       type: "line",
       source: VECTOR_SOURCE,
       "source-layer": "water",
-      filter: ["in", ["get", "class"], ["literal", ["ocean", "lake"]]],
+      filter: chartLakes ? ["==", ["get", "class"], "ocean"] : ["in", ["get", "class"], ["literal", ["ocean", "lake"]]],
       layout: { "line-join": "round" },
       paint: {
         "line-color": VECTOR_LINE,
@@ -129,7 +157,8 @@ function addVectorLines(map: MapLibreMap): void {
         "line-color": VECTOR_LINE,
         "line-width": width(0.3, 0.6, 1.1),
         "line-opacity": 0.45,
-        "line-dasharray": [3, 1.5],
+        // The basemap is rebuilt, and these lines with it, when it changes.
+        ...(onChart() ? {} : { "line-dasharray": [3, 1.5] }),
       },
     });
   }

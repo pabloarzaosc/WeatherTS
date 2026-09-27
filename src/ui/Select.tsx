@@ -39,6 +39,8 @@ interface SelectProps {
   /** A filter box appears once the list is longer than this -- 157 radar sites
    *  are not scrollable in any useful sense. */
   searchFrom?: number;
+  /** The list at least this wide, for a small trigger over long labels. */
+  popWidth?: number;
 }
 
 const POP_MAX = 320;
@@ -51,6 +53,7 @@ export function Select({
   disabled = false,
   className = "",
   searchFrom = 14,
+  popWidth = 0,
   ...rest
 }: SelectProps) {
   const [open, setOpen] = useState(false);
@@ -81,16 +84,17 @@ export function Select({
     const r = el.getBoundingClientRect();
     const below = window.innerHeight - r.bottom;
     const above = below < Math.min(POP_MAX, 240) && r.top > below;
+    const width = Math.max(r.width, popWidth);
     setRect({
       top: above ? Math.max(8, r.top - 6) : r.bottom + 6,
-      left: Math.min(Math.max(8, r.left), Math.max(8, window.innerWidth - r.width - 8)),
-      width: r.width,
+      left: Math.min(Math.max(8, r.left), Math.max(8, window.innerWidth - width - 8)),
+      width,
       above,
       // Never taller than the room it has: a list that runs off the bottom of
       // the window cannot be scrolled to its end.
       max: Math.max(140, Math.min(POP_MAX, (above ? r.top : below) - 14)),
     });
-  }, []);
+  }, [popWidth]);
 
   useLayoutEffect(() => {
     if (!open) return;

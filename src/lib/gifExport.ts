@@ -1,4 +1,4 @@
-// Animated export of the radar loop, as GIF or MP4.
+// Animated export of the radar loop -- or of a model's hours -- as GIF or MP4.
 //
 // The frames are captured from the live map rather than re-rendered offscreen,
 // so what you export is exactly what you were looking at -- basemap, alerts,
@@ -8,16 +8,26 @@
 // somewhere else carries no UI around it, so the scale has to travel with it.
 //
 // GIF and MP4 share every bit of the capture + composition; they differ only in
-// the FrameSink that consumes each finished canvas.
+// the FrameSink that consumes each finished canvas. Radar, the models and the
+// satellite share it too: they differ in how a frame is put on the map and what
+// the caption says (a model's caption carries the run, the forecast hour and its
+// own scale). Every frame carries the app's name, caption or not.
 
 import { GIFEncoder, applyPalette, quantize } from "gifenc";
 import { Muxer, ArrayBufferTarget } from "mp4-muxer";
-import type { Map as MapLibreMap } from "maplibre-gl";
+import type { ImageSource, Map as MapLibreMap } from "maplibre-gl";
 
 import { getMap, getMapById, getActivePaneId } from "../map/mapInstance";
+import { OBS_IMAGE_SOURCES, obsDetailNow, obsFrameFinal, obsPreload } from "../layers/modules/obsLayer";
+import { SAT_IMAGE_SOURCE, satFrameOnScreen } from "../layers/modules/satelliteLayer";
 import { useNexradStore } from "../store/useNexradStore";
+import { useObsStore } from "../store/useObsStore";
+import { selectSatProduct, selectSatRegion, selectSatSatellite, useSatStore } from "../store/useSatStore";
 import { usePaletteStore } from "../store/usePaletteStore";
-import type { AnimFormat, GifArea } from "../store/useGifStore";
+import type { AnimFormat, AnimSubject, GifArea } from "../store/useGifStore";
+import { fhText, prefetchObsLoop, type ObsBar } from "./observations";
+import type { SatLegend } from "./satellite";
+import GifWorker from "./gifWorker?worker&inline";
 import { hcaKey } from "./hca";
 import { buildLut, palTicks, parsePal, type PalTable } from "./pal";
 
@@ -30,11 +40,18 @@ const MAX_GRID_WIDTH = 1800;
 const LAST_FRAME_HOLD = 900;
 
 const PAD = 12;
+/** The colour scales' figures, right under their ramp. */
+const TICK_FONT = "9px ui-monospace, Consolas, monospace";
+const TICK_GAP = 2;
 
 /** Below this the caption goes to two rows -- one line will not fit. */
 const isNarrow = (w: number) => w < 470;
-/** The caption strip's height, which depends on that layout choice. */
-const captionHeight = (w: number) => (isNarrow(w) ? 62 : 74);
+/**
+ * The caption strip's height: a line of text with the colour scale under it
+ * (two lines on a narrow export), the text alone for a product without a
+ * scale. It was 74 px and took too much of the picture (Pablo, 2026-09-26).
+ */
+const captionHeight = (w: number, scaled = true) => (isNarrow(w) ? (scaled ? 50 : 32) : scaled ? 44 : 26);
 
 /** MP4 (H.264) requires even dimensions; round both down. */
 const even = (n: number) => n - (n % 2);
@@ -69,6 +86,8 @@ export interface AnimOptions {
   caption: boolean;
   /** Output scale on top of the native-size cap (1 = native). */
   scale: number;
+  /** Radar scans (the default) or the Models panel's hours. */
+  subject?: AnimSubject;
 }
 
 // ---- frame sinks: one per output format, same interface ----
@@ -78,19 +97,92 @@ interface FrameSink {
   finish(): Promise<Blob>;
 }
 
+/** GIF encoding workers: most of the machine, leaving a core for the page. */
+const GIF_WORKERS = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1));
+/** Frames handed to the workers and not yet back, at most: it bounds memory. */
+const GIF_QUEUE = GIF_WORKERS * 2;
+
+/**
+ * GIF, encoded on workers (gifWorker.ts) while the next frames are captured:
+ * a frame's quantising and compressing, about half a second, is more than its
+ * capture takes, so several run at once, each on whole frames, and the pieces
+ * are joined in order at the end. Inlined, so they also start in the desktop
+ * app, whose page is a file:// one. Should workers not start, the frames are
+ * encoded here.
+ */
 class GifSink implements FrameSink {
-  private gif = GIFEncoder();
-  constructor(private w: number, private h: number) {}
+  private workers: Worker[] = [];
+  private gif: ReturnType<typeof GIFEncoder> | null = null;
+  private parts: Uint8Array[] = [];
+  private seq = 0;
+  private out = 0;
+  private freed: (() => void)[] = [];
+  private allBack: (() => void) | null = null;
+  private err: Error | null = null;
+
+  constructor(private w: number, private h: number) {
+    try {
+      for (let k = 0; k < GIF_WORKERS; k++) {
+        const worker = new GifWorker();
+        worker.onmessage = (e: MessageEvent<{ seq: number; bytes: Uint8Array }>) => {
+          this.parts[e.data.seq] = e.data.bytes;
+          this.out -= 1;
+          this.freed.shift()?.();
+          if (this.out === 0) this.allBack?.();
+        };
+        worker.onerror = (e) => {
+          this.err = new Error(e.message || "The GIF encoder stopped.");
+          for (const go of this.freed.splice(0)) go();
+          this.allBack?.();
+        };
+        this.workers.push(worker);
+      }
+    } catch {
+      for (const worker of this.workers) worker.terminate();
+      this.workers = [];
+      this.gif = GIFEncoder();
+    }
+  }
+
   async add(canvas: HTMLCanvasElement, delayMs: number): Promise<void> {
+    if (this.err) throw this.err;
     const ctx = canvas.getContext("2d")!;
     const { data } = ctx.getImageData(0, 0, this.w, this.h);
-    const palette = quantize(data, 256, { format: "rgb565" });
-    const index = applyPalette(data, palette, "rgb565");
-    this.gif.writeFrame(index, this.w, this.h, { palette, delay: delayMs, repeat: 0 });
+    if (!this.workers.length) {
+      const palette = quantize(data, 256, { format: "rgb565" });
+      const index = applyPalette(data, palette, "rgb565");
+      this.gif!.writeFrame(index, this.w, this.h, { palette, delay: delayMs, repeat: 0 });
+      return;
+    }
+    while (this.out >= GIF_QUEUE) await new Promise<void>((go) => this.freed.push(go));
+    if (this.err) throw this.err;
+    const seq = this.seq++;
+    this.out += 1;
+    this.workers[seq % this.workers.length].postMessage(
+      { seq, first: seq === 0, data, width: this.w, height: this.h, delay: delayMs },
+      [data.buffer],
+    );
   }
+
   async finish(): Promise<Blob> {
-    this.gif.finish();
-    return new Blob([this.gif.bytes() as unknown as BlobPart], { type: "image/gif" });
+    if (!this.workers.length) {
+      this.gif!.finish();
+      return new Blob([this.gif!.bytes() as unknown as BlobPart], { type: "image/gif" });
+    }
+    try {
+      if (this.out > 0) await new Promise<void>((done) => (this.allBack = done));
+      if (this.err) throw this.err;
+      const all = new Uint8Array(this.parts.reduce((n, part) => n + part.length, 0) + 1);
+      let at = 0;
+      for (const part of this.parts) {
+        all.set(part, at);
+        at += part.length;
+      }
+      all[at] = 0x3b; // the file's trailer
+      return new Blob([all], { type: "image/gif" });
+    } finally {
+      for (const worker of this.workers) worker.terminate();
+    }
   }
 }
 
@@ -237,45 +329,34 @@ async function sleepAwake(ms: number): Promise<void> {
   while (Date.now() < end) await macroYield();
 }
 
-/**
- * Wait for the next paint, but never hang: a hidden tab stops firing rAF
- * entirely, so race it against a short un-throttled sleep.
- */
-function nextPaint(): Promise<void> {
-  return new Promise((resolve) => {
-    let done = false;
-    const fin = () => {
-      if (done) return;
-      done = true;
-      resolve();
-    };
-    requestAnimationFrame(fin);
-    void sleepAwake(50).then(fin);
-  });
-}
+/** Longest a frame may take to have its tiles and pictures in. */
+const SETTLE_MS = 20_000;
 
 /**
- * Wait until the map has actually painted the frame we just committed.
+ * The frame just committed, drawn onto the map's canvas now: once every tile
+ * and picture it needs is in, one synchronous redraw.
  *
- * `idle` is the real signal (tiles settled, no pending repaint); race it against
- * an un-throttled timeout so a hidden tab can't wedge here. The two paints after
- * it are what guarantee the WebGL buffer we read has the new mesh in it.
+ * This used to wait for the map's own paint -- its "idle" event and animation
+ * frames -- and a hidden or minimised window runs neither: the export stood
+ * still until the window came back. redraw() draws whether the window shows
+ * or not, and waiting on what the frame needs rather than on a paint also took
+ * the fixed 0.9 s per frame out (idle seldom came, and the wait ran out).
  */
-async function settled(map: MapLibreMap): Promise<void> {
-  await new Promise<void>((resolve) => {
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      map.off("idle", finish);
-      resolve();
-    };
-    map.on("idle", finish);
-    map.triggerRepaint();
-    void sleepAwake(900).then(finish);
-  });
-  await nextPaint();
-  await nextPaint();
+async function settled(map: MapLibreMap, images: string[] = []): Promise<void> {
+  const end = Date.now() + SETTLE_MS;
+  const loaded = () =>
+    map.areTilesLoaded() &&
+    images.every((id) => {
+      const src = map.getSource(id) as ImageSource | undefined;
+      return !src || src.loaded();
+    });
+  // Each redraw also starts whatever loading the new frame still needs.
+  map.redraw();
+  while (!loaded() && Date.now() < end) {
+    await sleepAwake(20);
+    map.redraw();
+  }
+  map.redraw();
 }
 
 /** The colour table for a product family, resolved the way the map resolves it. */
@@ -331,7 +412,7 @@ function paintScale(
   ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
 
   const span = vmax - vmin || 1;
-  ctx.font = "10px ui-monospace, Consolas, monospace";
+  ctx.font = TICK_FONT;
   ctx.fillStyle = "rgba(236,236,236,0.65)";
   ctx.textBaseline = "top";
   let lastRight = -Infinity;
@@ -341,7 +422,7 @@ function paintScale(
     const tw = ctx.measureText(label).width;
     const lx = Math.max(x, Math.min(px - tw / 2, x + w - tw));
     if (lx < lastRight + 6) continue;
-    ctx.fillText(label, lx, y + h + 4);
+    ctx.fillText(label, lx, y + h + TICK_GAP);
     lastRight = lx + tw;
   }
 }
@@ -350,7 +431,7 @@ function paintClasses(ctx: CanvasRenderingContext2D, table: PalTable, x: number,
   const classes = hcaKey(table);
   if (classes.length === 0) return;
   const cell = w / classes.length;
-  ctx.font = "10px ui-monospace, Consolas, monospace";
+  ctx.font = TICK_FONT;
   ctx.textBaseline = "top";
   classes.forEach((c, i) => {
     const cx = x + i * cell;
@@ -358,7 +439,7 @@ function paintClasses(ctx: CanvasRenderingContext2D, table: PalTable, x: number,
     ctx.fillRect(Math.round(cx), y, Math.ceil(cell) - 1, h);
     ctx.fillStyle = "rgba(236,236,236,0.65)";
     const tw = ctx.measureText(c.short).width;
-    ctx.fillText(c.short, cx + (cell - tw) / 2, y + h + 4);
+    ctx.fillText(c.short, cx + (cell - tw) / 2, y + h + TICK_GAP);
   });
 }
 
@@ -375,11 +456,13 @@ function paintCaption(
     unix: number;
     frame: number;
     total: number;
-    table: PalTable;
-    kind: string;
+    /** Draws the colour scale into the given box; none, no scale row. */
+    scale?: (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) => void;
+    /** Before the time stamp: a model's forecast hour ("F012"). */
+    lead?: string;
   },
 ): void {
-  const h = captionHeight(w);
+  const h = captionHeight(w, Boolean(info.scale));
   ctx.fillStyle = "#262626";
   ctx.fillRect(0, top, w, h);
   ctx.fillStyle = "#353535";
@@ -387,6 +470,7 @@ function paintCaption(
 
   const { day, time } = fmtUtc(info.unix);
   const counter = `${String(info.frame).padStart(2, "0")} / ${info.total}`;
+  const lead = info.lead ? `${info.lead}  ` : "";
   ctx.textBaseline = "alphabetic";
 
   if (isNarrow(w)) {
@@ -396,54 +480,161 @@ function paintCaption(
     // and the figures stay on the system mono, which is the closest a canvas
     // can get. The face is already loaded by the time anyone exports -- the UI
     // has been drawing in it since startup.
-    ctx.font = "600 12px 'Recursive Variable', system-ui, 'Segoe UI', sans-serif";
-    ctx.fillText(info.product, PAD, top + 16);
+    ctx.font = "600 11px 'Recursive Variable', system-ui, 'Segoe UI', sans-serif";
+    ctx.fillText(info.product, PAD, top + 13);
 
-    ctx.font = "600 12px ui-monospace, Consolas, monospace";
+    ctx.font = "600 11px ui-monospace, Consolas, monospace";
     ctx.fillStyle = "#6c9dff";
-    ctx.fillText(counter, w - PAD - ctx.measureText(counter).width, top + 16);
+    ctx.fillText(counter, w - PAD - ctx.measureText(counter).width, top + 13);
 
-    ctx.font = "10px ui-monospace, Consolas, monospace";
+    ctx.font = "9.5px ui-monospace, Consolas, monospace";
     ctx.fillStyle = "rgba(236,236,236,0.7)";
     const line2 = [info.units, info.site, info.tilt].filter(Boolean).join(" · ");
-    ctx.fillText(line2, PAD, top + 30);
-    const stamp = `${day.replace(/ \d{4}$/, "")} ${time}`;
-    ctx.fillText(stamp, w - PAD - ctx.measureText(stamp).width, top + 30);
+    ctx.fillText(line2, PAD, top + 25);
+    const stamp = `${lead}${day.replace(/ \d{4}$/, "")} ${time}`;
+    ctx.fillText(stamp, w - PAD - ctx.measureText(stamp).width, top + 25);
 
-    paintScale(ctx, info.table, PAD, top + 40, w - PAD * 2, 10, info.kind);
+    info.scale?.(ctx, PAD, top + 30, w - PAD * 2, 6);
     return;
   }
 
   ctx.fillStyle = "#ececec";
-  ctx.font = "600 14px 'Recursive Variable', system-ui, 'Segoe UI', sans-serif";
+  ctx.font = "600 12.5px 'Recursive Variable', system-ui, 'Segoe UI', sans-serif";
   const title = info.product;
-  ctx.fillText(title, PAD, top + 19);
+  ctx.fillText(title, PAD, top + 16);
 
   const x = PAD + ctx.measureText(title).width + 8;
-  ctx.font = "11px ui-monospace, Consolas, monospace";
+  ctx.font = "10.5px ui-monospace, Consolas, monospace";
   ctx.fillStyle = "rgba(236,236,236,0.55)";
   const sub = [info.units, info.site, info.tilt].filter(Boolean).join("  ·  ");
-  ctx.fillText(sub, x, top + 19);
+  ctx.fillText(sub, x, top + 16);
 
-  ctx.font = "600 13px ui-monospace, Consolas, monospace";
+  ctx.font = "600 11.5px ui-monospace, Consolas, monospace";
   ctx.fillStyle = "#6c9dff";
   const cw = ctx.measureText(counter).width;
-  ctx.fillText(counter, w - PAD - cw, top + 19);
+  ctx.fillText(counter, w - PAD - cw, top + 16);
 
-  ctx.font = "11px ui-monospace, Consolas, monospace";
+  ctx.font = "10.5px ui-monospace, Consolas, monospace";
   ctx.fillStyle = "rgba(236,236,236,0.75)";
-  const stamp = `${day}  ${time}`;
+  const stamp = `${lead}${day}  ${time}`;
   const sw = ctx.measureText(stamp).width;
-  ctx.fillText(stamp, w - PAD - cw - 14 - sw, top + 19);
+  ctx.fillText(stamp, w - PAD - cw - 14 - sw, top + 16);
 
-  paintScale(ctx, info.table, PAD, top + 30, w - PAD * 2, 12, info.kind);
+  info.scale?.(ctx, PAD, top + 22, w - PAD * 2, 7);
+}
+
+/** A model product's scale, from the bar its legend draws: the colours as a
+ *  ramp, and its ticks -- or its words, for a categorical product. */
+function paintBar(ctx: CanvasRenderingContext2D, bar: ObsBar, x: number, y: number, w: number, h: number): void {
+  const ramp = ctx.createLinearGradient(x, 0, x + w, 0);
+  bar.colors.forEach((c, i) => ramp.addColorStop(i / Math.max(1, bar.colors.length - 1), c));
+  ctx.fillStyle = ramp;
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+
+  const span = bar.max - bar.min || 1;
+  const marks = bar.labels ?? bar.ticks.map((v) => ({ v, t: String(Math.round(v * 100) / 100) }));
+  ctx.font = TICK_FONT;
+  ctx.fillStyle = "rgba(236,236,236,0.65)";
+  ctx.textBaseline = "top";
+  let lastRight = -Infinity;
+  for (const m of marks) {
+    const px = x + ((m.v - bar.min) / span) * w;
+    const tw = ctx.measureText(m.t).width;
+    const lx = Math.max(x, Math.min(px - tw / 2, x + w - tw));
+    if (lx < lastRight + 6) continue;
+    ctx.fillText(m.t, lx, y + h + TICK_GAP);
+    lastRight = lx + tw;
+  }
+}
+
+/** A satellite product's legend (the Level 2 products carry one): a ramp
+ *  through its stops, spaced by value, or a block per category. */
+function paintSatLegend(ctx: CanvasRenderingContext2D, legend: SatLegend, x: number, y: number, w: number, h: number): void {
+  ctx.font = TICK_FONT;
+  ctx.textBaseline = "top";
+  const cats = legend.categories ?? [];
+  if (cats.length > 0) {
+    const cell = w / cats.length;
+    cats.forEach(([name, color], i) => {
+      const cx = x + i * cell;
+      ctx.fillStyle = color;
+      ctx.fillRect(Math.round(cx), y, Math.ceil(cell) - 1, h);
+      ctx.fillStyle = "rgba(236,236,236,0.65)";
+      let t = name;
+      while (t.length > 1 && ctx.measureText(t).width > cell - 3) t = t.slice(0, -1);
+      ctx.fillText(t, cx + (cell - ctx.measureText(t).width) / 2, y + h + TICK_GAP);
+    });
+    return;
+  }
+  const stops = legend.stops ?? [];
+  if (stops.length < 2) return;
+  const lo = stops[0][0];
+  const hi = stops[stops.length - 1][0];
+  const at = (v: number) =>
+    legend.log && lo > 0
+      ? (Math.log(Math.max(v, lo)) - Math.log(lo)) / (Math.log(hi) - Math.log(lo) || 1)
+      : (v - lo) / (hi - lo || 1);
+  const ramp = ctx.createLinearGradient(x, 0, x + w, 0);
+  for (const [v, c] of stops) ramp.addColorStop(Math.max(0, Math.min(1, at(v))), c);
+  ctx.fillStyle = ramp;
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  ctx.fillStyle = "rgba(236,236,236,0.65)";
+  let lastRight = -Infinity;
+  for (const [v] of stops) {
+    const t = String(Math.round(v * 100) / 100);
+    const tw = ctx.measureText(t).width;
+    const lx = Math.max(x, Math.min(x + at(v) * w - tw / 2, x + w - tw));
+    if (lx < lastRight + 6) continue;
+    ctx.fillText(t, lx, y + h + TICK_GAP);
+    lastRight = lx + tw;
+  }
+}
+
+/**
+ * The app's name on every exported frame, caption or not: a file posted
+ * elsewhere carries nothing else to say where it came from (Pablo,
+ * 2026-09-26). Top left of the map, small, on a dark tab so it reads over any
+ * imagery; sized to the export.
+ */
+function paintWatermark(ctx: CanvasRenderingContext2D, x: number, y: number, w: number): void {
+  const size = Math.max(11, Math.min(16, Math.round(w / 95)));
+  ctx.save();
+  ctx.textBaseline = "alphabetic";
+  ctx.font = `700 ${size}px 'Recursive Variable', system-ui, 'Segoe UI', sans-serif`;
+  const first = "Weather";
+  const second = "TS";
+  const w1 = ctx.measureText(first).width;
+  const w2 = ctx.measureText(second).width;
+  const padX = Math.round(size * 0.55);
+  const padY = Math.round(size * 0.32);
+  const bw = Math.ceil(w1 + w2 + padX * 2);
+  const bh = Math.ceil(size + padY * 2);
+  const bx = x + 8;
+  const by = y + 8;
+  ctx.fillStyle = "rgba(20,20,20,0.62)";
+  ctx.fillRect(bx, by, bw, bh);
+  ctx.strokeStyle = "rgba(255,255,255,0.16)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+  const base = Math.round(by + padY + size * 0.8);
+  ctx.fillStyle = "#f2f2f2";
+  ctx.fillText(first, bx + padX, base);
+  ctx.fillStyle = "#6c9dff";
+  ctx.fillText(second, bx + padX + w1, base);
+  ctx.restore();
 }
 
 // ---- split-screen composition ----
 
 const PANE_GAP = 2;
-const PANE_STRIP_H = 44;
-const FOOTER_H = 28;
+const PANE_STRIP_H = 32;
+const FOOTER_H = 20;
 
 function gridCols(count: number): number {
   if (count <= 2) return count;
@@ -463,17 +654,17 @@ function paintPaneStrip(
 
   ctx.textBaseline = "alphabetic";
   ctx.fillStyle = "#ececec";
-  ctx.font = "600 11px 'Recursive Variable', system-ui, 'Segoe UI', sans-serif";
-  ctx.fillText(info.product, x + 6, y + 13);
+  ctx.font = "600 10.5px 'Recursive Variable', system-ui, 'Segoe UI', sans-serif";
+  ctx.fillText(info.product, x + 6, y + 11);
 
   const right = [info.units, info.tilt].filter(Boolean).join("  ");
   if (right) {
-    ctx.font = "10px ui-monospace, Consolas, monospace";
+    ctx.font = "9.5px ui-monospace, Consolas, monospace";
     ctx.fillStyle = "rgba(236,236,236,0.55)";
-    ctx.fillText(right, x + w - 6 - ctx.measureText(right).width, y + 13);
+    ctx.fillText(right, x + w - 6 - ctx.measureText(right).width, y + 11);
   }
 
-  paintScale(ctx, info.table, x + 6, y + 19, w - 12, 8, info.kind);
+  paintScale(ctx, info.table, x + 6, y + 15, w - 12, 6, info.kind);
 }
 
 /** The frame delay for step n, holding the last frame a touch longer. */
@@ -583,19 +774,20 @@ async function exportPanes(
 
         const { day, time } = fmtUtc(scans[i].time);
         ctx.textBaseline = "alphabetic";
-        ctx.font = "11px ui-monospace, Consolas, monospace";
+        ctx.font = "10.5px ui-monospace, Consolas, monospace";
         ctx.fillStyle = "rgba(236,236,236,0.8)";
-        ctx.fillText(`${site}  ${day}  ${time}`, PAD, footY + 18);
+        ctx.fillText(`${site}  ${day}  ${time}`, PAD, footY + 14);
 
         const counter = `${String(n + 1).padStart(2, "0")} / ${total}`;
-        ctx.font = "600 12px ui-monospace, Consolas, monospace";
+        ctx.font = "600 11px ui-monospace, Consolas, monospace";
         ctx.fillStyle = "#6c9dff";
-        ctx.fillText(counter, w - PAD - ctx.measureText(counter).width, footY + 18);
+        ctx.fillText(counter, w - PAD - ctx.measureText(counter).width, footY + 14);
       }
+      paintWatermark(ctx, 0, 0, w);
 
       await sink.add(out, delayFor(n, total, opts.delayMs));
       onProgress({ phase: "capturing", done: n + 1, total });
-      await nextPaint();
+      await macroYield();
     }
 
     onProgress({ phase: "encoding", done: total, total });
@@ -608,14 +800,269 @@ async function exportPanes(
   }
 }
 
+/** One pane's capture box and the output canvas, the same for radar, the
+ *  models and the satellite. `scaled`: the caption has a colour scale row. */
+function singlePane(map: MapLibreMap, opts: AnimOptions, scaled = true) {
+  const src = map.getCanvas();
+  const box = src.getBoundingClientRect();
+  const dpr = src.width / Math.max(box.width, 1);
+  const crop = opts.area ?? { x: 0, y: 0, w: box.width, h: box.height };
+  const sx = Math.max(0, Math.round(crop.x * dpr));
+  const sy = Math.max(0, Math.round(crop.y * dpr));
+  const sw = Math.max(2, Math.min(Math.round(crop.w * dpr), src.width - sx));
+  const sh = Math.max(2, Math.min(Math.round(crop.h * dpr), src.height - sy));
+  const scale = Math.min(1, MAX_WIDTH / Math.max(crop.w, 1)) * opts.scale;
+  const w = even(Math.max(2, Math.round(crop.w * scale)));
+  const mapH = Math.max(2, Math.round(crop.h * scale));
+  const capH = opts.caption ? captionHeight(w, scaled) : 0;
+  const h = even(mapH + capH);
+  const out = document.createElement("canvas");
+  out.width = w;
+  out.height = h;
+  const ctx = out.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("Canvas unavailable.");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  return { src, sx, sy, sw, sh, w, h, mapH, out, ctx };
+}
+
+/** Longest a model frame may take to be drawn before the export gives up. */
+const MODEL_FRAME_TIMEOUT_MS = 120_000;
+
 /**
- * Capture the selected radar frames as a GIF or MP4.
- *
- * Runs over `opts.indices` of the focused pane (every pane in split screen),
- * leaving the timeline back where it started. Rejects with GifCancelled if the
- * caller cancels mid-run.
+ * Put the model frame `want` ("source|field|key") on the map and wait until it
+ * is final: drawn, and its sharp on-screen picture over it (or none needed at
+ * this zoom) -- so the export shows what the screen would, not the coarse
+ * whole-domain picture under it.
+ */
+async function modelFrame(map: MapLibreMap, i: number, want: string, cancel: GifCancel): Promise<void> {
+  useObsStore.getState().setIndex(i);
+  const end = Date.now() + MODEL_FRAME_TIMEOUT_MS;
+  let asked = false;
+  for (;;) {
+    if (cancel.cancelled) throw new GifCancelled();
+    const s = useObsStore.getState();
+    // Its city values too: without them a frame went out with the numbers of
+    // the one before, when the frames themselves came fast.
+    if (obsFrameFinal(map, want)) return;
+    if (!s.busy && s.error && s.drawn !== want) throw new Error(s.error);
+    // Drawn: its detail picture and values at once, not after the settle timers.
+    if (s.drawn === want && !asked) {
+      asked = true;
+      obsDetailNow();
+    }
+    if (Date.now() > end) throw new Error("A frame took too long to draw.");
+    await sleepAwake(20);
+  }
+}
+
+/**
+ * Capture the Models panel's hours -- the selected ones of the timeline -- as a
+ * GIF or MP4, from the focused pane. The frames' pictures are made ahead on the
+ * server first, and the timeline goes back to where it was.
+ */
+async function exportModels(
+  opts: AnimOptions,
+  onProgress: (p: GifProgress) => void,
+  cancel: GifCancel,
+): Promise<{ blob: Blob; name: string }> {
+  const map = getMap();
+  if (!map) throw new Error("No map to capture.");
+  const s0 = useObsStore.getState();
+  if (s0.view === "models") throw new Error("Close Compare models first: the export records the main map.");
+  const frames = s0.frames;
+  if (frames.length === 0) throw new Error("No model hours loaded yet.");
+  if (opts.indices.length === 0) throw new Error("No frames selected.");
+  // The timeline stops: it and the export would both be moving the map.
+  if (s0.playing) s0.stopLoop();
+
+  const { source, field, catalog } = s0;
+  const model = catalog?.sources.find((x) => x.id === source)?.label ?? source;
+  const product = catalog?.products.find((x) => x.id === field);
+  const startIndex = s0.index;
+  const indices = opts.indices;
+  const total = indices.length;
+  const keys = indices.map((i) => frames[i].key);
+  // Made on the server, and brought here with their detail pictures, ahead of
+  // the capture: it then steps through frames that are already in.
+  prefetchObsLoop(source, field, keys).catch(() => {
+    /* each is made as it is reached instead */
+  });
+  void obsPreload(map, source, field, [...new Set(keys)], () => cancel.cancelled);
+
+  const { src, sx, sy, sw, sh, w, h, mapH, out, ctx } = singlePane(map, opts);
+  const sink = await makeSink(opts.format, w, h, opts.delayMs);
+
+  try {
+    for (let n = 0; n < total; n++) {
+      if (cancel.cancelled) throw new GifCancelled();
+      const i = indices[n];
+      const f = frames[i];
+      await modelFrame(map, i, `${source}|${field}|${f.key}`, cancel);
+      await settled(map, OBS_IMAGE_SOURCES);
+      if (cancel.cancelled) throw new GifCancelled();
+
+      ctx.fillStyle = "#202020";
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(src, sx, sy, sw, sh, 0, 0, w, mapH);
+      paintWatermark(ctx, 0, 0, w);
+
+      const bar = useObsStore.getState().bar;
+      if (opts.caption && bar) {
+        const run = f.run ? `${f.run.slice(8, 10)}Z run` : "";
+        paintCaption(ctx, w, mapH, {
+          product: product?.label ?? field,
+          units: bar.unit || product?.unit || "",
+          site: model,
+          tilt: run,
+          unix: f.unix,
+          frame: n + 1,
+          total,
+          scale: (c, x, y, bw, bh) => paintBar(c, bar, x, y, bw, bh),
+          lead: f.fh != null ? fhText(f) : undefined,
+        });
+      }
+
+      await sink.add(out, delayFor(n, total, opts.delayMs));
+      onProgress({ phase: "capturing", done: n + 1, total });
+      await macroYield();
+    }
+
+    onProgress({ phase: "encoding", done: total, total });
+    const blob = await sink.finish();
+    const lastFrame = frames[indices[indices.length - 1]];
+    const { day, time } = fmtUtc(lastFrame.unix);
+    const slug = (x: string) => x.replace(/[^\w]+/g, "-").replace(/^-|-$/g, "");
+    const name = `${slug(model)}_${slug(product?.label ?? field)}_${day.replace(/ /g, "-")}_${time.replace(":", "")}.${fileExt(opts.format)}`;
+    return { blob, name };
+  } finally {
+    useObsStore.getState().setIndex(startIndex);
+  }
+}
+
+/** Longest a satellite frame may take to come before the export gives up. */
+const SAT_FRAME_TIMEOUT_MS = 120_000;
+/** Past this, a frame whose sharp picture has not come goes out with its quick one. */
+const SAT_SHARP_WAIT_MS = 30_000;
+
+/**
+ * Capture the satellite's frames -- the selected ones of its loop -- as a GIF
+ * or MP4, from the focused pane: every frame with its sharp picture (the loop
+ * downloads ahead of the capture), a frame the provider has no picture for
+ * left out, and the timeline back where it was.
+ */
+async function exportSatellite(
+  opts: AnimOptions,
+  onProgress: (p: GifProgress) => void,
+  cancel: GifCancel,
+): Promise<{ blob: Blob; name: string }> {
+  const map = getMap();
+  if (!map) throw new Error("No map to capture.");
+  const s0 = useSatStore.getState();
+  if (s0.frames.length === 0) throw new Error("No satellite frames loaded yet.");
+  if (opts.indices.length === 0) throw new Error("No frames selected.");
+  // The timeline stops -- it and the export would both be moving the map --
+  // and the whole loop downloads now, ahead of the capture.
+  if (s0.playing) s0.stopLoop();
+  useSatStore.getState().armLoop();
+
+  const sat = selectSatSatellite(s0);
+  const region = selectSatRegion(s0);
+  const product = selectSatProduct(s0);
+  const legend = product?.legend ?? null;
+  const startTime = s0.frames[s0.index]?.time;
+  // By time, not index: a new scan arriving mid-export shifts the list.
+  const times = opts.indices.map((i) => s0.frames[i]?.time).filter((t): t is string => Boolean(t));
+  const total = times.length;
+
+  const { src, sx, sy, sw, sh, w, h, mapH, out, ctx } = singlePane(map, opts, Boolean(legend));
+  const sink = await makeSink(opts.format, w, h, opts.delayMs);
+  let lastUnix = 0;
+
+  try {
+    for (let n = 0; n < total; n++) {
+      if (cancel.cancelled) throw new GifCancelled();
+      const t = times[n];
+      const i = useSatStore.getState().frames.findIndex((f) => f.time === t);
+      if (i < 0) continue; // dropped off the list meanwhile
+      useSatStore.getState().setIndex(i);
+      const t0 = Date.now();
+      let shown: "yes" | "no" | "empty" = "no";
+      for (;;) {
+        if (cancel.cancelled) throw new GifCancelled();
+        shown = satFrameOnScreen(map, t, Date.now() - t0 > SAT_SHARP_WAIT_MS);
+        if (shown !== "no") break;
+        if (Date.now() - t0 > SAT_FRAME_TIMEOUT_MS) throw new Error("A satellite frame took too long to come.");
+        await sleepAwake(40);
+      }
+      if (shown === "empty") continue;
+      await settled(map, [SAT_IMAGE_SOURCE]);
+      if (cancel.cancelled) throw new GifCancelled();
+
+      const frame = useSatStore.getState().frames[i];
+      lastUnix = frame.unix;
+      ctx.fillStyle = "#202020";
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(src, sx, sy, sw, sh, 0, 0, w, mapH);
+      paintWatermark(ctx, 0, 0, w);
+      if (opts.caption) {
+        paintCaption(ctx, w, mapH, {
+          product: product?.label ?? s0.product,
+          units: legend?.units ?? "",
+          site: [sat?.label, region?.label].filter(Boolean).join(" "),
+          tilt: "",
+          unix: frame.unix,
+          frame: n + 1,
+          total,
+          scale: legend ? (c, x, y, bw, bh) => paintSatLegend(c, legend, x, y, bw, bh) : undefined,
+        });
+      }
+
+      await sink.add(out, delayFor(n, total, opts.delayMs));
+      onProgress({ phase: "capturing", done: n + 1, total });
+      await macroYield();
+    }
+    if (lastUnix === 0) throw new Error("None of these frames has a picture.");
+
+    onProgress({ phase: "encoding", done: total, total });
+    const blob = await sink.finish();
+    const { day, time } = fmtUtc(lastUnix);
+    const slug = (x: string) => x.replace(/[^\w]+/g, "-").replace(/^-|-$/g, "");
+    const name = `${slug(sat?.label ?? s0.sat)}_${slug(product?.label ?? s0.product)}_${day.replace(/ /g, "-")}_${time.replace(":", "")}.${fileExt(opts.format)}`;
+    return { blob, name };
+  } finally {
+    const back = useSatStore.getState().frames.findIndex((f) => f.time === startTime);
+    if (back >= 0) useSatStore.getState().setIndex(back);
+  }
+}
+
+/**
+ * Capture the selected frames -- radar scans, the Models panel's hours, or the
+ * satellite's frames -- as a GIF or MP4, leaving the timeline back where it
+ * started. Rejects with GifCancelled if the caller cancels mid-run.
  */
 export async function exportAnimation(
+  opts: AnimOptions,
+  onProgress: (p: GifProgress) => void,
+  cancel: GifCancel,
+): Promise<{ blob: Blob; name: string }> {
+  // In the desktop app, the window is told not to slow down while hidden for
+  // the length of the export: its timers keep their pace and the map keeps
+  // drawing, minimised or not. (The capture itself no longer needs the window
+  // on screen; this keeps the rest of the app -- labels, pictures -- on time.)
+  const desktop = (window as unknown as { electronAPI?: { keepRendering?: (on: boolean) => void } }).electronAPI;
+  desktop?.keepRendering?.(true);
+  try {
+    if (opts.subject === "models") return await exportModels(opts, onProgress, cancel);
+    if (opts.subject === "satellite") return await exportSatellite(opts, onProgress, cancel);
+    return await exportRadar(opts, onProgress, cancel);
+  } finally {
+    desktop?.keepRendering?.(false);
+  }
+}
+
+/** The radar's scans, from the focused pane (every pane in split screen). */
+async function exportRadar(
   opts: AnimOptions,
   onProgress: (p: GifProgress) => void,
   cancel: GifCancel,
@@ -628,6 +1075,9 @@ export async function exportAnimation(
   const scans = s0.scans;
   if (scans.length === 0) throw new Error("No radar frames loaded yet.");
   if (opts.indices.length === 0) throw new Error("No frames selected.");
+  // Scans not downloaded yet load several at a time from the first exported one
+  // on, rather than one by one as each frame comes up.
+  s0.prefetch(opts.indices[0]);
 
   const paneIds = Object.keys(s0.paneRadar).sort();
   if (paneIds.length > 1) return exportPanes(opts, onProgress, cancel, paneIds);
@@ -681,6 +1131,7 @@ export async function exportAnimation(
       ctx.fillStyle = "#202020";
       ctx.fillRect(0, 0, w, h);
       ctx.drawImage(src, sx, sy, sw, sh, 0, 0, w, mapH);
+      paintWatermark(ctx, 0, 0, w);
 
       if (opts.caption) {
         const st = useNexradStore.getState();
@@ -693,14 +1144,13 @@ export async function exportAnimation(
           unix: scans[i].time,
           frame: n + 1,
           total,
-          table: pal.table,
-          kind: pal.kind,
+          scale: (c, x, y, sw2, sh2) => paintScale(c, pal.table, x, y, sw2, sh2, pal.kind),
         });
       }
 
       await sink.add(out, delayFor(n, total, opts.delayMs));
       onProgress({ phase: "capturing", done: n + 1, total });
-      await nextPaint();
+      await macroYield();
     }
 
     onProgress({ phase: "encoding", done: total, total });
@@ -715,11 +1165,16 @@ export async function exportAnimation(
 }
 
 /** The pixel size an export would produce right now, for the dialog's summary. */
-export function estimateDimensions(scale: number, caption: boolean): { w: number; h: number } | null {
+export function estimateDimensions(
+  scale: number,
+  caption: boolean,
+  subject: AnimSubject = "radar",
+): { w: number; h: number } | null {
   const map = getMap();
   if (!map) return null;
   const box = map.getCanvas().getBoundingClientRect();
-  const panes = Math.max(1, Object.keys(useNexradStore.getState().paneRadar).length);
+  // The models and the satellite are captured from the focused pane alone.
+  const panes = subject !== "radar" ? 1 : Math.max(1, Object.keys(useNexradStore.getState().paneRadar).length);
   if (panes > 1) {
     const cols = gridCols(panes);
     const rows = Math.ceil(panes / cols);
@@ -736,7 +1191,8 @@ export function estimateDimensions(scale: number, caption: boolean): { w: number
   const s = Math.min(1, MAX_WIDTH / Math.max(box.width, 1)) * scale;
   const w = even(Math.max(2, Math.round(box.width * s)));
   const mapH = Math.max(2, Math.round(box.height * s));
-  return { w, h: even(mapH + (caption ? captionHeight(w) : 0)) };
+  const scaled = subject !== "satellite" || Boolean(selectSatProduct(useSatStore.getState())?.legend);
+  return { w, h: even(mapH + (caption ? captionHeight(w, scaled) : 0)) };
 }
 
 export function downloadBlob(blob: Blob, name: string): void {

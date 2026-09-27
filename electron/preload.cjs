@@ -34,4 +34,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   getVersion: () => ipcRenderer.invoke('app:version'),
   getBackendPort: () => ipcRenderer.invoke('backend:port'),
+
+  // Keep drawing at full pace while hidden, for the length of an animation export.
+  keepRendering: (on) => ipcRenderer.send('render:keep', !!on),
 });

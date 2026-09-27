@@ -319,19 +319,29 @@ def _norm(feature: dict) -> Optional[dict]:
 
 
 def fetch_lsr(hours: int = 12, end_unix: Optional[float] = None,
-              bbox: Optional[tuple[float, float, float, float]] = None) -> dict:
+              bbox: Optional[tuple[float, float, float, float]] = None,
+              start_unix: Optional[float] = None) -> dict:
     """Reports over a trailing window, newest first.
 
     `end_unix` lets the timeline scrub into the past: the window is the `hours`
     ending at that instant, so a report filed after the frame you are looking at
     is not drawn over it.
+
+    `start_unix` sets the window's start instead of `hours` -- the convective
+    day, 12Z to 12Z, is the window SPC's own storm report pages use. It is held
+    to MAX_HOURS before the end.
     """
-    hours = max(1, min(int(hours), MAX_HOURS))
     end = datetime.fromtimestamp(end_unix, timezone.utc) if end_unix else datetime.now(timezone.utc)
-    start = end - timedelta(hours=hours)
+    if start_unix is not None:
+        start = datetime.fromtimestamp(start_unix, timezone.utc)
+        start = min(max(start, end - timedelta(hours=MAX_HOURS)), end - timedelta(minutes=1))
+        hours = max(1, round((end - start).total_seconds() / 3600))
+    else:
+        hours = max(1, min(int(hours), MAX_HOURS))
+        start = end - timedelta(hours=hours)
 
     # Bucket the cache to the minute so scrubbing doesn't miss every time.
-    ck = (hours, int(end.timestamp()) // 60)
+    ck = (int(start.timestamp()) // 60, int(end.timestamp()) // 60)
     now = time.time()
     hit = _CACHE.get(ck)
     if hit and now - hit[0] < _TTL:

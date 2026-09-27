@@ -1,14 +1,18 @@
+import { useEffect, useState } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
 
+import { fetchStationNetworks, saveInmetToken, type StationNetworksStatus } from "../../lib/surfaceObs";
 import { useAppStore } from "../../store/useAppStore";
 import { LayerPower } from "../LayerPower";
 import { Select } from "../Select";
+import { StationSearch } from "../station/StationSearch";
 import {
   useSurfaceObsStore,
   ELEMENT_PRESETS,
   AGE_UNLIMITED,
   type SurfaceDisplayMode,
   type StationElements,
+  type StationNetworks,
 } from "../../store/useSurfaceObsStore";
 
 const LAYER = "surfobs";
@@ -37,6 +41,132 @@ const ELEMENTS: { key: keyof StationElements; label: string }[] = [
   { key: "pressure", label: "Pressure" },
   { key: "stationName", label: "Name" },
 ];
+
+const NETWORKS: { key: keyof StationNetworks; label: string; hint: string }[] = [
+  { key: "metar", label: "Airports", hint: "METAR: the full report, flight category, visibility and sky" },
+  { key: "synop", label: "Official", hint: "WMO synoptic stations worldwide, and INMET's automatic network with a token" },
+  { key: "mesonet", label: "Mesonets & personal", hint: "NOAA MADIS: state and road networks, RAWS, and personal stations (CWOP)" },
+];
+
+const fmtCount = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n));
+
+/**
+ * Which networks are plotted, and INMET's token. Brazil's automatic stations
+ * (520 of them) need a personal token, free from INMET by e-mail; it is kept
+ * by the backend on this machine.
+ */
+function NetworkBlock() {
+  const networks = useSurfaceObsStore((s) => s.networks);
+  const toggleNetwork = useSurfaceObsStore((s) => s.toggleNetwork);
+  const [status, setStatus] = useState<StationNetworksStatus | null>(null);
+  const [token, setToken] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const read = () =>
+      fetchStationNetworks()
+        .then((s) => alive && setStatus(s))
+        .catch(() => undefined);
+    void read();
+    const t = window.setInterval(read, 30_000);
+    return () => {
+      alive = false;
+      window.clearInterval(t);
+    };
+  }, []);
+
+  const save = (value: string) => {
+    setSaving(true);
+    setError(null);
+    saveInmetToken(value)
+      .then((s) => {
+        setStatus(s);
+        setToken("");
+        if (s.inmet.error) setError(s.inmet.error);
+      })
+      .catch((err) => setError(String(err instanceof Error ? err.message : err)))
+      .finally(() => setSaving(false));
+  };
+
+  const count = (k: keyof StationNetworks) =>
+    k === "synop"
+      ? (status?.synop.stations ?? 0) + (status?.inmet.stations ?? 0)
+      : k === "mesonet"
+        ? (status?.mesonet.stations ?? 0)
+        : null;
+
+  return (
+    <div className="sfx__block">
+      <div className="sfx__head">
+        <span>Networks</span>
+      </div>
+      <div className="sfx__chips">
+        {NETWORKS.map((n) => {
+          const c = count(n.key);
+          return (
+            <button
+              key={n.key}
+              type="button"
+              title={n.hint}
+              className={`sfx__chip${networks[n.key] ? " is-on" : ""}`}
+              aria-pressed={networks[n.key]}
+              onClick={() => toggleNetwork(n.key)}
+            >
+              {n.label}
+              {c ? <em className="sfx__count">{fmtCount(c)}</em> : null}
+            </button>
+          );
+        })}
+      </div>
+      <div className="sfx__head sfx__head--sub">
+        <span>INMET (Brazil)</span>
+        <b>
+          {status?.inmet.configured
+            ? status.inmet.stations
+              ? `${status.inmet.stations} stations`
+              : "token saved"
+            : "no token"}
+        </b>
+      </div>
+      {status?.inmet.configured ? (
+        <button type="button" className="sfx__chip sfx__chip--wide" disabled={saving} onClick={() => save("")}>
+          {saving ? "Working..." : "Remove the INMET token"}
+        </button>
+      ) : (
+        <form
+          className="sfx__token"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (token.trim()) save(token.trim());
+          }}
+        >
+          <input
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="Paste your INMET token"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+          />
+          <button type="submit" disabled={saving || !token.trim()}>
+            {saving ? <Loader2 size={12} className="sfx__status-spin" /> : "Save"}
+          </button>
+        </form>
+      )}
+      <p className="sfx__note">
+        INMET's 520 automatic stations need a personal token: free, asked for by e-mail to{" "}
+        <b>cadastro.act@inmet.gov.br</b>. It stays on this computer.
+      </p>
+      {(error || status?.inmet.error) && (
+        <p className="sfx__note is-error">
+          <AlertTriangle size={11} /> {error || status?.inmet.error}
+        </p>
+      )}
+    </div>
+  );
+}
 
 /** Segmented unit picker. Small on purpose: four of these sit side by side. */
 function Seg<T extends string>({
@@ -70,7 +200,7 @@ function Seg<T extends string>({
   );
 }
 
-/** Surface Obs control panel -- real METAR station plots. */
+/** Surface Obs control panel -- station plots from every network. */
 export function SurfaceObsView() {
   const enabled = useAppStore((s) => s.layers[LAYER]?.visible ?? false);
   const setLayerVisible = useAppStore((s) => s.setLayerVisible);
@@ -133,6 +263,15 @@ export function SurfaceObsView() {
           <>Ready</>
         )}
       </div>
+
+      <div className="sfx__block">
+        <div className="sfx__head">
+          <span>Stations</span>
+        </div>
+        <StationSearch />
+      </div>
+
+      <NetworkBlock />
 
       <div className="sfx__block">
         <div className="sfx__head">

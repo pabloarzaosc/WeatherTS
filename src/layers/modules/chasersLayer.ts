@@ -5,6 +5,7 @@ import { isStale } from "../../lib/chasers";
 import { useChaserStore } from "../../store/useChaserStore";
 import { useAuthStore } from "../../store/useAuthStore";
 import { ROLE_COLOR, ROLE_LETTER } from "../../lib/auth";
+import { mapInk } from "../../map/mapInk";
 
 const SOURCE_ID = "chasers";
 const HALO_LAYER = "chasers-halo";
@@ -307,7 +308,7 @@ export const chasersLayer: LayerModule = {
         },
         paint: {
           "text-color": byRole() as never,
-          "text-halo-color": "rgba(5,8,13,0.95)",
+          "text-halo-color": mapInk().halo,
           "text-halo-width": 1.6,
         },
       });
@@ -402,7 +403,7 @@ export const chasersLayer: LayerModule = {
         },
         paint: {
           "text-color": byRole() as never,
-          "text-halo-color": "rgba(5,8,13,0.95)",
+          "text-halo-color": mapInk().halo,
           "text-halo-width": 1.4,
         },
       });

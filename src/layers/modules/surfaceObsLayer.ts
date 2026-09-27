@@ -15,6 +15,25 @@ import {
   AGE_UNLIMITED,
   type SurfaceDisplayMode,
 } from "../../store/useSurfaceObsStore";
+import { mapInk } from "../../map/mapInk";
+
+/** Plain station-plot text: pale on a dark basemap, ink on a light one. */
+const neutral = () => (mapInk().tone === "light" ? mapInk().text : "#e8edf4");
+/**
+ * Each element's colour, and the deeper shade it takes on a light basemap: the
+ * pale greens and blues made for a black map vanish on white paper, where a
+ * chart prints temperature red, dewpoint green and pressure blue in full ink.
+ */
+const PLOT: Record<string, [dark: string, light: string]> = {
+  temp: ["#ff6b5e", "#c81e1e"],
+  dewp: ["#4ade80", "#0f7a2e"],
+  pres: ["#9fb4d6", "#1d4f91"],
+  id: ["#8ea0b6", "#4a5563"],
+  gust: ["#f6b93b", "#b86e00"],
+  vis: ["#c7d2e4", "#3a4452"],
+  thetae: ["#c58af9", "#6d2fb8"],
+};
+const plot = (k: keyof typeof PLOT) => PLOT[k][mapInk().tone === "light" ? 1 : 0];
 
 const SRC = "surfobs-src";
 const L_SKY = "surfobs-sky";
@@ -39,6 +58,10 @@ interface PaneState {
   controller: AbortController | null;
   fetchTimer: number | null;
   styleTimer: number | null;
+  /** Observations only arrived when the map moved, so a map left alone went
+   *  stale without saying so. METAR lands on its own cadence, specials in
+   *  between, so the view is refreshed on a timer too. */
+  refreshTimer: number | null;
   needsRebuild: boolean;
   onMove: () => void;
   unsub: () => void;
@@ -67,14 +90,28 @@ const one = (v: number | null) => (v == null ? "" : String(Math.round(v * 10) / 
 // One display feature = raw obs + precomputed plot strings/icon ids.
 function buildDisplay(f: GeoJSON.Feature<GeoJSON.Point, SurfaceObsProps>) {
   const p = f.properties;
-  const cover = p.cover && COVER_KEYS.has(p.cover) ? p.cover : "MISSING";
+  const kind = p.kind ?? "metar";
+  const cover = p.cover && COVER_KEYS.has(p.cover) ? p.cover : kind === "metar" ? "MISSING" : "DOT";
   const hasBarb = p.wspd != null && p.wspd >= 3 && p.wdir != null;
+  // A gust worth a label, the way a METAR only carries one: 10 kt or more and
+  // 5 kt over the mean. Mesonets and personal stations send their peak every
+  // report, so "G1", "G3" crowded every plot.
+  const gust = p.wgst != null && p.wgst >= Math.max(10, (p.wspd ?? 0) + 5) ? p.wgst : null;
   return {
     type: "Feature" as const,
     geometry: f.geometry,
     properties: {
       idTxt: p.id ?? "",
       nameTxt: p.name ?? "",
+      kind,
+      network: p.network ?? "METAR",
+      mslp: p.mslp ?? null,
+      precip: p.precip ?? null,
+      precipHours: p.precipHours ?? null,
+      tmax: p.tmax ?? null,
+      tmin: p.tmin ?? null,
+      oktas: p.oktas ?? null,
+      elev: p.elev ?? null,
       tF: rnd(cToF(p.temp)),
       tC: rnd(p.temp),
       tdF: rnd(cToF(p.dewp)),
@@ -84,9 +121,9 @@ function buildDisplay(f: GeoJSON.Feature<GeoJSON.Point, SurfaceObsProps>) {
       wspdKt: rnd(p.wspd),
       wspdMph: rnd(ktToMph(p.wspd)),
       wspdMs: one(ktToMs(p.wspd)),
-      wgstKt: p.wgst != null ? `G${Math.round(p.wgst)}` : "",
-      wgstMph: p.wgst != null ? `G${Math.round(ktToMph(p.wgst)!)}` : "",
-      wgstMs: p.wgst != null ? `G${one(ktToMs(p.wgst))}` : "",
+      wgstKt: gust != null ? `G${Math.round(gust)}` : "",
+      wgstMph: gust != null ? `G${Math.round(ktToMph(gust)!)}` : "",
+      wgstMs: gust != null ? `G${one(ktToMs(gust))}` : "",
       visMi: p.visib != null ? String(p.visib) : "",
       visKm: one(miToKm(p.visib)),
       rhTxt: rnd(p.rh),
@@ -204,11 +241,14 @@ function withAge<T extends { properties: Record<string, unknown> }>(f: T, now: n
   return f;
 }
 
-function scheduleFetch(map: MapLibreMap) {
+/** How often a still map re-reads its observations. */
+const REFRESH_MS = 5 * 60_000;
+
+function scheduleFetch(map: MapLibreMap, delayMs = 350) {
   const st = state.get(map);
   if (!st) return;
   if (st.fetchTimer) window.clearTimeout(st.fetchTimer);
-  st.fetchTimer = window.setTimeout(() => void doFetch(map), 350);
+  st.fetchTimer = window.setTimeout(() => void doFetch(map), delayMs);
 }
 
 function scheduleRender(map: MapLibreMap, rebuildNeeded: boolean) {
@@ -240,9 +280,21 @@ async function doFetch(map: MapLibreMap) {
   st.controller = new AbortController();
   onFetchStart();
   try {
-    const fc: SurfaceObsFC = await fetchSurfaceObs([lat0, lon0, lat1, lon1], st.controller.signal);
+    const { spacing, networks } = useSurfaceObsStore.getState();
+    const on = (Object.keys(networks) as (keyof typeof networks)[]).filter((k) => networks[k]);
+    // Half the declutter spacing, in degrees: the backend sends the best
+    // station of each such cell, and the declutter still has a choice.
+    const degPerPx = (lon1 - lon0) / Math.max(1, map.getCanvas().clientWidth);
+    const cell = Math.max(0.005, spacing * degPerPx * 0.5);
+    const fc: SurfaceObsFC = await fetchSurfaceObs([lat0, lon0, lat1, lon1], st.controller.signal, {
+      cell,
+      networks: on,
+    });
     st.raw = fc.features;
     scheduleRender(map, true);
+    // The synoptic and mesonet feeds are read in the background the first
+    // time; until they are in, the airports come alone and the map asks again.
+    if ((fc as SurfaceObsFC & { pending?: boolean }).pending) scheduleFetch(map, 8000);
     onFetchDone({ error: null, lastUpdatedAt: Date.now() });
   } catch (err) {
     if ((err as { name?: string }).name === "AbortError") {
@@ -286,14 +338,14 @@ function applyStyle(map: MapLibreMap) {
 
   // single-variable field + colour
   const single: Record<Exclude<SurfaceDisplayMode, "station" | "id">, { prop: string; color: string }> = {
-    temp: { prop: tempProp, color: "#ff6b5e" },
-    dewp: { prop: dewpProp, color: "#4ade80" },
-    wspd: { prop: wspdProp, color: "#e8edf4" },
-    wgst: { prop: wgstProp, color: "#f6b93b" },
-    altim: { prop: presProp, color: "#9fb4d6" },
-    visib: { prop: visProp, color: "#e8edf4" },
-    rh: { prop: "rhTxt", color: "#4ade80" },
-    thetae: { prop: "thetaeTxt", color: "#c58af9" },
+    temp: { prop: tempProp, color: plot("temp") },
+    dewp: { prop: dewpProp, color: plot("dewp") },
+    wspd: { prop: wspdProp, color: neutral() },
+    wgst: { prop: wgstProp, color: plot("gust") },
+    altim: { prop: presProp, color: plot("pres") },
+    visib: { prop: visProp, color: neutral() },
+    rh: { prop: "rhTxt", color: plot("dewp") },
+    thetae: { prop: "thetaeTxt", color: plot("thetae") },
   };
   if (!station && displayMode !== "id" && map.getLayer(L_SINGLE)) {
     const cfg = single[displayMode];
@@ -350,12 +402,16 @@ function textLayer(
       "text-size": size,
       "text-anchor": anchor,
       "text-offset": offset,
+      // A plot must not lose half of itself to a collision. MapLibre keeps a
+      // symbol allowed to overlap out of its collision index altogether, so
+      // nothing else can see it: the names keep clear of the plots themselves
+      // (obsPlaces.gather).
       "text-allow-overlap": true,
       "text-ignore-placement": true,
     },
     paint: {
       "text-color": color,
-      "text-halo-color": "rgba(8,11,15,0.95)",
+      "text-halo-color": mapInk().halo,
       "text-halo-width": 1.5,
     },
   };
@@ -365,9 +421,9 @@ function textLayer(
 export const surfaceObsLayer: LayerModule = {
   id: "surfobs",
   name: "Surface Obs",
-  description: "Global METAR station plots (Aviation Weather Center).",
+  description: "Station plots: airports (METAR), WMO synoptic stations, INMET (with a token) and the mesonets and personal stations NOAA MADIS gathers.",
   category: "weather",
-  source: "Aviation Weather Center — METAR",
+  source: "Aviation Weather Center (METAR), OGIMET (SYNOP), NOAA MADIS, INMET",
   defaultVisible: false,
   defaultOpacity: 1,
 
@@ -407,13 +463,13 @@ export const surfaceObsLayer: LayerModule = {
         },
       });
     }
-    if (!map.getLayer(L_TEMP)) map.addLayer(textLayer(L_TEMP, "tF", "#ff6b5e", "right", [-1.3, -0.9]) as never);
-    if (!map.getLayer(L_DEWP)) map.addLayer(textLayer(L_DEWP, "tdF", "#4ade80", "right", [-1.3, 0.9]) as never);
-    if (!map.getLayer(L_PRES)) map.addLayer(textLayer(L_PRES, "presMb", "#9fb4d6", "left", [1.3, -0.9]) as never);
-    if (!map.getLayer(L_ID)) map.addLayer(textLayer(L_ID, "idTxt", "#8ea0b6", "top", [0, 1.2], 9) as never);
-    if (!map.getLayer(L_SINGLE)) map.addLayer(textLayer(L_SINGLE, "tF", "#e8edf4", "center", [0, 0], 13) as never);
-    if (!map.getLayer(L_GUST)) map.addLayer(textLayer(L_GUST, "wgstKt", "#f6b93b", "left", [1.3, 0], 9) as never);
-    if (!map.getLayer(L_VIS)) map.addLayer(textLayer(L_VIS, "visMi", "#c7d2e4", "bottom", [0, -1.5], 9) as never);
+    if (!map.getLayer(L_TEMP)) map.addLayer(textLayer(L_TEMP, "tF", plot("temp"), "right", [-1.3, -0.9]) as never);
+    if (!map.getLayer(L_DEWP)) map.addLayer(textLayer(L_DEWP, "tdF", plot("dewp"), "right", [-1.3, 0.9]) as never);
+    if (!map.getLayer(L_PRES)) map.addLayer(textLayer(L_PRES, "presMb", plot("pres"), "left", [1.3, -0.9]) as never);
+    if (!map.getLayer(L_ID)) map.addLayer(textLayer(L_ID, "idTxt", plot("id"), "top", [0, 1.2], 9) as never);
+    if (!map.getLayer(L_SINGLE)) map.addLayer(textLayer(L_SINGLE, "tF", neutral(), "center", [0, 0], 13) as never);
+    if (!map.getLayer(L_GUST)) map.addLayer(textLayer(L_GUST, "wgstKt", plot("gust"), "left", [1.3, 0], 9) as never);
+    if (!map.getLayer(L_VIS)) map.addLayer(textLayer(L_VIS, "visMi", plot("vis"), "bottom", [0, -1.5], 9) as never);
     if (!map.getLayer(L_CALM)) {
       map.addLayer({
         id: L_CALM,
@@ -423,7 +479,7 @@ export const surfaceObsLayer: LayerModule = {
         paint: {
           "circle-radius": 5,
           "circle-color": "rgba(0,0,0,0)",
-          "circle-stroke-color": "#e8edf4",
+          "circle-stroke-color": neutral(),
           "circle-stroke-width": 1.2,
         },
       });
@@ -442,6 +498,9 @@ export const surfaceObsLayer: LayerModule = {
     // is asked at use instead.
     let openStation: { props: Record<string, any>; lat: number; lon: number } | null = null;
 
+    /** What the card calls the station: its network for anything but an airport. */
+    const kindLabel = (p: Record<string, any>) =>
+      p.kind === "synop" ? "SYNOP" : p.kind === "inmet" ? "INMET" : p.kind === "mesonet" ? String(p.network || "Mesonet") : "METAR";
     const escHtml = (value: unknown) =>
       String(value ?? "—").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
     const num = (v: unknown): number | null => {
@@ -473,14 +532,18 @@ export const surfaceObsLayer: LayerModule = {
         <div class="sfc-mini">
           <button type="button" class="sfc-mini__open" data-open="1">
             <div class="sfc-mini__head">
-              <b>METAR ${escHtml(p.idTxt || p.id || "station")}</b>
+              <b>${escHtml(kindLabel(p))} ${escHtml(p.idTxt || p.id || "station")}</b>
               <span>${escHtml(relativeTime(num(p.obsTime)))}</span>
             </div>
+            ${p.kind && p.kind !== "metar" && (p.nameTxt || p.name) ? `<div class="sfc-mini__name">${escHtml(p.nameTxt || p.name)}</div>` : ""}
             <div class="sfc-mini__rows">
               ${row("Temperature", temp == null ? "\u2014" : `${temp} \u00b0C`)}
               ${row("Dewpoint", dewp == null ? "\u2014" : `${dewp} \u00b0C`)}
               ${row("Wind", wspd == null ? "\u2014" : `${compassPoint(wdir)} ${wspd} kt`)}
               ${row("Pressure", altim == null ? "\u2014" : `${Math.round(altim)} hPa`)}
+              ${p.kind && p.kind !== "metar" && num(p.precip) != null
+                ? row("Rain", `${num(p.precip)} mm${num(p.precipHours) ? ` / ${num(p.precipHours)} h` : ""}`)
+                : ""}
             </div>
             <span class="sfc-mini__more">Full report</span>
           </button>
@@ -548,12 +611,17 @@ export const surfaceObsLayer: LayerModule = {
       // need the source rebuilt; everything else is a paint/layout swap.
       const needsRebuild = s.spacing !== prev.spacing || s.maxAgeMin !== prev.maxAgeMin;
       scheduleRender(map, needsRebuild);
+      // Which networks, and how finely the backend thins them, change what
+      // is asked for.
+      if (s.networks !== prev.networks || s.spacing !== prev.spacing) scheduleFetch(map);
     });
+    const refreshTimer = window.setInterval(() => void doFetch(map), REFRESH_MS);
     state.set(map, {
       raw: [],
       controller: null,
       fetchTimer: null,
       styleTimer: null,
+      refreshTimer,
       needsRebuild: false,
       onMove,
       unsub,
@@ -569,6 +637,7 @@ export const surfaceObsLayer: LayerModule = {
     const st = state.get(map);
     if (st) {
       if (st.fetchTimer) window.clearTimeout(st.fetchTimer);
+      if (st.refreshTimer) window.clearInterval(st.refreshTimer);
       if (st.styleTimer) window.cancelAnimationFrame(st.styleTimer);
       st.controller?.abort();
       map.off("moveend", st.onMove);

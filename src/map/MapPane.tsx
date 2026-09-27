@@ -9,8 +9,8 @@ import { attachSettings } from "../settings/mapStyle";
 import { useSettingsStore } from "../settings/useSettingsStore";
 import { useAppStore } from "../store/useAppStore";
 import { useNexradStore } from "../store/useNexradStore";
+import { ObsColorBar } from "../ui/ObsColorBar";
 import { RadarColorBar } from "../ui/RadarColorBar";
-import { MrmsColorBar } from "../ui/MrmsColorBar";
 
 // One split-screen pane: a full MapLibre map with the whole layer stack, so a
 // pane is a real workspace (alerts, sounding clicks, tools) and not a
@@ -289,9 +289,9 @@ export function MapPane({ id }: { id: string }) {
           products was meaningless, and it spanned the panes it didn't describe */}
       <div className="mappane__cbar">
         <RadarColorBar paneId={id} />
+        <ObsColorBar />
         {/* The mosaic is not a per-pane product -- one grid covers the app --
             so its scale is drawn once, under the pane that owns the tools. */}
-        {focused && <MrmsColorBar />}
       </div>
     </div>
   );

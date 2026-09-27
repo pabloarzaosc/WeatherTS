@@ -9,6 +9,10 @@ const SRC = "alerts-src";
 const FILL = "alerts-fill";
 const CASING = "alerts-casing";
 const OUTLINE = "alerts-outline";
+const WATCH_CASING = "alerts-watch-casing";
+const WATCH_LINE = "alerts-watch-line";
+const ADVISORY_CASING = "alerts-advisory-casing";
+const ADVISORY_LINE = "alerts-advisory-line";
 const DEFAULT_ALERT_OPACITY = 0.86;
 
 /** Source id the AlertController feeds with fetched alert polygons. */
@@ -66,6 +70,22 @@ const kindOf: ExpressionSpecification = ["coalesce", ["get", "kind"], "other"];
 const HAS_OUTLINE: ExpressionSpecification = ["match", kindOf, NO_LINE_KINDS, false, true];
 /** True for a tier drawn as colour only. */
 const NO_OUTLINE: ExpressionSpecification = ["match", kindOf, NO_LINE_KINDS, true, false];
+/** True for a watch. */
+const IS_WATCH: ExpressionSpecification = ["==", kindOf, "watch"];
+/** True for an advisory. */
+const IS_ADVISORY: ExpressionSpecification = ["==", kindOf, "advisory"];
+
+/**
+ * Watches and advisories get a line of their own, above everything like the
+ * warnings' outline. Colour alone was their whole shape, and that colour sat
+ * under the Models field and the radar with the rest of the fills: with a model
+ * on the map, a Tornado Watch or a Wind Advisory was not there at all. Neither
+ * reads as a warning's hard edge: a watch is dashed, an advisory dotted -- the
+ * weaker the tier, the lighter the line.
+ */
+const WATCH_DASH = [4, 2.6];
+/** Round-capped dashes this short are dots. */
+const ADVISORY_DASH = [0.1, 2.4];
 
 function pushFilter(map: import("maplibre-gl").Map) {
   const expr = visibilityExpr();
@@ -78,6 +98,19 @@ function pushFilter(map: import("maplibre-gl").Map) {
   for (const id of [CASING, OUTLINE]) {
     if (!map.getLayer(id)) continue;
     map.setFilter(id, lineFilter);
+  }
+  // With every tier outlined in Settings, watches and advisories already have a line.
+  const outlined = getSetting<boolean>("alerts.outlineWatches");
+  const tier = (is: ExpressionSpecification) => (expr ? (["all", expr, is] as ExpressionSpecification) : is);
+  for (const [ids, is] of [
+    [[WATCH_CASING, WATCH_LINE], IS_WATCH],
+    [[ADVISORY_CASING, ADVISORY_LINE], IS_ADVISORY],
+  ] as const) {
+    for (const id of ids) {
+      if (!map.getLayer(id)) continue;
+      map.setFilter(id, tier(is));
+      map.setLayoutProperty(id, "visibility", outlined ? "none" : "visible");
+    }
   }
 }
 
@@ -229,6 +262,62 @@ export const alertsLayer: LayerModule = {
       });
     }
 
+    // Advisories: a thin dark line under coloured dots.
+    if (!map.getLayer(ADVISORY_CASING)) {
+      map.addLayer({
+        id: ADVISORY_CASING,
+        type: "line",
+        source: SRC,
+        layout: { "line-sort-key": sortKey, "line-join": "round" },
+        paint: {
+          "line-color": CASING_COLOR,
+          "line-width": 1.1,
+          "line-opacity": lineOpacity(DEFAULT_ALERT_OPACITY),
+        },
+      });
+    }
+    if (!map.getLayer(ADVISORY_LINE)) {
+      map.addLayer({
+        id: ADVISORY_LINE,
+        type: "line",
+        source: SRC,
+        layout: { "line-sort-key": sortKey, "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": 2.2,
+          "line-dasharray": ADVISORY_DASH,
+          "line-opacity": lineOpacity(DEFAULT_ALERT_OPACITY),
+        },
+      });
+    }
+    if (!map.getLayer(WATCH_CASING)) {
+      map.addLayer({
+        id: WATCH_CASING,
+        type: "line",
+        source: SRC,
+        layout: { "line-sort-key": sortKey, "line-join": "round" },
+        paint: {
+          "line-color": CASING_COLOR,
+          "line-width": 1.5 + CASING_EXTRA_PX,
+          "line-opacity": lineOpacity(DEFAULT_ALERT_OPACITY),
+        },
+      });
+    }
+    if (!map.getLayer(WATCH_LINE)) {
+      map.addLayer({
+        id: WATCH_LINE,
+        type: "line",
+        source: SRC,
+        layout: { "line-sort-key": sortKey, "line-join": "round" },
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": 1.5,
+          "line-dasharray": WATCH_DASH,
+          "line-opacity": lineOpacity(DEFAULT_ALERT_OPACITY),
+        },
+      });
+    }
+
     const source = map.getSource(SRC) as GeoJSONSource | undefined;
     source?.setData(alertsToFeatureCollection(useAlertStore.getState().features));
 
@@ -290,6 +379,9 @@ export const alertsLayer: LayerModule = {
       st.unsubTime();
       state.delete(map);
     }
+    for (const id of [WATCH_LINE, WATCH_CASING, ADVISORY_LINE, ADVISORY_CASING]) {
+      if (map.getLayer(id)) map.removeLayer(id);
+    }
     if (map.getLayer(OUTLINE)) map.removeLayer(OUTLINE);
     if (map.getLayer(CASING)) map.removeLayer(CASING);
     if (map.getLayer(FILL)) map.removeLayer(FILL);
@@ -303,10 +395,13 @@ export const alertsLayer: LayerModule = {
     if (map.getLayer(FILL)) map.setPaintProperty(FILL, "fill-opacity", fillOpacity(opacity));
     if (map.getLayer(CASING)) map.setPaintProperty(CASING, "line-opacity", lineOpacity(opacity));
     if (map.getLayer(OUTLINE)) map.setPaintProperty(OUTLINE, "line-opacity", lineOpacity(opacity));
+    for (const id of [ADVISORY_CASING, ADVISORY_LINE, WATCH_CASING, WATCH_LINE]) {
+      if (map.getLayer(id)) map.setPaintProperty(id, "line-opacity", lineOpacity(opacity));
+    }
   },
 
   getLayerIds() {
-    return [FILL, CASING, OUTLINE];
+    return [FILL, ADVISORY_CASING, ADVISORY_LINE, WATCH_CASING, WATCH_LINE, CASING, OUTLINE];
   },
 
   // The polygon border has to stay readable over whatever product is drawn on
@@ -317,7 +412,9 @@ export const alertsLayer: LayerModule = {
     // shading above the radar mesh too, and the scan is the thing you want to
     // read -- so the fill stays where the normal order puts it (under radar,
     // which is registered later) while the border still marks the warning.
-    // Casing first: it has to stay directly under the line it belongs to.
-    return [CASING, OUTLINE];
+    // Casing first: it has to stay directly under the line it belongs to. The
+    // tiers stack by weight -- advisory dots, then watch dashes, then warnings:
+    // a warning inside a watch is the edge that matters.
+    return [ADVISORY_CASING, ADVISORY_LINE, WATCH_CASING, WATCH_LINE, CASING, OUTLINE];
   },
 };
