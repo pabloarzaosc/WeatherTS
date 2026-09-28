@@ -27,6 +27,7 @@ const MODES: { id: SurfaceDisplayMode; label: string }[] = [
   { id: "visib", label: "Visibility" },
   { id: "rh", label: "Relative humidity" },
   { id: "thetae", label: "Theta-e" },
+  { id: "precip", label: "Rain, last hour" },
   { id: "id", label: "Station name" },
 ];
 
@@ -40,6 +41,8 @@ const ELEMENTS: { key: keyof StationElements; label: string }[] = [
   { key: "visibility", label: "Visibility" },
   { key: "pressure", label: "Pressure" },
   { key: "stationName", label: "Name" },
+  { key: "weather", label: "Weather" },
+  { key: "rain", label: "Rain" },
 ];
 
 const NETWORKS: { key: keyof StationNetworks; label: string; hint: string }[] = [
@@ -218,6 +221,8 @@ export function SurfaceObsView() {
   const layerBusy = useSurfaceObsStore((s) => s.layerBusy);
   const layerError = useSurfaceObsStore((s) => s.layerError);
   const layerLastUpdatedAt = useSurfaceObsStore((s) => s.layerLastUpdatedAt);
+  const atUnix = useSurfaceObsStore((s) => s.atUnix);
+  const unavailable = useSurfaceObsStore((s) => s.unavailable);
 
   const setDisplayMode = useSurfaceObsStore((s) => s.setDisplayMode);
   const toggleElement = useSurfaceObsStore((s) => s.toggleElement);
@@ -239,6 +244,14 @@ export function SurfaceObsView() {
   const updatedLabel = layerLastUpdatedAt
     ? new Date(layerLastUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : null;
+  // Following the timeline to a past frame: say which instant, and which
+  // networks keep nothing from then (MADIS about five days, the AWC fifteen).
+  const atLabel =
+    atUnix != null
+      ? `${new Date(atUnix * 1000).toISOString().slice(0, 16).replace("T", " ")}Z`
+      : null;
+  const NET_NAMES: Record<string, string> = { metar: "airports", mesonet: "mesonets", synop: "official stations" };
+  const missing = unavailable.map((n) => NET_NAMES[n] ?? n);
 
   return (
     <div className="sfx">
@@ -256,6 +269,11 @@ export function SurfaceObsView() {
         ) : layerError ? (
           <>
             <AlertTriangle size={13} /> Could not refresh observations: {layerError}
+          </>
+        ) : enabled && atLabel ? (
+          <>
+            Reports as of {atLabel}, the frame on the timeline
+            {missing.length ? ` · none kept that long from the ${missing.join(" and ")}` : ""}
           </>
         ) : enabled && updatedLabel ? (
           <>Updated at {updatedLabel}</>

@@ -32,6 +32,8 @@ const PLOT: Record<string, [dark: string, light: string]> = {
   gust: ["#f6b93b", "#b86e00"],
   vis: ["#c7d2e4", "#3a4452"],
   thetae: ["#c58af9", "#6d2fb8"],
+  wx: ["#f08bd6", "#a1237f"],
+  rain: ["#6fb6ff", "#0d5bb5"],
 };
 const plot = (k: keyof typeof PLOT) => PLOT[k][mapInk().tone === "light" ? 1 : 0];
 
@@ -46,9 +48,11 @@ const L_SINGLE = "surfobs-single";
 const L_GUST = "surfobs-gust";
 const L_VIS = "surfobs-vis";
 const L_CALM = "surfobs-calm";
-const TEXT_LAYERS = [L_TEMP, L_DEWP, L_PRES, L_ID, L_SINGLE, L_GUST, L_VIS];
+const L_WX = "surfobs-wx";
+const L_RAIN = "surfobs-rain";
+const TEXT_LAYERS = [L_TEMP, L_DEWP, L_PRES, L_ID, L_SINGLE, L_GUST, L_VIS, L_WX, L_RAIN];
 // Every layer this module owns, bottom -> top. Doubles as the z-order list.
-const ALL_LAYERS = [L_CALM, L_SKY, L_BARB, L_TEMP, L_DEWP, L_PRES, L_ID, L_SINGLE, L_GUST, L_VIS];
+const ALL_LAYERS = [L_CALM, L_SKY, L_BARB, L_TEMP, L_DEWP, L_PRES, L_ID, L_SINGLE, L_GUST, L_VIS, L_WX, L_RAIN];
 
 // Per-map: each pane fetches for its own viewport, so the in-flight request,
 // the debounce timer and the cached features all belong to one map. Sharing
@@ -87,6 +91,26 @@ const inHgTxt = (mb: number | null) => {
 };
 const one = (v: number | null) => (v == null ? "" : String(Math.round(v * 10) / 10));
 
+/**
+ * The last hour's rain as a plot prints it -- only an hour's amount (a
+ * synoptic station's 6 or 12 hours goes to its card, not the plot), and only
+ * where some fell: "0" at every dry station would bury the rest. `zero` keeps
+ * the zeros, for the single-value "Rain" view.
+ */
+function rainTxt(p: SurfaceObsProps, unit: "mm" | "in", zero: boolean): string {
+  if (p.precipHours !== 1 || p.precip == null) return "";
+  if (p.precipTrace) return "T";
+  if (p.precip <= 0) return zero ? "0" : "";
+  return unit === "mm" ? p.precip.toFixed(1) : (p.precip / 25.4).toFixed(2);
+}
+
+/** Present weather in METAR letters, its first group ("+TSRA", "-RA"): the
+ *  obscuration after it (BR, HZ) is what the visibility already says. */
+function wxTxt(p: SurfaceObsProps): string {
+  const code = p.kind === "synop" ? p.wxCode : p.kind === "metar" || p.kind == null ? p.wx : null;
+  return code ? code.split(/\s+/)[0] : "";
+}
+
 // One display feature = raw obs + precomputed plot strings/icon ids.
 function buildDisplay(f: GeoJSON.Feature<GeoJSON.Point, SurfaceObsProps>) {
   const p = f.properties;
@@ -108,6 +132,13 @@ function buildDisplay(f: GeoJSON.Feature<GeoJSON.Point, SurfaceObsProps>) {
       mslp: p.mslp ?? null,
       precip: p.precip ?? null,
       precipHours: p.precipHours ?? null,
+      precipTrace: p.precipTrace ?? false,
+      wxCode: p.wxCode ?? null,
+      wxTxt: wxTxt(p),
+      rainMm: rainTxt(p, "mm", false),
+      rainIn: rainTxt(p, "in", false),
+      rainMm0: rainTxt(p, "mm", true),
+      rainIn0: rainTxt(p, "in", true),
       tmax: p.tmax ?? null,
       tmin: p.tmin ?? null,
       oktas: p.oktas ?? null,
@@ -188,10 +219,12 @@ function declutter(
 }
 
 function rebuild(map: MapLibreMap) {
-  const { spacing, maxAgeMin } = useSurfaceObsStore.getState();
+  const { spacing, maxAgeMin, atUnix } = useSurfaceObsStore.getState();
   // Age is filtered before declutter, not after: a stale station must not win a
   // declutter cell and so suppress a fresh neighbour that would have been kept.
-  const now = Date.now();
+  // Measured from the instant on screen: at a past frame the reports are hours
+  // old by the clock and just minutes old for the frame.
+  const now = atUnix != null ? atUnix * 1000 : Date.now();
   const cutoff = maxAgeMin > AGE_UNLIMITED ? now - maxAgeMin * 60_000 : null;
   const fresh =
     cutoff == null
@@ -286,11 +319,19 @@ async function doFetch(map: MapLibreMap) {
     // station of each such cell, and the declutter still has a choice.
     const degPerPx = (lon1 - lon0) / Math.max(1, map.getCanvas().clientWidth);
     const cell = Math.max(0.005, spacing * degPerPx * 0.5);
+    const at = useSurfaceObsStore.getState().atUnix;
     const fc: SurfaceObsFC = await fetchSurfaceObs([lat0, lon0, lat1, lon1], st.controller.signal, {
       cell,
       networks: on,
+      at,
     });
+    // An answer for an instant the timeline has already left is dropped.
+    if (useSurfaceObsStore.getState().atUnix !== at) {
+      onFetchDone();
+      return;
+    }
     st.raw = fc.features;
+    useSurfaceObsStore.getState().setUnavailable(fc.unavailable ?? []);
     scheduleRender(map, true);
     // The synoptic and mesonet feeds are read in the background the first
     // time; until they are in, the airports come alone and the map asks again.
@@ -325,6 +366,8 @@ function applyStyle(map: MapLibreMap) {
   setVis(L_GUST, station && elements.gust);
   setVis(L_VIS, station && elements.visibility);
   setVis(L_CALM, station && elements.calm);
+  setVis(L_WX, station && elements.weather);
+  setVis(L_RAIN, station && elements.rain);
 
   // Which precomputed property each unit choice maps to. buildDisplay writes
   // every variant, so switching units is a text-field swap, not a re-fetch.
@@ -335,6 +378,8 @@ function applyStyle(map: MapLibreMap) {
   const wgstProp = s.windUnits === "kt" ? "wgstKt" : s.windUnits === "mph" ? "wgstMph" : "wgstMs";
   const presProp = s.presUnits === "mb" ? "presMb" : "presInHg";
   const visProp = s.visUnits === "mi" ? "visMi" : "visKm";
+  // Rain in the depth that goes with the temperature, as on the station page.
+  const rainProp = s.tempUnits === "C" ? "rainMm" : "rainIn";
 
   // single-variable field + colour
   const single: Record<Exclude<SurfaceDisplayMode, "station" | "id">, { prop: string; color: string }> = {
@@ -346,6 +391,7 @@ function applyStyle(map: MapLibreMap) {
     visib: { prop: visProp, color: neutral() },
     rh: { prop: "rhTxt", color: plot("dewp") },
     thetae: { prop: "thetaeTxt", color: plot("thetae") },
+    precip: { prop: `${rainProp}0`, color: plot("rain") },
   };
   if (!station && displayMode !== "id" && map.getLayer(L_SINGLE)) {
     const cfg = single[displayMode];
@@ -359,6 +405,7 @@ function applyStyle(map: MapLibreMap) {
   if (map.getLayer(L_PRES)) map.setLayoutProperty(L_PRES, "text-field", ["get", presProp]);
   if (map.getLayer(L_VIS)) map.setLayoutProperty(L_VIS, "text-field", ["get", visProp]);
   if (map.getLayer(L_GUST)) map.setLayoutProperty(L_GUST, "text-field", ["get", wgstProp]);
+  if (map.getLayer(L_RAIN)) map.setLayoutProperty(L_RAIN, "text-field", ["get", rainProp]);
 
   // Fade ageing observations so a reading taken minutes ago is visually
   // distinct from one that has been sitting for an hour. The ramp starts
@@ -470,6 +517,10 @@ export const surfaceObsLayer: LayerModule = {
     if (!map.getLayer(L_SINGLE)) map.addLayer(textLayer(L_SINGLE, "tF", neutral(), "center", [0, 0], 13) as never);
     if (!map.getLayer(L_GUST)) map.addLayer(textLayer(L_GUST, "wgstKt", plot("gust"), "left", [1.3, 0], 9) as never);
     if (!map.getLayer(L_VIS)) map.addLayer(textLayer(L_VIS, "visMi", plot("vis"), "bottom", [0, -1.5], 9) as never);
+    // Where a plot puts them: present weather left of the circle, between the
+    // temperature and the dewpoint; the hour's rain at the lower right.
+    if (!map.getLayer(L_WX)) map.addLayer(textLayer(L_WX, "wxTxt", plot("wx"), "right", [-1.3, 0], 9) as never);
+    if (!map.getLayer(L_RAIN)) map.addLayer(textLayer(L_RAIN, "rainIn", plot("rain"), "left", [1.3, 0.9], 9) as never);
     if (!map.getLayer(L_CALM)) {
       map.addLayer({
         id: L_CALM,
@@ -524,6 +575,25 @@ export const surfaceObsLayer: LayerModule = {
       const wdir = num(p.wdir);
       const altim = num(p.altim);
       const sites = nearestRadars([st.lon, st.lat]);
+      const precip = num(p.precip);
+      const hoursOf = num(p.precipHours);
+      const rainLabel =
+        p.kind === "synop"
+          ? `Rain, last ${hoursOf ?? "?"} h`
+          : p.kind == null || p.kind === "metar"
+            ? "Rain, this hour"
+            : "Rain, last hour";
+      const rainValue =
+        precip == null
+          ? null
+          : p.precipTrace === true || p.precipTrace === "true"
+            ? "Trace"
+            : precip <= 0
+              ? "None"
+              : `${precip.toFixed(1)} mm`;
+      const weather = (p.kind == null || p.kind === "metar" ? p.wx : p.kind === "synop" ? p.wx : null) as string | null;
+      const obsMs = num(p.obsTime);
+      const clock = obsMs == null ? "" : `${new Date((obsMs > 1e11 ? obsMs : obsMs * 1000)).toISOString().slice(11, 16)}Z`;
 
       const row = (label: string, value: string) =>
         `<div class="sfc-mini__row"><span>${escHtml(label)}</span><b>${value}</b></div>`;
@@ -533,7 +603,7 @@ export const surfaceObsLayer: LayerModule = {
           <button type="button" class="sfc-mini__open" data-open="1">
             <div class="sfc-mini__head">
               <b>${escHtml(kindLabel(p))} ${escHtml(p.idTxt || p.id || "station")}</b>
-              <span>${escHtml(relativeTime(num(p.obsTime)))}</span>
+              <span>${escHtml(clock)} · ${escHtml(relativeTime(num(p.obsTime)))}</span>
             </div>
             ${p.kind && p.kind !== "metar" && (p.nameTxt || p.name) ? `<div class="sfc-mini__name">${escHtml(p.nameTxt || p.name)}</div>` : ""}
             <div class="sfc-mini__rows">
@@ -541,9 +611,8 @@ export const surfaceObsLayer: LayerModule = {
               ${row("Dewpoint", dewp == null ? "\u2014" : `${dewp} \u00b0C`)}
               ${row("Wind", wspd == null ? "\u2014" : `${compassPoint(wdir)} ${wspd} kt`)}
               ${row("Pressure", altim == null ? "\u2014" : `${Math.round(altim)} hPa`)}
-              ${p.kind && p.kind !== "metar" && num(p.precip) != null
-                ? row("Rain", `${num(p.precip)} mm${num(p.precipHours) ? ` / ${num(p.precipHours)} h` : ""}`)
-                : ""}
+              ${weather ? row("Weather", escHtml(weather)) : ""}
+              ${rainValue != null ? row(rainLabel, rainValue) : ""}
             </div>
             <span class="sfc-mini__more">Full report</span>
           </button>
@@ -597,7 +666,7 @@ export const surfaceObsLayer: LayerModule = {
       void useNexradStore.getState().loadCatalog().then(render);
       render();
     };
-    for (const id of [L_SKY, L_BARB, L_TEMP, L_DEWP, L_PRES, L_ID, L_SINGLE, L_GUST, L_VIS, L_CALM]) {
+    for (const id of [L_SKY, L_BARB, L_TEMP, L_DEWP, L_PRES, L_ID, L_SINGLE, L_GUST, L_VIS, L_CALM, L_WX, L_RAIN]) {
       map.on("click", id, onClick);
     }
 
@@ -612,8 +681,9 @@ export const surfaceObsLayer: LayerModule = {
       const needsRebuild = s.spacing !== prev.spacing || s.maxAgeMin !== prev.maxAgeMin;
       scheduleRender(map, needsRebuild);
       // Which networks, and how finely the backend thins them, change what
-      // is asked for.
+      // is asked for -- and so does the instant the timeline is on.
       if (s.networks !== prev.networks || s.spacing !== prev.spacing) scheduleFetch(map);
+      if (s.atUnix !== prev.atUnix) scheduleFetch(map, 120);
     });
     const refreshTimer = window.setInterval(() => void doFetch(map), REFRESH_MS);
     state.set(map, {
@@ -642,14 +712,14 @@ export const surfaceObsLayer: LayerModule = {
       st.controller?.abort();
       map.off("moveend", st.onMove);
       st.unsub();
-      for (const id of [L_SKY, L_BARB, L_TEMP, L_DEWP, L_PRES, L_ID, L_SINGLE, L_GUST, L_VIS, L_CALM]) {
+      for (const id of [L_SKY, L_BARB, L_TEMP, L_DEWP, L_PRES, L_ID, L_SINGLE, L_GUST, L_VIS, L_CALM, L_WX, L_RAIN]) {
         map.off("click", id, st.onClick);
       }
       st.popup.remove();
       state.delete(map);
     }
     if (activeFetches === 0) setLayerStatus({ busy: false });
-    for (const id of [L_CALM, L_VIS, L_GUST, L_SINGLE, L_ID, L_PRES, L_DEWP, L_TEMP, L_BARB, L_SKY]) {
+    for (const id of [L_RAIN, L_WX, L_CALM, L_VIS, L_GUST, L_SINGLE, L_ID, L_PRES, L_DEWP, L_TEMP, L_BARB, L_SKY]) {
       if (map.getLayer(id)) map.removeLayer(id);
     }
     if (map.getSource(SRC)) map.removeSource(SRC);

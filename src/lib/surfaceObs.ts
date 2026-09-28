@@ -19,9 +19,15 @@ export interface SurfaceObsProps {
   network?: string;
   /** Sea-level pressure, where the station gives or allows it (mb). */
   mslp?: number | null;
-  /** Precipitation (mm) over `precipHours` (a mesonet's is its own accumulation). */
+  /** Precipitation (mm) over `precipHours`: an airport's since its last
+   *  hourly report, a mesonet's and INMET's in the last hour, a synoptic
+   *  station's over the period its report gives (often 6 or 12 h). */
   precip?: number | null;
   precipHours?: number | null;
+  /** An airport's P0000: some fell, too little to measure. */
+  precipTrace?: boolean;
+  /** A synoptic station's present weather as METAR letters (TSGR, +SHRA). */
+  wxCode?: string | null;
   /** Max and min temperature (C): of the last 24 h, or of the hour for INMET. */
   tmax?: number | null;
   tmin?: number | null;
@@ -47,12 +53,19 @@ export interface SurfaceObsProps {
   obsTime: number | null;
 }
 
-export type SurfaceObsFC = GeoJSON.FeatureCollection<GeoJSON.Point, SurfaceObsProps>;
+export type SurfaceObsFC = GeoJSON.FeatureCollection<GeoJSON.Point, SurfaceObsProps> & {
+  /** A network still being read for the first time (or for a past instant). */
+  pending?: boolean;
+  /** The instant these are the reports of (unix s); null is now. */
+  at?: number | null;
+  /** Networks that keep nothing for `at`: shown as absent, not as today's. */
+  unavailable?: string[];
+};
 
 export async function fetchSurfaceObs(
   bbox: [number, number, number, number], // lat0, lon0, lat1, lon1
   signal?: AbortSignal,
-  opts: { cell?: number; networks?: string[] } = {},
+  opts: { cell?: number; networks?: string[]; at?: number | null } = {},
 ): Promise<SurfaceObsFC> {
   const s = bbox.map((n) => n.toFixed(2)).join(",");
   const q = new URLSearchParams({ bbox: s });
@@ -60,6 +73,8 @@ export async function fetchSurfaceObs(
   // mesonets before sending -- 32,000 across the US.
   if (opts.cell && opts.cell > 0) q.set("cell", opts.cell.toFixed(4));
   if (opts.networks) q.set("networks", opts.networks.join(","));
+  // The reports in force at a past instant, as the timeline shows one.
+  if (opts.at != null) q.set("at", String(Math.round(opts.at)));
   const res = await fetch(`${BASE}/api/surface-obs?${q}`, { signal });
   if (!res.ok) throw new Error(`surface-obs ${res.status}`);
   return res.json();

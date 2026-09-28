@@ -13,6 +13,7 @@ import { obsFramesFailed, obsFramesHere, useObsStore } from "../store/useObsStor
 import { obsSharpBusy, obsSharpReady } from "../layers/modules/obsLayer";
 import { satFrameFailed, satFrameHere } from "../layers/modules/satelliteLayer";
 import { useSatStore } from "../store/useSatStore";
+import { useSurfaceObsStore } from "../store/useSurfaceObsStore";
 import { fhText } from "../lib/observations";
 
 /** Frames a play buffers ahead before it steps, like a video: radar scans,
@@ -112,6 +113,7 @@ export function MapTimeline() {
   const obsIndex = useObsStore((s) => s.index);
   const obsBusy = useObsStore((s) => s.busy);
   const lsrVisible = useAppStore((s) => s.layers["lsr"]?.visible ?? false);
+  const surfVisible = useAppStore((s) => s.layers["surfobs"]?.visible ?? false);
   const frontsVisible = useAppStore((s) => s.layers["fronts"]?.visible ?? false);
   const frontFrames = useFrontsStore((s) => s.frames);
   const frontIndex = useFrontsStore((s) => s.index);
@@ -287,6 +289,18 @@ export function MapTimeline() {
     const follows = isRadar || isSat || isObs;
     useLsrStore.getState().setEndUnix(follows ? selectedUnix : null);
   }, [lsrVisible, isLsr, isRadar, isSat, isObs, selectedUnix]);
+
+  // The station plots too: at a past radar, satellite or analysis frame (or a
+  // storm-report time) each station shows the report it had made by then, not
+  // its newest one -- a storm on a scan from an hour ago used to sit over
+  // reports from now, and a gauge under it read dry. At the live edge, and at
+  // a forecast hour, they are the newest.
+  useEffect(() => {
+    const follows = isRadar || isSat || isLsr || (isObs && !obsForecast);
+    useSurfaceObsStore
+      .getState()
+      .setAtUnix(surfVisible && follows && !atLiveEdge && selectedUnix != null ? Math.floor(selectedUnix) : null);
+  }, [surfVisible, isRadar, isSat, isLsr, isObs, obsForecast, atLiveEdge, selectedUnix]);
 
 
   const scrub = (h: number) => {

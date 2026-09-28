@@ -276,10 +276,88 @@ def _network_series(station: str, hours: int, network: str) -> dict:
     return out
 
 
+def _minute(t: float) -> int:
+    return datetime.fromtimestamp(t, timezone.utc).minute
+
+
+def _hourly_rain_metar(rows: list[dict]) -> None:
+    """`rain1h` (inches) on an airport's hourly reports: the hour's rain.
+
+    Every report's precipitation (p01i, the P group) counts from the last
+    HOURLY report -- a special at :20, or one of the five-minute MADIS rows,
+    carries the hour so far, not rain of its own. Adding them all up, as the
+    page did, counted the same rain four or five times (KGFK, 28 Sep: 1.07 in
+    for about 0.2). So the hour's amount is read at the hourly report, found
+    by its fixed minute, and the newest report after the last hourly one
+    carries the hour in progress (`rainPartial`)."""
+    minutes = [_minute(r["valid"]) for r in rows if not _is_hf(r)]
+    if not minutes:
+        return
+    counts: dict[int, int] = {}
+    for m in minutes:
+        counts[m] = counts.get(m, 0) + 1
+    mode = max(counts, key=counts.get)
+    last_routine = -1
+    for i, r in enumerate(rows):
+        r["rain1h"] = None
+        m = _minute(r["valid"])
+        if _is_hf(r) or min(abs(m - mode), 60 - abs(m - mode)) > 1:
+            continue
+        last_routine = i
+        r["rain1h"] = r.get("p01i") if r.get("p01i") is not None else (0.0 if _has_gauge(r) else None)
+    if rows and last_routine < len(rows) - 1:
+        tail = rows[-1]
+        tail["rain1h"] = tail.get("p01i") if tail.get("p01i") is not None else (0.0 if _has_gauge(tail) else None)
+        tail["rainPartial"] = True
+
+
+def _is_hf(r: dict) -> bool:
+    """One of the five-minute rows MADIS relays (not a report of its own)."""
+    return (r.get("raw") or "").endswith("MADISHF")
+
+
+def _has_gauge(r: dict) -> bool:
+    """An automated station with a precipitation sensor that is working: its
+    silence on precipitation means none fell."""
+    raw = r.get("raw") or ""
+    rmk = raw.split(" RMK ", 1)[1] if " RMK " in raw else ""
+    return " AO2" in f" {rmk}" and "PNO" not in rmk
+
+
+def _hourly_rain_network(rows: list[dict], source: str) -> None:
+    """`rain1h` (inches) on a synoptic, INMET or mesonet station's rows.
+
+    INMET reports each hour's rain, and a synoptic station sometimes a 1-hour
+    amount: those rows stand as they are. A mesonet reading carries the last
+    hour's rain at every reading, every 5 to 15 minutes, so only the one
+    nearest each hour mark is kept as that hour's."""
+    for r in rows:
+        r["rain1h"] = None
+    if source in ("inmet", "synop"):
+        for r in rows:
+            if r.get("precipHours") == 1 and r.get("precipMm") is not None:
+                r["rain1h"] = r["precipMm"] / 25.4
+        return
+    by_hour: dict[int, dict] = {}
+    for r in rows:
+        if r.get("precipMm") is None:
+            continue
+        mark = round(r["valid"] / 3600)
+        if abs(r["valid"] - mark * 3600) > 900:
+            continue
+        have = by_hour.get(mark)
+        if have is None or abs(r["valid"] - mark * 3600) < abs(have["valid"] - mark * 3600):
+            by_hour[mark] = r
+    for r in by_hour.values():
+        r["rain1h"] = r["precipMm"] / 25.4
+
+
 def station_series(station: str, hours: int = 24, network: str = "") -> dict:
     """Normalised observations for one station, oldest first."""
     if network.upper() in ("SYNOP", "MESONET", "INMET"):
-        return _network_series(station, max(6, min(int(hours), 168)), network.upper())
+        out = _network_series(station, max(6, min(int(hours), 168)), network.upper())
+        _hourly_rain_network(out["observations"], out["source"])
+        return out
     sid = re.sub(r"[^A-Za-z0-9_]", "", station).upper()
     if not sid:
         raise ValueError("station required")
@@ -306,6 +384,7 @@ def station_series(station: str, hours: int = 24, network: str = "") -> dict:
         except Exception:  # noqa: BLE001
             obs = []
 
+    _hourly_rain_metar(obs)
     out = {
         "station": sid,
         "hours": hours,
@@ -410,8 +489,48 @@ def _skies(row: dict) -> list[dict]:
     return out
 
 
+# The temperature groups of a METAR: "T03300150" (tenths, 1 = below zero) and
+# the main "33/15" or "M02/M05".
+_T_GROUP = re.compile(r"\bT([01])(\d{3})(?:([01])(\d{3}))?\b")
+_TD_GROUP = re.compile(r"\s(M?\d{2})/(M?\d{2})?(?=\s|$)")
+
+
+def _temps_from_raw(raw: Optional[str]) -> tuple[Optional[float], Optional[float]]:
+    """Temperature and dew point in deg C from the report's own text."""
+    if not raw:
+        return None, None
+    m = _T_GROUP.search(raw)
+    if m:
+        t = int(m.group(2)) / 10 * (-1 if m.group(1) == "1" else 1)
+        d = int(m.group(4)) / 10 * (-1 if m.group(3) == "1" else 1) if m.group(4) else None
+        return t, d
+    m = _TD_GROUP.search(raw)
+    if m:
+        c = lambda s: None if not s else (-int(s[1:]) if s.startswith("M") else int(s))  # noqa: E731
+        return c(m.group(1)), c(m.group(2))
+    return None, None
+
+
+def _fill_temps(rec: dict) -> None:
+    """IEM leaves temperature, dew point and humidity empty on the 5-minute
+    reports (MADISHF) although the report itself carries them: without this the
+    station page read "--" for most of every hour."""
+    if rec.get("tmpf") is not None and rec.get("dwpf") is not None:
+        return
+    t, d = _temps_from_raw(rec.get("raw"))
+    if rec.get("tmpf") is None and t is not None:
+        rec["tmpf"] = round(t * 1.8 + 32, 1)
+    if rec.get("dwpf") is None and d is not None:
+        rec["dwpf"] = round(d * 1.8 + 32, 1)
+    if rec.get("relh") is None and t is not None and d is not None:
+        # Magnus, over water: what IEM's own humidity column is.
+        es = lambda c: math.exp(17.625 * c / (243.04 + c))  # noqa: E731
+        rec["relh"] = round(100 * es(d) / es(t), 2)
+
+
 def _derive(rec: dict) -> None:
     """Ceiling, densest cover and flight category -- what the sky columns mean."""
+    _fill_temps(rec)
     skies = rec.get("skies") or []
     ceiling = None
     for layer in skies:

@@ -90,6 +90,7 @@ function obsFromClicked(current: Record<string, unknown> | undefined): StationOb
     alti: altimMb == null || kind === "synop" || kind === "inmet" ? null : altimMb / MB_PER_INHG,
     mslp: num(current.mslp),
     p01i: null,
+    rain1h: null,
     skies,
     wx: (current.wx as string) ?? null,
     raw: (current.raw as string) ?? null,
@@ -250,11 +251,16 @@ export function StationPanel() {
   // pressure at all. Rather than draw an empty panel, the overview falls back
   // to the altimeter -- the Pressure tab still shows the two apart.
   const chartRows = useMemo(
-    () =>
-      rows.map((r) => ({
+    () => {
+      // One kind of pressure on one line: the hourly reports carry sea-level
+      // pressure and the five-minute rows only the altimeter, 2 mb apart at
+      // Oklahoma City, and alternating between them drew a saw.
+      const slp = rows.some((r) => r.mslp != null);
+      return rows.map((r) => ({
         ...r,
-        presMb: r.mslp ?? (r.alti != null ? r.alti * MB_PER_INHG : null),
-      })),
+        presMb: slp ? r.mslp : r.alti != null ? r.alti * MB_PER_INHG : null,
+      }));
+    },
     [rows],
   );
 
@@ -263,7 +269,10 @@ export function StationPanel() {
       rows.map((r) => num(r[key])).filter((v): v is number => v != null);
     const temps = vals("tmpf");
     const gusts = [...vals("gust"), ...vals("sknt")];
-    const precip = rows.reduce((sum, r) => sum + (num(r.p01i) ?? 0), 0);
+    // The hours' amounts, not every report's: a special's p01i repeats the
+    // hour so far, and summing those counted one shower four or five times.
+    const precip = rows.reduce((sum, r) => sum + (num(r.rain1h) ?? 0), 0);
+    const lastHour = [...rows].reverse().find((r) => r.rain1h != null) ?? null;
     const pres = rows.map((r) => num(r.mslp) ?? (num(r.alti) != null ? num(r.alti)! * MB_PER_INHG : null));
     const recent = pres.filter((v): v is number => v != null);
     const threeHoursAgo = rows.findIndex((r) => r.valid >= (rows[rows.length - 1]?.valid ?? 0) - 3 * 3600);
@@ -274,6 +283,7 @@ export function StationPanel() {
       low: temps.length ? Math.min(...temps) : null,
       gust: gusts.length ? Math.max(...gusts) : null,
       precip,
+      lastHour,
       trend,
     };
   }, [rows]);
@@ -449,13 +459,21 @@ export function StationPanel() {
                           }${conv.tempUnit}`,
                     )}
               {airport
-                ? tile("Precip 1 h", fmt(latest?.p01i, conv.depth, conv.depthUnit, conv.depthDec))
+                ? tile(
+                    summary.lastHour?.rainPartial ? "Rain this hour" : "Precip 1 h",
+                    fmt(summary.lastHour?.rain1h, conv.depth, conv.depthUnit, conv.depthDec),
+                    summary.lastHour
+                      ? summary.lastHour.rainPartial
+                        ? "since the hourly report"
+                        : `hour to ${new Date(summary.lastHour.valid * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}`
+                      : null,
+                  )
                 : tile(
                     "Rain",
                     latest?.precipMm == null
                       ? "—"
                       : `${conv.depth(latest.precipMm / 25.4).toFixed(conv.depthDec)}${conv.depthUnit}`,
-                    latest?.precipHours ? `last ${latest.precipHours} h` : kind === "mesonet" ? "station's own total" : null,
+                    latest?.precipHours ? `last ${latest.precipHours} h` : null,
                   )}
             </div>
 
@@ -738,8 +756,10 @@ function buildPanels(product: StationProduct, c: Conv): MeteoPanel[] {
     title: `Hourly precipitation (${c.depthUnit.trim()})`,
     height: 104,
     zero: true,
+    // A trace (0.0001 in) must not fill the panel: the axis reaches 0.10 in.
+    minHi: c.depth(0.1),
     series: [
-      { key: "p01i", label: "Precip", color: "var(--sx-precip)", kind: "bar", to: c.depth, unit: c.depthUnit, dec: c.depthDec },
+      { key: "rain1h", label: "Precip", color: "var(--sx-precip)", kind: "bar", to: c.depth, unit: c.depthUnit, dec: c.depthDec },
     ],
   };
   const humidity: MeteoPanel = {

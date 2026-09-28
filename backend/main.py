@@ -917,9 +917,10 @@ def surface_obs_endpoint(
     bbox: str = Query(...),
     cell: float | None = Query(None, gt=0, le=20, description="One station per cell this many degrees across"),
     networks: str = Query("metar,synop,mesonet"),
+    at: int | None = Query(None, gt=0, description="The reports in force at this instant (unix s) instead of the newest"),
 ):
     try:
-        return surface_obs.fetch_surface_obs(bbox, cell=cell, networks=networks)
+        return surface_obs.fetch_surface_obs(bbox, cell=cell, networks=networks, at=at)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
 

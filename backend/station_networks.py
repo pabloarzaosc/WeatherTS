@@ -49,7 +49,8 @@ _SESSION.mount("https://", HTTPAdapter(pool_maxsize=8, max_retries=Retry(
     allowed_methods=frozenset(["GET"]))))
 
 CACHE = Path(tempfile.gettempdir()) / "weatherts-obs"
-_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="stations-net")
+# Four: the live refreshes, and the past hours a scrubbed-back timeline asks for.
+_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="stations-net")
 
 KT_PER_MS = 1.943844
 
@@ -245,6 +246,25 @@ def _ww_words(ww: int) -> Optional[str]:
     return None
 
 
+def _ww_code(ww: int) -> Optional[str]:
+    """Present weather code 00-99 as the METAR letters a plot prints beside the
+    station (TSGR, +SHRA...), so a synoptic station reads like an airport."""
+    table = {
+        4: "FU", 5: "HZ", 6: "DU", 7: "DU", 8: "PO", 9: "SS", 10: "BR", 11: "MIFG", 12: "MIFG", 13: "LTG",
+        17: "TS", 18: "SQ", 19: "FC", 30: "DS", 31: "DS", 32: "DS", 33: "+DS", 34: "+DS", 35: "+DS",
+        36: "DRSN", 37: "DRSN", 38: "BLSN", 39: "BLSN", 50: "-DZ", 51: "-DZ", 52: "DZ", 53: "DZ", 54: "+DZ",
+        55: "+DZ", 56: "-FZDZ", 57: "FZDZ", 58: "-RADZ", 59: "RADZ", 60: "-RA", 61: "-RA", 62: "RA", 63: "RA",
+        64: "+RA", 65: "+RA", 66: "-FZRA", 67: "FZRA", 68: "-RASN", 69: "RASN", 70: "-SN", 71: "-SN",
+        72: "SN", 73: "SN", 74: "+SN", 75: "+SN", 76: "IC", 77: "SG", 78: "SN", 79: "PL", 80: "-SHRA",
+        81: "SHRA", 82: "+SHRA", 83: "-SHRASN", 84: "SHRASN", 85: "-SHSN", 86: "SHSN", 87: "-SHGS",
+        88: "SHGS", 89: "-SHGR", 90: "SHGR", 91: "-RA", 92: "RA", 93: "-SN", 94: "SN", 95: "TSRA",
+        96: "TSGR", 97: "+TSRA", 98: "TSDS", 99: "+TSGR",
+    }
+    if 40 <= ww <= 49:
+        return "FG"
+    return table.get(ww)
+
+
 def decode_synop(msg: str) -> Optional[dict[str, Any]]:
     """The readings of one AAXX message (land station), or None."""
     parts = msg.replace("=", " ").split()
@@ -331,6 +351,7 @@ def decode_synop(msg: str) -> Optional[dict[str, Any]]:
         rec["precip_mm"] = 0.0
     if "ww" in rec:
         rec["wx"] = _ww_words(rec["ww"])
+        rec["wxCode"] = _ww_code(rec["ww"])
     return rec
 
 
@@ -407,9 +428,49 @@ def synop_latest() -> dict[str, dict[str, Any]]:
     return rows
 
 
-def feeds_pending() -> bool:
+# Past instants: OGIMET's six hours before each, read once per hour of the
+# timeline (a loop crosses a few) and kept for a while.
+_SYNOP_PAST: dict[int, list[dict[str, Any]]] = {}
+_SYNOP_PAST_LOADING: set[int] = set()
+
+
+def synop_at(at: float) -> tuple[dict[str, dict[str, Any]], str]:
+    """Each station's last report in the six hours before `at` -- the same
+    choice synop_latest makes for now -- and "ok" or "pending"."""
+    end_hour = int(math.ceil(at / 3600))
+    rows = _SYNOP_PAST.get(end_hour)
+    if rows is None:
+        if end_hour not in _SYNOP_PAST_LOADING:
+            _SYNOP_PAST_LOADING.add(end_hour)
+
+            def load() -> None:
+                try:
+                    end = datetime.fromtimestamp(end_hour * 3600, timezone.utc)
+                    lines = _ogimet_lines(end - timedelta(hours=SYNOP_WINDOW_H + 1), end)
+                    _SYNOP_PAST[end_hour] = [r for r in (_synop_row(ln) for ln in lines) if r is not None]
+                    for old in sorted(_SYNOP_PAST)[:-6]:
+                        _SYNOP_PAST.pop(old, None)
+                except Exception:  # noqa: BLE001 - asked again on the next request
+                    pass
+                finally:
+                    _SYNOP_PAST_LOADING.discard(end_hour)
+            _POOL.submit(load)
+        return {}, "pending"
+    latest: dict[str, dict[str, Any]] = {}
+    for rec in rows:
+        if rec["time"] > at or at - rec["time"] > SYNOP_WINDOW_H * 3600:
+            continue
+        have = latest.get(rec["wmo"])
+        if have is None or (rec["time"] >= have["time"] and (rec.get("temp") is not None or have.get("temp") is None)):
+            latest[rec["wmo"]] = rec
+    return latest, "ok"
+
+
+def feeds_pending(at: Optional[float] = None) -> bool:
     """Whether a network is still being read for the first time: the map asks
     again shortly rather than wait for its next five-minute refresh."""
+    if at is not None:
+        return bool(_SYNOP_PAST_LOADING or _MADIS_LOADING or _INMET_PAST_LOADING)
     with _SYNOP_LOCK:
         synop_empty = not _SYNOP["rows"]
     with _MADIS_LOCK:
@@ -431,8 +492,8 @@ def synop_history(wmo: str, hours: int) -> list[dict[str, Any]]:
 MADIS_DIR = "https://madis-data.ncep.noaa.gov/madisPublic1/data/LDAD/mesonet/netCDF/"
 MADIS_REFRESH_S = 15 * 60
 _MADIS_FIELDS = ("temperature", "dewpoint", "relHumidity", "windDir", "windSpeed", "windGust",
-                 "altimeter", "seaLevelPressure", "visibility", "precipAccum", "maxTemp24Hour",
-                 "minTemp24Hour", "elevation")
+                 "altimeter", "seaLevelPressure", "visibility", "precipAccum", "precipRate",
+                 "maxTemp24Hour", "minTemp24Hour", "elevation")
 _QC_BAD = (b"X", b"B")
 
 
@@ -520,25 +581,86 @@ def _madis_hour(name: str, current: bool) -> Optional[MadisHour]:
     return _parse_madis(r.content)
 
 
-def _latest_per_station(hours: list[MadisHour]) -> Optional[MadisHour]:
+# Rain in the last hour, mm, as a plot shows it. MADIS's precipAccum is no
+# help as it stands: its period is each provider's own -- a rolling 24 hours
+# for the CWOP stations, the hour for LCRA, the water year for NRCS (1,778 mm
+# on one gauge) -- and the app showed it as "Rain" with no period at all.
+# precipRate is the last hour's rain for the networks that carry both (checked
+# 2026-09-28 against the accumulation's change over the hour: CWOP, HADS,
+# RAWS, LCRA), so it comes first; where only an accumulation is sent, its rise
+# over the last hour stands in, and a fall (a reset) says nothing.
+RAIN_MAX_MM = 250.0
+
+
+def _rain_last_hour(ids: np.ndarray, t: np.ndarray, acc: np.ndarray, rate: np.ndarray,
+                    pick: np.ndarray) -> np.ndarray:
+    """The last hour's rain (mm) at each picked reading, NaN where unknown.
+
+    Where a station sends both, the rate has to be borne out by its own
+    accumulation, which rose at least as much over the hour whatever its
+    period (unless it was reset): a CWOP station in Ada sent 33 mm/h for an
+    hour while its accumulation fell, and one faulty gauge like that is a
+    downpour on the map in the middle of dry neighbours."""
+    out = np.full(len(pick), np.nan, dtype="float32")
+    r = rate[pick].astype("float64") * 3.6e6
+    good = np.isfinite(r) & (r >= 0) & (r <= RAIN_MAX_MM)
+    rise = np.full(len(pick), np.nan)
+    has_acc = np.nonzero(np.isfinite(acc[pick]))[0]
+    if len(has_acc):
+        order = np.lexsort((t, ids))
+        sid, st, sacc = ids[order], t[order], acc[order]
+        for k in has_acc:
+            p = pick[k]
+            lo, hi = np.searchsorted(sid, ids[p], "left"), np.searchsorted(sid, ids[p], "right")
+            tt, aa = st[lo:hi], sacc[lo:hi]
+            want = t[p] - 3600
+            ok = np.nonzero(np.isfinite(aa) & (np.abs(tt - want) <= 900))[0]
+            if len(ok):
+                rise[k] = float(acc[p]) - float(aa[ok[np.argmin(np.abs(tt[ok] - want))]])
+    for k in range(len(pick)):
+        if good[k]:
+            d = rise[k]
+            now_acc = float(acc[pick[k]])
+            # A reset within the hour (to at most half of what it held): what
+            # it holds since then is the hour's.
+            reset = np.isfinite(d) and d < 0 and now_acc <= 0.5 * (now_acc - d)
+            backed = (not np.isfinite(d) or d >= 0.5 * r[k] - 0.5
+                      or (reset and now_acc >= 0.5 * r[k] - 0.5))
+            if backed:
+                out[k] = round(float(r[k]), 1)
+        elif np.isfinite(rise[k]) and 0 <= rise[k] <= RAIN_MAX_MM:
+            out[k] = round(float(rise[k]), 1)
+    return out
+
+
+def _latest_per_station(hours: list[MadisHour], at: Optional[float] = None) -> Optional[MadisHour]:
+    """Each station's newest reading -- or, with `at`, its last one in the hour
+    before that instant -- with the last hour's rain beside it."""
     hours = [h for h in hours if h is not None and len(h.ids)]
     if not hours:
         return None
     ids = np.concatenate([h.ids for h in hours])
     t = np.concatenate([h.time for h in hours])
     temp = np.concatenate([h.f["temperature"] for h in hours])
+    acc = np.concatenate([h.f["precipAccum"] for h in hours])
+    rate = np.concatenate([h.f["precipRate"] for h in hours])
     # Newest first, a reading with a temperature before one without.
     order = np.lexsort((-np.isfinite(temp).astype(int), -t))
+    if at is not None:
+        order = order[(t[order] <= at) & (t[order] > at - 3600)]
+        if not len(order):
+            return None
     _u, first = np.unique(ids[order], return_index=True)
     pick = order[first]
 
     def cat(get):
         return np.concatenate([get(h) for h in hours])[pick]
 
+    f = {k: cat(lambda h, k=k: h.f[k]) for k in _MADIS_FIELDS}
+    f["rain1h"] = _rain_last_hour(ids, t, acc, rate, pick)
     return MadisHour(
         ids=cat(lambda h: h.ids), names=cat(lambda h: h.names), provider=cat(lambda h: h.provider),
-        lat=cat(lambda h: h.lat), lon=cat(lambda h: h.lon), time=cat(lambda h: h.time),
-        f={k: cat(lambda h, k=k: h.f[k]) for k in _MADIS_FIELDS},
+        lat=cat(lambda h: h.lat), lon=cat(lambda h: h.lon), time=cat(lambda h: h.time), f=f,
     )
 
 
@@ -580,6 +702,63 @@ def madis_latest() -> Optional[MadisHour]:
     return latest
 
 
+# Hours older than the live pair, read for a past instant on the timeline:
+# a few kept, each one is ~40 MB in memory.
+_MADIS_PAST: dict[str, MadisHour] = {}
+_MADIS_PAST_KEEP = 4
+_MADIS_AT: dict[int, Optional[MadisHour]] = {}
+_MADIS_LOADING: set[str] = set()
+
+
+def _hour_names(at: float) -> list[str]:
+    """The hourly files holding the hour before `at`: its own and the one before."""
+    d = datetime.fromtimestamp(at, timezone.utc).replace(minute=0, second=0, microsecond=0)
+    return [f"{x:%Y%m%d_%H}00.gz" for x in (d - timedelta(hours=1), d)]
+
+
+def madis_at(at: float) -> tuple[Optional[MadisHour], str]:
+    """Each station's last reading in the hour before `at`: (hour, "ok") -- or
+    (None, "pending") while its files come in, (None, "unavailable") when MADIS
+    no longer keeps them (it holds about five days)."""
+    bucket = int(at // 300 * 300)
+    if bucket in _MADIS_AT:
+        return _MADIS_AT[bucket], "ok"
+    names = _hour_names(bucket)
+    with _MADIS_LOCK:
+        have = {n: _MADIS["hours"].get(n) or _MADIS_PAST.get(n) for n in names}
+    missing = [n for n, h in have.items() if h is None]
+    if missing:
+        try:
+            listed = set(_madis_files())
+        except Exception:  # noqa: BLE001
+            return None, "pending"
+        if not any(n in listed or _cache_path("madis", n).exists() for n in missing):
+            return None, "unavailable"
+        todo = [n for n in missing if n not in _MADIS_LOADING and (n in listed or _cache_path("madis", n).exists())]
+        for n in todo:
+            _MADIS_LOADING.add(n)
+
+            def load(n=n) -> None:
+                try:
+                    h = _madis_hour(n, current=False)
+                    with _MADIS_LOCK:
+                        _MADIS_PAST[n] = h
+                        for old in sorted(_MADIS_PAST)[:-_MADIS_PAST_KEEP]:
+                            _MADIS_PAST.pop(old, None)
+                except Exception:  # noqa: BLE001
+                    pass
+                finally:
+                    _MADIS_LOADING.discard(n)
+            _POOL.submit(load)
+        if todo or any(n in _MADIS_LOADING for n in missing):
+            return None, "pending"
+    latest = _latest_per_station([h for h in have.values() if h is not None], at=bucket)
+    _MADIS_AT[bucket] = latest
+    for old in sorted(_MADIS_AT)[:-12]:
+        _MADIS_AT.pop(old, None)
+    return latest, "ok"
+
+
 def madis_history(station: str, hours: int) -> list[dict[str, Any]]:
     with _MADIS_LOCK:
         kept = list(_MADIS["hours"].values())
@@ -589,11 +768,25 @@ def madis_history(station: str, hours: int) -> list[dict[str, Any]]:
         sel = np.nonzero((h.ids == station) & (h.time >= since))[0]
         for j in sel:
             rows.append(_madis_props(h, int(j)))
+            rows[-1]["_acc"] = _f(h.f["precipAccum"][j])
     rows.sort(key=lambda r: r["obsTime"])
     dedup: list[dict[str, Any]] = []
     for r in rows:
         if not dedup or r["obsTime"] != dedup[-1]["obsTime"]:
             dedup.append(r)
+    # The last hour's rain where the rate is missing: the accumulation's rise
+    # since the reading nearest an hour before.
+    accs = [r.pop("_acc", None) for r in dedup]
+    for i, r in enumerate(dedup):
+        if r["precip"] is not None or accs[i] is None:
+            continue
+        want = r["obsTime"] - 3600
+        near = [k for k in range(i) if accs[k] is not None and abs(dedup[k]["obsTime"] - want) <= 900]
+        if near:
+            k = min(near, key=lambda k: abs(dedup[k]["obsTime"] - want))
+            d = accs[i] - accs[k]
+            if 0 <= d <= RAIN_MAX_MM:
+                r["precip"], r["precipHours"] = round(d, 1), 1
     return dedup
 
 
@@ -672,6 +865,7 @@ def synop_props(wmo: str, rec: dict[str, Any], info: tuple) -> dict[str, Any]:
         "cloudBase": rec.get("cloud_base_m"),
         "clouds": [],
         "wx": rec.get("wx"),
+        "wxCode": rec.get("wxCode"),
         "raw": None,
         "synop": rec.get("raw"),
         "precip": rec.get("precip_mm"),
@@ -700,6 +894,11 @@ def _madis_props(h: MadisHour, j: int) -> dict[str, Any]:
     vis = k("visibility")
     tmax = k("maxTemp24Hour")
     tmin = k("minTemp24Hour")
+    if "rain1h" in f:
+        rain = _r(k("rain1h"), 1)
+    else:
+        rate = k("precipRate")
+        rain = None if rate is None or not 0 <= rate * 3.6e6 <= RAIN_MAX_MM else round(rate * 3.6e6, 1)
     # CWOP names come padded out to a fixed width ("EW7074 Teutania      BR").
     name = " ".join(str(h.names[j]).split())
     return {
@@ -721,7 +920,10 @@ def _madis_props(h: MadisHour, j: int) -> dict[str, Any]:
         "clouds": [],
         "wx": None,
         "raw": None,
-        "precip": _r(k("precipAccum"), 1),
+        # The last hour's rain (see _rain_last_hour); a single reading has its
+        # rate at most, the latest-per-station set its accumulation's rise too.
+        "precip": rain,
+        "precipHours": None if rain is None else 1,
         "tmax": None if tmax is None else round(tmax - 273.15, 1),
         "tmin": None if tmin is None else round(tmin - 273.15, 1),
         "rh": rh if rh is not None else _rh(temp, dewp),
@@ -730,16 +932,20 @@ def _madis_props(h: MadisHour, j: int) -> dict[str, Any]:
 
 
 def features_in_box(lat0: float, lon0: float, lat1: float, lon1: float,
-                    cell: Optional[float] = None, synop: bool = True, mesonet: bool = True) -> list[dict[str, Any]]:
-    """SYNOP and mesonet stations inside the box, as GeoJSON features. With
+                    cell: Optional[float] = None, synop: bool = True, mesonet: bool = True,
+                    at: Optional[float] = None) -> tuple[list[dict[str, Any]], list[str]]:
+    """SYNOP and mesonet stations inside the box, as GeoJSON features, and the
+    networks that have nothing for `at` (a past instant; None is now). With
     `cell` (degrees), the mesonets are thinned first to the best station of
     each cell -- a view of the US holds 32,000 of them."""
     out: list[dict[str, Any]] = []
+    missing: list[str] = []
     try:
         if not synop:
             raise LookupError
         wmo = wmo_stations()
-        for sid, rec in synop_latest().items():
+        rows = synop_latest() if at is None else synop_at(at)[0]
+        for sid, rec in rows.items():
             info = wmo.get(sid)
             if info is None:
                 continue
@@ -750,12 +956,19 @@ def features_in_box(lat0: float, lon0: float, lat1: float, lon1: float,
     except Exception:  # noqa: BLE001 - the METARs still come
         pass
     if synop:
-        for props in inmet_latest().values():
+        for props in (inmet_latest() if at is None else inmet_at(at)[0]).values():
             lat, lon = props["lat"], props["lon"]
             if lat0 <= lat <= lat1 and lon0 <= lon <= lon1:
                 out.append({"type": "Feature", "geometry": {"type": "Point", "coordinates": [lon, lat]},
                             "properties": props})
-    h = madis_latest() if mesonet else None
+    h = None
+    if mesonet:
+        if at is None:
+            h = madis_latest()
+        else:
+            h, state = madis_at(at)
+            if state == "unavailable":
+                missing.append("mesonet")
     if h is not None:
         inside = np.nonzero((h.lat >= lat0) & (h.lat <= lat1) & (h.lon >= lon0) & (h.lon <= lon1))[0]
         if cell and len(inside):
@@ -775,7 +988,7 @@ def features_in_box(lat0: float, lon0: float, lat1: float, lon1: float,
                 continue
             out.append({"type": "Feature", "geometry": {"type": "Point", "coordinates": [float(h.lon[j]), float(h.lat[j])]},
                         "properties": props})
-    return out
+    return out, missing
 
 
 def warm() -> None:
@@ -956,6 +1169,46 @@ def _refresh_inmet() -> None:
         if rows or error is None:
             _INMET["rows"] = rows
         _INMET.update({"error": error, "hour": got_hour.isoformat() if got_hour else None, "at": time.time()})
+
+
+_INMET_PAST: dict[int, dict[str, dict[str, Any]]] = {}
+_INMET_PAST_LOADING: set[int] = set()
+
+
+def inmet_at(at: float) -> tuple[dict[str, dict[str, Any]], str]:
+    """The hourly readings in force at `at` (the hour it falls in, the one
+    before filling gaps): (rows, "ok") or ({}, "pending")."""
+    token = inmet_token()
+    if not token:
+        return {}, "ok"
+    hour = int(at // 3600)
+    rows = _INMET_PAST.get(hour)
+    if rows is not None:
+        return rows, "ok"
+    if hour not in _INMET_PAST_LOADING:
+        _INMET_PAST_LOADING.add(hour)
+
+        def load() -> None:
+            try:
+                alt = _inmet_altitudes()
+                got: dict[str, dict[str, Any]] = {}
+                for back in (0, 1):
+                    t = datetime.fromtimestamp((hour - back) * 3600, timezone.utc)
+                    data = _inmet_get(f"/token/estacao/dados/{t:%Y-%m-%d}/{t:%H}00/{token}")
+                    for rec in data if isinstance(data, list) else []:
+                        p = inmet_props(rec, alt)
+                        if p is None or (p["temp"] is None and p["wspd"] is None) or p["obsTime"] > at:
+                            continue
+                        got.setdefault(p["id"], p)
+                _INMET_PAST[hour] = got
+                for old in sorted(_INMET_PAST)[:-8]:
+                    _INMET_PAST.pop(old, None)
+            except Exception:  # noqa: BLE001 - asked again on the next request
+                pass
+            finally:
+                _INMET_PAST_LOADING.discard(hour)
+        _POOL.submit(load)
+    return {}, "pending"
 
 
 def inmet_latest() -> dict[str, dict[str, Any]]:

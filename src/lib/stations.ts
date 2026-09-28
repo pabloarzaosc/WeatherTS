@@ -38,6 +38,14 @@ export interface StationObs {
   mslp: number | null;
   /** Precipitation in the hour ending at this report, inches. */
   p01i: number | null;
+  /**
+   * The hour's rain (inches), on the rows that close an hour: an airport's
+   * hourly reports (p01i on a special counts from the last hourly one, so it
+   * is not added again), a mesonet's reading nearest each hour mark. Null
+   * elsewhere. The newest row can carry the hour in progress (`rainPartial`).
+   */
+  rain1h?: number | null;
+  rainPartial?: boolean;
   skies: { cover: string; base: number | null }[];
   wx: string | null;
   raw: string | null;

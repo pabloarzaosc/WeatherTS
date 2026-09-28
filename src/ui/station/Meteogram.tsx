@@ -35,6 +35,8 @@ export interface MeteoPanel {
   arrows?: boolean;
   /** Keep zero on the axis -- precipitation has no meaning floated off it. */
   zero?: boolean;
+  /** The axis reaches at least this high (in the unit on screen). */
+  minHi?: number;
   /** A band of flight-category colour under the panel. */
   ribbon?: boolean;
   /** Fixed axis, for readings with a natural range (wind direction). */
@@ -262,7 +264,7 @@ function Panel({
   if (panel.zero && !panel.domain) {
     // Bars hang off the zero line, so the axis has to hold it: a dry day is a
     // flat row of nothing, not half-height bars floating on a -0.6 baseline.
-    const hi = Math.max(scale.hi, values.length ? Math.max(...values) : 0);
+    const hi = Math.max(scale.hi, values.length ? Math.max(...values) : 0, panel.minHi ?? 0);
     const nice = niceScale(0, hi > 0 ? hi : 1, 3);
     scale = { lo: 0, hi: nice.hi, step: nice.step };
   }
@@ -273,7 +275,8 @@ function Panel({
   if (!gridValues.length) {
     for (let v = scale.lo; v <= scale.hi + 1e-9; v += scale.step) gridValues.push(Number(v.toFixed(6)));
   }
-  const dec = scale.step < 1 ? (scale.step < 0.1 ? 2 : 1) : 0;
+  // As many decimals as the step needs, so neighbouring lines never read alike.
+  const dec = scale.step >= 1 ? 0 : Math.min(3, Math.ceil(-Math.log10(scale.step) - 1e-9));
 
   if (width <= 0) return <div className="mgm__panel" style={{ height }} />;
 

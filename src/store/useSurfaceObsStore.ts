@@ -13,6 +13,7 @@ export type SurfaceDisplayMode =
   | "visib"
   | "rh"
   | "thetae"
+  | "precip"
   | "id";
 
 export interface StationElements {
@@ -25,6 +26,10 @@ export interface StationElements {
   visibility: boolean;
   pressure: boolean;
   stationName: boolean;
+  /** Present weather (-RA, TSGR...) beside the station, where a plot puts it. */
+  weather: boolean;
+  /** The last hour's rain, where any fell. */
+  rain: boolean;
 }
 
 export type TempUnit = "F" | "C";
@@ -68,6 +73,15 @@ interface SurfaceObsState {
   layerBusy: boolean;
   layerError: string | null;
   layerLastUpdatedAt: number | null;
+  /**
+   * The instant the plots show (unix s), set by the timeline while a radar,
+   * satellite or analysis frame from the past is on screen; null is now. The
+   * plots showed the newest reports whatever the frame, so a storm on a radar
+   * scan from an hour ago sat over stations reporting now.
+   */
+  atUnix: number | null;
+  /** Networks with nothing for `atUnix` (their data are not kept that long). */
+  unavailable: string[];
 
   setDisplayMode: (m: SurfaceDisplayMode) => void;
   toggleElement: (k: keyof StationElements) => void;
@@ -81,6 +95,8 @@ interface SurfaceObsState {
   setMaxAgeMin: (m: number) => void;
   setFadeStale: (v: boolean) => void;
   setLayerStatus: (next: { busy?: boolean; error?: string | null; lastUpdatedAt?: number | null }) => void;
+  setAtUnix: (t: number | null) => void;
+  setUnavailable: (nets: string[]) => void;
 }
 
 /** Ready-made element combinations. A full station plot is dense; these are the
@@ -90,25 +106,25 @@ export const ELEMENT_PRESETS: { id: string; label: string; hint: string; element
     id: "full",
     label: "Full plot",
     hint: "Every element",
-    elements: { wind: true, gust: true, sky: true, calm: true, temp: true, dewp: true, visibility: true, pressure: true, stationName: true },
+    elements: { wind: true, gust: true, sky: true, calm: true, temp: true, dewp: true, visibility: true, pressure: true, stationName: true, weather: true, rain: true },
   },
   {
     id: "standard",
     label: "Standard",
     hint: "The classic six",
-    elements: { wind: true, gust: true, sky: true, calm: true, temp: true, dewp: true, visibility: false, pressure: true, stationName: true },
+    elements: { wind: true, gust: true, sky: true, calm: true, temp: true, dewp: true, visibility: false, pressure: true, stationName: true, weather: true, rain: true },
   },
   {
     id: "wind",
     label: "Wind only",
     hint: "Barbs and gusts",
-    elements: { wind: true, gust: true, sky: false, calm: true, temp: false, dewp: false, visibility: false, pressure: false, stationName: false },
+    elements: { wind: true, gust: true, sky: false, calm: true, temp: false, dewp: false, visibility: false, pressure: false, stationName: false, weather: false, rain: false },
   },
   {
     id: "thermo",
     label: "Thermo",
     hint: "Temp and dewpoint",
-    elements: { wind: false, gust: false, sky: false, calm: false, temp: true, dewp: true, visibility: false, pressure: false, stationName: false },
+    elements: { wind: false, gust: false, sky: false, calm: false, temp: true, dewp: true, visibility: false, pressure: false, stationName: false, weather: false, rain: false },
   },
 ];
 
@@ -126,6 +142,8 @@ export const useSurfaceObsStore = create<SurfaceObsState>((set) => ({
     visibility: false,
     pressure: true,
     stationName: true,
+    weather: true,
+    rain: true,
   },
   // Denser than a textbook plot (70): with the synoptic and mesonet stations
   // there is far more to show, and the slider goes either way.
@@ -142,6 +160,8 @@ export const useSurfaceObsStore = create<SurfaceObsState>((set) => ({
   layerBusy: false,
   layerError: null,
   layerLastUpdatedAt: null,
+  atUnix: null,
+  unavailable: [],
 
   setDisplayMode: (displayMode) => set({ displayMode }),
   toggleElement: (k) => set((s) => ({ elements: { ...s.elements, [k]: !s.elements[k] } })),
@@ -154,6 +174,9 @@ export const useSurfaceObsStore = create<SurfaceObsState>((set) => ({
   setVisUnits: (visUnits) => set({ visUnits }),
   setMaxAgeMin: (maxAgeMin) => set({ maxAgeMin }),
   setFadeStale: (fadeStale) => set({ fadeStale }),
+  setAtUnix: (atUnix) => set((s) => (s.atUnix === atUnix ? s : { atUnix })),
+  setUnavailable: (unavailable) =>
+    set((s) => (s.unavailable.join() === unavailable.join() ? s : { unavailable })),
   setLayerStatus: (next) =>
     set((s) => ({
       layerBusy: "busy" in next ? Boolean(next.busy) : s.layerBusy,
