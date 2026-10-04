@@ -14,7 +14,11 @@ import { obsSharpBusy, obsSharpReady } from "../layers/modules/obsLayer";
 import { satFrameFailed, satFrameHere } from "../layers/modules/satelliteLayer";
 import { useSatStore } from "../store/useSatStore";
 import { useSurfaceObsStore } from "../store/useSurfaceObsStore";
+import { useGlmStore } from "../store/useGlmStore";
 import { fhText } from "../lib/observations";
+import { nearestSpeed } from "../lib/playSpeeds";
+import { clearPlayNext, setPlayNext, type PlayDriver } from "../lib/playAhead";
+import { SpeedPicker } from "./SpeedPicker";
 
 /** Frames a play buffers ahead before it steps, like a video: radar scans,
  *  and Models frames. Past BUFFER_MAX_MS of waiting it plays what it has. */
@@ -25,9 +29,35 @@ const BUFFER_MAX_MS = 12_000;
  *  still downloading starts (anywhere ahead: see runFrames). */
 const START_BUFFER = 3;
 
-const PLAY_SPEEDS = [1, 2, 4, 8, 12, 16, 20] as const;
+/** The shortest time a frame is held. Past the speed where frames would come
+ *  quicker than this, a play steps over frames instead, so 40x and 80x still
+ *  move twice and four times as fast through time -- without it every speed
+ *  past about 8x ran at the speed the map could paint and looked the same. */
+const MIN_FRAME_MS = 40;
+
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MO = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** The share of a Models frame's time that frame i holds, so a play moves
+ *  through forecast time at one speed. The GFS steps hourly to +120 h and
+ *  three-hourly after; at one dwell a frame, its first five days played at a
+ *  third of the speed of the rest (Pablo, 2026-10-03). The ECMWF, GEFS and NBM
+ *  widen the same way. The run's own step at its end -- its widest, in every
+ *  run here -- takes the full time, a finer step its share. Taken as the median
+ *  of the last few steps, so one missing hour at the end (an MRMS file not out)
+ *  does not hurry a whole loop; and a gap wider than it never holds longer
+ *  than a frame. */
+function timeShare(frames: { unix: number }[], i: number): number {
+  const n = frames.length;
+  if (n < 3 || i < 0 || i >= n - 1) return 1;
+  const tail: number[] = [];
+  for (let k = n - 1; k > 0 && tail.length < 5; k--) tail.push(frames[k].unix - frames[k - 1].unix);
+  tail.sort((a, b) => a - b);
+  const full = tail[Math.floor(tail.length / 2)];
+  const gap = frames[i + 1].unix - frames[i].unix;
+  if (!(full > 0) || !(gap > 0)) return 1;
+  return Math.min(1, gap / full);
+}
 
 // Model-mode fallback axis when no sounding is open yet (hourly forecast steps).
 const MODEL_PLACEHOLDER_MAX = 48;
@@ -114,6 +144,7 @@ export function MapTimeline() {
   const obsBusy = useObsStore((s) => s.busy);
   const lsrVisible = useAppStore((s) => s.layers["lsr"]?.visible ?? false);
   const surfVisible = useAppStore((s) => s.layers["surfobs"]?.visible ?? false);
+  const glmVisible = useAppStore((s) => s.layers["glm"]?.visible ?? false);
   const frontsVisible = useAppStore((s) => s.layers["fronts"]?.visible ?? false);
   const frontFrames = useFrontsStore((s) => s.frames);
   const frontIndex = useFrontsStore((s) => s.index);
@@ -123,10 +154,7 @@ export function MapTimeline() {
 
   const [playing, setPlaying] = useState(false);
   // Where playback starts comes from Settings; the buttons change it for the session.
-  const [speed, setSpeed] = useState<(typeof PLAY_SPEEDS)[number]>(() => {
-    const wanted = Number(getSetting<string>("timeline.speed"));
-    return PLAY_SPEEDS.find((v) => v === wanted) ?? 1;
-  });
+  const [speed, setSpeed] = useState<number>(() => nearestSpeed(Number(getSetting<string>("timeline.speed"))));
   const [loop, setLoop] = useState(() => getSetting<boolean>("timeline.loop"));
   const [obsTimes] = useState<number[]>(() => recentSynoptic());
   const [lsrNow] = useState<number>(() => Date.now() / 1000);
@@ -302,6 +330,23 @@ export function MapTimeline() {
       .setAtUnix(surfVisible && follows && !atLiveEdge && selectedUnix != null ? Math.floor(selectedUnix) : null);
   }, [surfVisible, isRadar, isSat, isLsr, isObs, obsForecast, atLiveEdge, selectedUnix]);
 
+  // Lightning too: at a past frame the flashes are those of the minutes before
+  // it, so a loop shows each scan's own lightning; at the live edge, now.
+  useEffect(() => {
+    const follows = isRadar || isSat || isLsr || (isObs && !obsForecast);
+    useGlmStore
+      .getState()
+      .setAtUnix(glmVisible && follows && !atLiveEdge && selectedUnix != null ? Math.floor(selectedUnix) : null);
+  }, [glmVisible, isRadar, isSat, isLsr, isObs, obsForecast, atLiveEdge, selectedUnix]);
+  // And the loop's whole span, so its flashes are downloading before the play
+  // reaches them.
+  useEffect(() => {
+    const follows = isRadar || isSat || isLsr || (isObs && !obsForecast);
+    useGlmStore
+      .getState()
+      .setSpan(glmVisible && follows && spanFirst !== null && spanLast !== null ? [spanFirst, spanLast] : null);
+  }, [glmVisible, isRadar, isSat, isLsr, isObs, obsForecast, spanFirst, spanLast]);
+
 
   const scrub = (h: number) => {
     const clamped = Math.max(0, Math.min(h, maxHour));
@@ -318,7 +363,6 @@ export function MapTimeline() {
     else if (open) stepHour(delta);
     else scrub(value + delta);
   };
-  const cycleSpeed = () => setSpeed((s) => PLAY_SPEEDS[(PLAY_SPEEDS.indexOf(s) + 1) % PLAY_SPEEDS.length]);
   // Jump to the frame closest to the current real-world time (latest obs for
   // RAOB, nearest forecast hour for models).
   const goNow = () => {
@@ -352,7 +396,12 @@ export function MapTimeline() {
   useEffect(() => {
     if (!playing || !canPlay) return;
     let cancelled = false;
+    /** What this play told the layers it will show next (lib/playAhead). */
+    let published: ((index: number) => number) | null = null;
     const wait = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms));
+    /** About one frame of the screen. A timer, not requestAnimationFrame: that
+     *  one stops while the window is covered, and the play with it. */
+    const aFrame = () => wait(16);
 
     // Radar: frames are cached and meshed locally (~65 ms), but a cold one still
     // has to be fetched, so keep waiting for the commit before advancing --
@@ -391,6 +440,13 @@ export function MapTimeline() {
         const rs = useNexradStore.getState();
         rs.prefetch(nextOf(rs.index, Math.max(rs.scans.length - 1, 0)));
       }
+      // A clock, as in runFrames: it runs at the speed asked and each step
+      // shows the scan due by it, stepping over scans while the map cannot
+      // keep up. Buffering stops it.
+      let shownAt = performance.now();
+      let shown = useNexradStore.getState().index;
+      let clockScan = shown;
+      let clockAt = performance.now();
       while (!cancelled) {
         if (buffering) {
           const rs = useNexradStore.getState();
@@ -406,8 +462,21 @@ export function MapTimeline() {
             continue;
           }
           buffering = false;
+          clockScan = rs.index;
+          clockAt = performance.now();
         }
-        await wait(getSetting<number>("timeline.radarMs") / speed);
+        const per = getSetting<number>("timeline.radarMs") / speed;
+        {
+          const at = useNexradStore.getState().index;
+          // Moved by hand: the clock starts again from there.
+          if (at !== shown) {
+            shown = at;
+            clockScan = at;
+            clockAt = performance.now();
+          }
+          const nextDue = clockAt + (at + 1 - clockScan) * per;
+          await wait(Math.max(0, nextDue - performance.now(), MIN_FRAME_MS - (performance.now() - shownAt)));
+        }
         if (cancelled) return;
         const rs = useNexradStore.getState();
         const max = Math.max(rs.scans.length - 1, 0);
@@ -416,7 +485,9 @@ export function MapTimeline() {
           setPlaying(false);
           return;
         }
-        const target = atEnd ? 0 : rs.index + 1;
+        // The scan due by the clock; never past the newest.
+        const due = clockScan + Math.floor((performance.now() - clockAt) / per);
+        const target = atEnd ? 0 : Math.min(Math.max(rs.index + 1, due), max);
         // Caught up with the warm-up: hold for another buffer's worth, asking
         // for the scans from here on first.
         if (!rs.isWarmAt(target) && rs.warm < rs.scans.length) {
@@ -426,11 +497,17 @@ export function MapTimeline() {
           continue;
         }
         stepped = true;
+        shownAt = performance.now();
         const ok = await rs.showIndex(target);
         if (cancelled) return;
         if (!ok) {
           setPlaying(false);
           return;
+        }
+        shown = target;
+        if (atEnd) {
+          clockScan = target;
+          clockAt = shownAt;
         }
       }
     }
@@ -495,8 +572,10 @@ export function MapTimeline() {
     async function runFrames(
       read: () => { index: number; length: number; busy: boolean },
       go: (i: number) => void,
-      /** Time per frame at 1x, read each step so a change in Settings lands mid-loop. */
-      dwell: () => number,
+      /** Time frame i stays on screen at 1x, read each step so a change in
+       *  Settings lands mid-loop. It runs from the moment the frame is put on
+       *  screen, so the paint is inside it rather than added on top. */
+      dwell: (i: number) => number,
       /** First frame of the loop; the end wraps back here. */
       first = 0,
       /** Whether frame i can be shown at once. */
@@ -505,6 +584,8 @@ export function MapTimeline() {
       settled: () => boolean = () => true,
       /** Whether frame i failed to come: stepped past rather than waited on. */
       failed: (i: number) => boolean = () => false,
+      /** Whose frames these are, for the layers that ready them ahead. */
+      driver?: PlayDriver,
     ) {
       /** The next frame after `index` to show -- round to `first` when looping,
        *  past any that failed; -1 while the next one is still on its way.
@@ -559,11 +640,58 @@ export function MapTimeline() {
         }
         return n;
       };
+      /** Where each frame starts on the play's clock, in ms at this speed:
+       *  [i] for frame i, [length] for the end of the loop. */
+      const starts = (length: number): number[] => {
+        const p = [0];
+        for (let k = 0; k < length; k++) p.push(p[k] + dwell(k) / speed);
+        return p;
+      };
+      /** The last frame due by clock time `c`: after `index`, short of the end. */
+      const dueBy = (p: number[], index: number, c: number): number => {
+        let t = index + 1;
+        while (t + 1 < p.length - 1 && p[t + 1] <= c) t++;
+        return t;
+      };
+      /** How long a step really takes, smoothed: the layers ready the frames a
+       *  step that long lands on (lib/playAhead), not the next in a row. */
+      let stepMs = MIN_FRAME_MS;
+      if (driver) {
+        published = (i: number) => {
+          const length = read().length;
+          if (i >= length - 1) return first;
+          const p = starts(length);
+          return dueBy(p, i, p[i] + Math.max(stepMs, p[i + 1] - p[i]));
+        };
+        setPlayNext(driver, published);
+      }
       // At the start it holds until a few frames are here rather than stepping
       // each one the moment it lands, which read as a stutter at the start of
       // every play. From then on it never holds while anything is here.
       let buffering = true;
       let bufferSince = performance.now();
+      let shownAt = performance.now();
+      let shown = read().index;
+      // The play keeps a clock, like a video: it runs at the speed asked, and
+      // each step shows the frame due by it. While the map keeps up, that is
+      // every frame; when a frame takes longer to draw than its share of time,
+      // the clock has moved on and the play steps over frames rather than fall
+      // behind -- at 80x a model loop covers time at 80x on any machine, not
+      // at whatever the map can paint (it got a third of that, 2026-10-03).
+      // Waits for frames still to come stop the clock, like a video
+      // buffering, so a cold loop drops nothing.
+      let clockFrame = shown;
+      let clockAt = performance.now();
+      const anchor = (i: number) => {
+        clockFrame = i;
+        clockAt = performance.now();
+      };
+      /** Waits with the clock stopped. */
+      const hold = async (ms: number) => {
+        const from = performance.now();
+        await wait(ms);
+        clockAt += performance.now() - from;
+      };
       while (!cancelled) {
         if (buffering) {
           const { index, length } = read();
@@ -573,37 +701,73 @@ export function MapTimeline() {
             continue;
           }
           buffering = false;
+          anchor(index);
         }
-        await wait(dwell() / speed);
-        if (cancelled) return;
         const { index, length } = read();
         if (length === 0) return;
+        // Moved by hand: the clock starts again from there.
+        if (index !== shown) {
+          shown = index;
+          anchor(index);
+        }
         const loading = !settled();
+        const p = starts(length);
         if (index >= length - 1 && !loop && !loading) {
+          await wait(Math.max(0, p[length] - p[index] - (performance.now() - shownAt)));
           setPlaying(false);
           return;
         }
-        let next = nextFrom(index, length, loading);
-        if (next < 0) {
-          // Nothing else here yet: wait for anything while the loop is still
-          // coming in. Once it has all come, what is missing failed on the way
-          // (an hour not out yet when asked): step onto it the plain way, which
-          // asks for it again, rather than wait forever.
-          if (loading) {
-            await wait(100);
+        // The next frame's time on the clock, and never sooner than
+        // MIN_FRAME_MS after this one went up.
+        const nextDue = clockAt + p[index + 1] - p[clockFrame];
+        await wait(Math.max(0, nextDue - performance.now(), MIN_FRAME_MS - (performance.now() - shownAt)));
+        if (cancelled) return;
+        if (read().index !== index || read().length !== length) continue;
+        let next: number;
+        if (index >= length - 1) {
+          // Round to the start (looping, or the loop still coming in).
+          next = nextFrom(index, length, loading);
+          if (next < 0) {
+            await hold(100);
             continue;
           }
-          if (index >= length - 1 && !loop) {
-            setPlaying(false);
-            return;
+        } else {
+          const t = dueBy(p, index, p[clockFrame] + (performance.now() - clockAt));
+          if (here(t)) next = t;
+          else if (failed(t)) {
+            // Failed on the way: past it, or onto it the plain way, which asks
+            // for it again, rather than wait forever.
+            const past = nextFrom(t, length, loading);
+            next = past > t ? past : t;
+          } else if (loading) {
+            // Not here yet while the loop downloads: whatever is next that is
+            // (lib/loopOrder spreads the download over the whole span), and
+            // with nothing, wait for anything.
+            next = nextFrom(index, length, true);
+            if (next < 0) {
+              await hold(100);
+              continue;
+            }
+          } else {
+            // All has come but this one is not ready to show (its sharp
+            // picture: SHARP_GRACE_MS at most): wait for it.
+            await hold(16);
+            continue;
           }
-          next = index >= length - 1 ? first : index + 1;
         }
+        const stepped = performance.now() - shownAt;
         go(next);
-        await wait(60);
-        for (let k = 0; k < 300 && read().busy; k++) {
+        shown = next;
+        shownAt = performance.now();
+        if (next < index) anchor(next);
+        stepMs = stepMs * 0.7 + Math.min(Math.max(stepped, MIN_FRAME_MS), 1000) * 0.3;
+        // The layers start their paint as the index changes; a frame of the
+        // screen later, busy says whether it is done (it used to be a flat
+        // 60 ms, more than the whole of a frame at 20x).
+        await aFrame();
+        for (let k = 0; k < 900 && read().busy; k++) {
           if (cancelled) return;
-          await wait(50);
+          await aFrame();
         }
       }
     }
@@ -649,6 +813,7 @@ export function MapTimeline() {
               const f = useSatStore.getState().frames[i];
               return !!f && satFrameFailed(f.time);
             },
+            "sat",
           )
       : isObs
         ? runFrames(
@@ -658,8 +823,10 @@ export function MapTimeline() {
             },
             (i) => useObsStore.getState().setIndex(i),
             // The whole timeline is the loop now -- its length is picked in
-            // the panel -- and its frames are made ahead of the play.
-            () => getSetting<number>("timeline.obsMs"),
+            // the panel -- and its frames are made ahead of the play. Each
+            // frame holds its share of the time, so forecast time moves at one
+            // speed through runs whose step widens (see timeShare).
+            (i) => getSetting<number>("timeline.obsMs") * timeShare(useObsStore.getState().frames, i),
             0,
             (i) => {
               const s = useObsStore.getState();
@@ -677,6 +844,7 @@ export function MapTimeline() {
               const f = s.frames[i];
               return !!f && obsFramesFailed.has(`${s.source}|${s.field}|${f.key}`);
             },
+            "obs",
           )
           : isLsr
             ? runLsr()
@@ -685,6 +853,7 @@ export function MapTimeline() {
               : run());
     return () => {
       cancelled = true;
+      if (published) clearPlayNext(published);
     };
   }, [playing, speed, loop, canPlay, isRadar, isSat, isObs, isLsr, isFronts, gotoPlaybackHour, setPendingHour]);
 
@@ -791,15 +960,7 @@ export function MapTimeline() {
       >
         <Repeat size={15} />
       </button>
-      <button
-        type="button"
-        className="maptimeline__speed"
-        onClick={cycleSpeed}
-        disabled={!canPlay}
-        title="Playback speed"
-      >
-        {speed}&times;
-      </button>
+      <SpeedPicker speed={speed} onChange={setSpeed} disabled={!canPlay} />
 
       <span className="maptimeline__sep" />
 

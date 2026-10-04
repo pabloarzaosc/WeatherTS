@@ -35,3 +35,6 @@ build/vc_redist.x64.exe
 
 # Vendored reference project (kept locally, not part of this app)
 SparkRadar-main/
+
+# Cloudflare Wrangler local state (web/proxy)
+.wrangler/

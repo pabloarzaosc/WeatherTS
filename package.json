@@ -1,7 +1,7 @@
 {
   "name": "weatherts",
   "private": true,
-  "version": "1.6.1",
+  "version": "1.7.0",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
@@ -16,7 +16,8 @@
     "build": "node scripts/sync-splash.mjs && tsc && vite build",
     "splash:sync": "node scripts/sync-splash.mjs",
     "preview": "vite preview",
-    "release:announce": "node scripts/announce-release.mjs"
+    "release:announce": "node scripts/announce-release.mjs",
+    "landing:indexnow": "node scripts/indexnow.mjs"
   },
   "dependencies": {
     "@fontsource-variable/recursive": "^5.3.0",

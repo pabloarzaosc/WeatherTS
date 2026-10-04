@@ -24,7 +24,7 @@
 
 const MAILERLITE_ACCOUNT = "2512895";            // MailerLite account ID
 const MAILERLITE_FORM_ID = "193117441524499680"; // MailerLite embedded form ID
-const WAITLIST_MAILTO    = "hello@weatherts.app"; // fallback, used only if the IDs above are blank
+const WAITLIST_MAILTO    = "contact@weatherts.tech"; // fallback, used only if the IDs above are blank
 
 const MAILERLITE_ENDPOINT = MAILERLITE_ACCOUNT && MAILERLITE_FORM_ID
   ? `https://assets.mailerlite.com/jsonp/${MAILERLITE_ACCOUNT}/forms/${MAILERLITE_FORM_ID}/subscribe`
@@ -154,6 +154,38 @@ async function wireDownload() {
 }
 wireDownload();
 
+/* -----------------------------------------------------------
+   Discord: the server's name and how many people are in it and
+   online, from the public invite endpoint (it answers any origin,
+   no key). The card is complete without it, just without numbers.
+   ----------------------------------------------------------- */
+
+const DISCORD_INVITE = "fSbaW7jKW5";
+
+async function wireDiscord() {
+  if (!document.getElementById("discord-card")) return;
+  try {
+    const res = await fetch(`https://discord.com/api/v10/invites/${DISCORD_INVITE}?with_counts=true`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const invite = await res.json();
+    const guild = invite.guild || {};
+
+    if (guild.name) setText("discord-name", guild.name);
+
+    const online = invite.approximate_presence_count;
+    const members = invite.approximate_member_count;
+    if (typeof online === "number" && typeof members === "number") {
+      const n = new Intl.NumberFormat();
+      setText("discord-online", `${n.format(online)} online`);
+      setText("discord-members", `${n.format(members)} ${members === 1 ? "member" : "members"}`);
+      document.getElementById("discord-stats").hidden = false;
+    }
+  } catch (_) {
+    // The card and its link stand on their own.
+  }
+}
+wireDiscord();
+
 /* year in the footer */
 const ano = document.getElementById("ano");
 if (ano) ano.textContent = new Date().getFullYear();
@@ -242,8 +274,8 @@ const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").mat
 
 (function reveal() {
   const targets = document.querySelectorAll(
-    "main .head, main .lede, main .group, main .faq__item, main .person, main .people__label," +
-    " main .facts--dl, main .waitlist, main .handle, main .center > .btn, main .center > .note, #credits .narrow > .note",
+    "main .head, main .lede, main .group, main .feat, main .faq__item, main .person, main .people__label," +
+    " main .facts--dl, main .waitlist, main .handle, main .invite, main .center > .btn, main .center > .note, #credits .narrow > .note",
   );
   document.querySelectorAll(".group__list").forEach((list) => {
     [...list.children].forEach((li, i) => li.style.setProperty("--i", String(i)));
@@ -271,6 +303,169 @@ const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").mat
   // said nothing at all, something is wrong with it: show the page as it is
   // rather than leave it hidden.
   setTimeout(() => { if (!heard) targets.forEach((el) => el.classList.add("is-in")); }, 3000);
+})();
+
+/* -----------------------------------------------------------
+   The demos: each frame's tabs switch between its captures, and
+   the line under it says what the one on screen shows.
+
+   A video downloads only when its frame first comes into view
+   (preload="none", the file on data-src) and plays only while
+   the frame is on screen, so the page costs its pictures, not
+   its ~10 MB of loops, until someone scrolls to them. With
+   reduced motion nothing plays by itself; the play button does.
+
+   "View full size", or a click on the picture, opens it in one
+   shared dialog -- the app's text is small at the page's width.
+   ----------------------------------------------------------- */
+
+(function shots() {
+  const figs = [...document.querySelectorAll(".shot")];
+  if (!figs.length) return;
+  const box = document.getElementById("lightbox");
+  const canEnlarge = Boolean(box && typeof box.showModal === "function");
+  const stage = box && box.querySelector(".lightbox__stage");
+  let owner = null;
+  const state = new Map();
+  const items = (fig) => [...fig.querySelectorAll(".shot__item")];
+  const current = (fig) => items(fig)[state.get(fig).index];
+
+  function sync(fig) {
+    const st = state.get(fig);
+    items(fig).forEach((el, i) => {
+      const on = i === st.index;
+      el.hidden = !on;
+      if (el.tagName !== "VIDEO") return;
+      if (on && st.visible && !st.paused) {
+        if (!el.getAttribute("src") && el.dataset.src) el.src = el.dataset.src;
+        el.play().catch(() => {});
+      } else {
+        el.pause();
+      }
+    });
+    const cur = current(fig);
+    const video = cur.tagName === "VIDEO";
+    fig.classList.toggle("shot--video", video);
+    fig.classList.toggle("is-playing", video && !st.paused);
+    const cap = fig.querySelector(".shot__cap");
+    if (cap && cur.dataset.cap) cap.textContent = cur.dataset.cap;
+    fig.querySelectorAll(".shot__tab").forEach((tab, i) => {
+      tab.setAttribute("aria-selected", String(i === st.index));
+      tab.tabIndex = i === st.index ? 0 : -1;
+    });
+    const play = fig.querySelector(".shot__play");
+    if (play) play.setAttribute("aria-label", st.paused ? "Play" : "Pause");
+  }
+
+  /* Every capture exists twice, taken in the app's dark and light themes
+     (data-dark / data-light), and the page shows the one of its own theme.
+     A loop already playing carries on from the same moment in the other
+     file: the two were stepped over the very same frames. */
+  const themeOf = () => (document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark");
+
+  function themeMedia() {
+    const theme = themeOf();
+    document.querySelectorAll(".shot__item").forEach((el) => {
+      const want = el.dataset[theme];
+      if (!want) return;
+      if (el.tagName !== "VIDEO") {
+        if (el.getAttribute("src") !== want) el.src = want;
+        return;
+      }
+      const poster = el.dataset[theme === "light" ? "posterLight" : "posterDark"];
+      if (poster && el.getAttribute("poster") !== poster) el.poster = poster;
+      el.dataset.src = want;
+      const loaded = el.getAttribute("src");
+      if (!loaded || loaded === want) return;
+      const at = el.currentTime;
+      const playing = !el.paused;
+      el.src = want;
+      // preload="none": nothing loads until play() asks for it.
+      el.addEventListener("loadedmetadata", () => {
+        if (el.duration) el.currentTime = at % el.duration;
+      }, { once: true });
+      if (playing) el.play().catch(() => {});
+    });
+  }
+  themeMedia();
+  new MutationObserver(themeMedia).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+  figs.forEach((fig) => {
+    state.set(fig, { index: 0, paused: REDUCED_MOTION, visible: false });
+    const tabs = [...fig.querySelectorAll(".shot__tab")];
+    const pick = (i) => { state.get(fig).index = i; sync(fig); };
+    tabs.forEach((tab, i) => tab.addEventListener("click", () => pick(i)));
+    // Arrow keys move along the tabs, as in any tab list.
+    fig.querySelector(".shot__tabs")?.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+      const n = tabs.length;
+      const i = (state.get(fig).index + (e.key === "ArrowRight" ? 1 : n - 1)) % n;
+      pick(i);
+      tabs[i].focus();
+      e.preventDefault();
+    });
+    fig.querySelector(".shot__play")?.addEventListener("click", () => {
+      const st = state.get(fig);
+      st.paused = !st.paused;
+      sync(fig);
+    });
+    fig.querySelector(".shot__zoom")?.addEventListener("click", () => enlarge(fig));
+    fig.querySelector(".shot__stage")?.addEventListener("click", () => enlarge(fig));
+    sync(fig);
+  });
+
+  if ("IntersectionObserver" in window) {
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        state.get(e.target).visible = e.isIntersecting;
+        sync(e.target);
+      }
+    }, { threshold: 0.25 });
+    figs.forEach((fig) => io.observe(fig));
+  } else {
+    figs.forEach((fig) => { state.get(fig).visible = true; sync(fig); });
+  }
+
+  function enlarge(fig) {
+    if (!canEnlarge) return;
+    const cur = current(fig);
+    let el;
+    if (cur.tagName === "VIDEO") {
+      el = document.createElement("video");
+      el.src = cur.dataset.src;
+      el.poster = cur.poster;
+      el.muted = true;
+      el.loop = true;
+      el.playsInline = true;
+      el.controls = true;
+      el.autoplay = !REDUCED_MOTION;
+      el.setAttribute("aria-label", cur.getAttribute("aria-label") || "");
+    } else {
+      el = document.createElement("img");
+      el.src = cur.currentSrc || cur.src;
+      el.alt = cur.alt;
+    }
+    stage.replaceChildren(el);
+    box.querySelector(".lightbox__cap").textContent = cur.dataset.cap || "";
+    // The small copy rests while the big one is open.
+    owner = fig;
+    state.get(fig).visible = false;
+    sync(fig);
+    box.showModal();
+  }
+
+  if (!canEnlarge) return;
+  box.addEventListener("close", () => {
+    stage.replaceChildren();
+    if (!owner) return;
+    const rect = owner.getBoundingClientRect();
+    state.get(owner).visible = rect.bottom > 0 && rect.top < window.innerHeight;
+    sync(owner);
+    owner = null;
+  });
+  // A click on the dimmed page around it closes it, like the close button.
+  box.addEventListener("click", (e) => { if (e.target === box) box.close(); });
+  box.querySelector(".lightbox__close")?.addEventListener("click", () => box.close());
 })();
 
 /* -----------------------------------------------------------

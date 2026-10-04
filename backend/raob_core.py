@@ -168,7 +168,14 @@ _THIN_DP = 5.0  # min hPa between kept levels (bounds SHARPpy render cost)
 def _clean_levels(levels: list[dict]) -> list[dict]:
     """surface -> top, de-dupe, enforce monotonic height (same as the model path).
     High-res BUFR profiles (1000s of levels) are thinned to a ~5 hPa spacing so
-    SHARPpy renders in ~1-2 s instead of ~20 s; the surface level always stays."""
+    SHARPpy renders in ~1-2 s instead of ~20 s; the surface level always stays.
+
+    Only the levels WITHOUT a wind are thinned. A RAOB reports wind at the
+    mandatory and significant-wind levels alone, and thinning by pressure kept
+    whichever level came first -- often a temperature-only one a hPa or two
+    above a wind level, which then went. OUN 2026-10-03 12Z lost 10 of its 39
+    winds that way, the 500 hPa one among them, and the hodograph lost the
+    loop SPC's plot of the same sounding has between 5 and 6 km (Pablo)."""
     levels.sort(key=lambda d: -d["p"])
     cleaned: list[dict] = []
     for lv in levels:
@@ -176,8 +183,10 @@ def _clean_levels(levels: list[dict]) -> list[dict]:
             continue
         if cleaned and lv["h"] <= cleaned[-1]["h"]:
             continue
-        # keep the surface (first), then only levels >=_THIN_DP below the last kept
-        if cleaned and (cleaned[-1]["p"] - lv["p"]) < _THIN_DP:
+        has_wind = lv["wd"] != MISSING and lv["ws"] != MISSING
+        # keep the surface (first) and every wind; the rest only >=_THIN_DP
+        # below the last kept
+        if cleaned and not has_wind and (cleaned[-1]["p"] - lv["p"]) < _THIN_DP:
             continue
         cleaned.append(lv)
     return cleaned

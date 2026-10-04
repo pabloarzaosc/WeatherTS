@@ -2814,7 +2814,89 @@ html[data-reduce-motion="true"] *::after {
   border-color: var(--accent-ring);
   color: var(--accent);
 }
-.maptimeline__icbtn.is-active {
+.maptimeline__icbtn.is-active,
+.maptimeline__speed.is-open {
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Speed: the button opens a slider over 1x-80x, upward from the timeline. */
+.speedpick {
+  position: relative;
+  flex: none;
+}
+.speedpick__pop {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  z-index: 40;
+  width: 252px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--panel-solid);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.55);
+  animation: fade-up var(--t) var(--ease-out);
+}
+.speedpick__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.speedpick__head span {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.speedpick__head b {
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.speedpick__range {
+  display: block;
+  width: 100%;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.speedpick__scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+.speedpick__quick {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-top: 10px;
+}
+.speedpick__chip {
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color var(--t) var(--ease), color var(--t) var(--ease), background-color var(--t) var(--ease);
+}
+.speedpick__chip:hover {
+  border-color: var(--accent-ring);
+  color: var(--accent);
+}
+.speedpick__chip.is-on {
   border-color: var(--accent-ring);
   background: var(--accent-soft);
   color: var(--accent);

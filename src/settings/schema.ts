@@ -10,6 +10,8 @@
  * used, through getSetting().
  */
 
+import { PLAY_SPEEDS, speedLabel } from "../lib/playSpeeds";
+
 export type SettingValue = boolean | number | string;
 
 interface Base {
@@ -208,7 +210,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       { key: "timeline.loop", label: "Loop when playback reaches the end", type: "toggle", default: false, group: "Playback" },
       {
         key: "timeline.speed", label: "Starting speed", type: "select", default: "1", group: "Playback",
-        options: ["1", "2", "4", "8", "12", "16", "20"].map((v) => ({ value: v, label: `${v}×` })),
+        options: PLAY_SPEEDS.map((v) => ({ value: String(v), label: speedLabel(v) })),
       },
       ms("timeline.radarMs", "Radar", 700),
       ms("timeline.satMs", "Satellite", 350),

@@ -27,6 +27,7 @@ import { allMaps, getMap } from "../../map/mapInstance";
 import { VECTOR_SOURCE } from "../../map/basemaps";
 import { obsFramesFailed, obsFramesHere, useObsStore } from "../../store/useObsStore";
 import { spreadOrder } from "../../lib/loopOrder";
+import { upcomingFrames } from "../../lib/playAhead";
 import { attachPlaces, PLACE_LAYER_IDS, placesFor } from "./obsPlaces";
 
 const SRC = "obs-src";
@@ -677,8 +678,10 @@ function sharpAhead(map: MapLibreMap): void {
     const order = [...s.loopKeys.slice(at), ...s.loopKeys.slice(0, at)];
     void prefetchObsLoop(s.source, s.field, order, box).catch(() => undefined);
   }
-  for (let k = 0; k < SHARP_AHEAD && k < s.frames.length; k++) {
-    const f = s.frames[(s.index + k) % s.frames.length];
+  // The frames the play will show, which at high speeds are not the next in a row.
+  for (const i of [s.index, ...upcomingFrames("obs", s.index, s.frames.length, SHARP_AHEAD - 1)]) {
+    const f = s.frames[i];
+    if (!f) continue;
     const want = `${s.source}|${s.field}|${f.key}`;
     // Only frames already made: their detail is then a crop of what the server holds.
     if (!obsFramesHere.has(want)) continue;

@@ -27,6 +27,9 @@ import { obsLayer } from "./modules/obsLayer";
 import { satelliteLayer } from "./modules/satelliteLayer";
 import { nexradLayer } from "./modules/nexradLayer";
 import { lsrLayer } from "./modules/lsrLayer";
+import { glmLayer } from "./modules/glmLayer";
+import { riversLayer } from "./modules/riversLayer";
+import { nwmLayer } from "./modules/nwmLayer";
 // import { frontsLayer } from "./modules/frontsLayer";
 import { acarsLayer } from "./modules/acarsLayer";
 import { chasersLayer } from "./modules/chasersLayer";
@@ -57,6 +60,12 @@ registerLayer(acarsLayer);
 // and the import above brings the product back.
 // registerLayer(frontsLayer);
 registerLayer(nexradLayer);
+// The water model's streams over the radar's rain, under the gauges that measure them.
+registerLayer(nwmLayer);
+// Lightning is read against the radar scan under it.
+registerLayer(glmLayer);
+// River gauges: a flooding river is read against the radar's rain over it.
+registerLayer(riversLayer);
 // Ground truth sits on top of every product it might be checked against.
 registerLayer(lsrLayer);
 // Home pins first: they are the static backdrop to the live positions above.

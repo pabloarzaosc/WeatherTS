@@ -1,9 +1,10 @@
 import { useState, useSyncExternalStore } from "react";
-import { ChevronDown, Radar } from "lucide-react";
+import { ChartArea, ChevronDown, Radar } from "lucide-react";
 
 import { getActivePaneId, subscribeMaps } from "../map/mapInstance";
 import { useDragOffset } from "../lib/useDragOffset";
 import { useNexradStore } from "../store/useNexradStore";
+import { useXsectStore } from "../store/useXsectStore";
 import type { ProductFamily } from "../lib/nexrad";
 
 // The radar product picker, pinned to the map's top-right. It drives the FOCUSED
@@ -102,6 +103,8 @@ export function RadarProductPanel() {
   // --map-right already keeps this panel clear of it.
   const [open, setOpen] = useState(true);
   const drag = useDragOffset("products");
+  const xsDrawing = useXsectStore((s) => s.drawing);
+  const xsOn = useXsectStore((s) => s.a !== null);
 
   if (!site) return null;
   if (!grids.length) return null;
@@ -154,6 +157,22 @@ export function RadarProductPanel() {
           ))}
         </div>
       )}
+      {/* A vertical slice through the whole volume, along a line drawn on the
+          map: the one radar tool that is about height, not the map. */}
+      <button
+        type="button"
+        className={`rpp__xsect${xsDrawing || xsOn ? " is-on" : ""}`}
+        onClick={() => {
+          const xs = useXsectStore.getState();
+          if (xs.drawing) xs.cancelDrawing();
+          else xs.startDrawing();
+        }}
+        title="Draw a line on the map: a vertical slice through every tilt under it (Level II)"
+        aria-pressed={xsDrawing}
+      >
+        <ChartArea size={13} />
+        <span>{xsDrawing ? "Click two points on the map… (Esc)" : xsOn ? "New cross section" : "Cross section"}</span>
+      </button>
     </div>
   );
 }

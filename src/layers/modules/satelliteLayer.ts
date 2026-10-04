@@ -2,6 +2,7 @@ import type { ImageSource, Map as MapLibreMap } from "maplibre-gl";
 
 import type { LayerModule } from "../types";
 import { spreadOrder } from "../../lib/loopOrder";
+import { upcomingFrames } from "../../lib/playAhead";
 import { prefetchSatLoop, satImageUrl, type SatBox, type SatDetail, type SatSelection } from "../../lib/satellite";
 import { holdBasemapLabels } from "../../map/basemapLabels";
 import { useAppStore } from "../../store/useAppStore";
@@ -529,8 +530,11 @@ function decodeAhead(st: PaneState, loop: Loop): void {
   const { frames, index } = useSatStore.getState();
   const n = frames.length;
   const want = new Set<string>();
-  for (let k = -1; k <= DECODE_AHEAD && n > 0; k++) {
-    const f = frames[(((index + k) % n) + n) % n];
+  // The one before, this one, and the ones the play will show -- at high
+  // speeds not the next in a row.
+  const at = n > 0 ? [(index - 1 + n) % n, index, ...upcomingFrames("sat", index, n, DECODE_AHEAD)] : [];
+  for (const i of at) {
+    const f = frames[i];
     const url = f ? loop.urls.get(f.time) : undefined;
     if (url && url !== "empty") want.add(url);
   }

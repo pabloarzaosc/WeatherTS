@@ -103,6 +103,12 @@ export function useDragOffset(
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
       if (e.button !== 0) return;
+      // A button inside the handle (a panel's close X) is a button, not a
+      // grip: capturing the pointer for a drag made its click land on the
+      // handle instead, and the X did nothing. A handle that is itself a
+      // button (the product picker's header) still drags.
+      const control = (e.target as HTMLElement).closest("button, a, input, select, textarea");
+      if (control && control !== e.currentTarget) return;
       const el = ref.current;
       if (!el) return;
 

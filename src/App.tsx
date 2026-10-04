@@ -5,6 +5,8 @@ import { DataPanel } from "./ui/DataPanel";
 import { StatusBar } from "./ui/StatusBar";
 import { ZoomControls } from "./ui/ZoomControls";
 import { MeasureTool } from "./ui/MeasureTool";
+import { CrossSectionTool } from "./ui/CrossSectionTool";
+import { HydrographPanel } from "./ui/HydrographPanel";
 import { DrawTool } from "./ui/DrawTool";
 import { AlertController } from "./ui/AlertController";
 import { AlertPanel } from "./ui/AlertPanel";
@@ -76,6 +78,8 @@ export default function App() {
         <BasemapPicker />
         <DataPanel />
         <MeasureTool />
+        <CrossSectionTool />
+        <HydrographPanel />
         <DrawTool />
         <OutlookLegend />
         <AlertPanel />

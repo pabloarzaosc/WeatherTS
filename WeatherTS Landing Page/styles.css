@@ -49,6 +49,9 @@
   --danger: #f2715a;
   --track: #353535;
   --wash-rgb: 236, 236, 236;
+  /* Behind a demo while it loads, and beside the exported GIF. */
+  --shot-bg: #1a1a1a;
+  --scrim: rgba(12, 12, 12, 0.82);
 }
 
 /* light: the same sign in daylight */
@@ -71,6 +74,8 @@
   --danger: #b3321f;
   --track: #c3cfdd;
   --wash-rgb: 11, 21, 34;
+  --shot-bg: #dfe6ef;
+  --scrim: rgba(11, 21, 34, 0.55);
 }
 
 /* ─────────────  base  ───────────── */
@@ -368,7 +373,6 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 .center .lede { margin-left: auto; margin-right: auto; margin-bottom: 26px; }
 
 /* ─────────────  groups: the catalog's panels  ───────────── */
-.groups { columns: 2 440px; column-gap: 16px; }
 .group {
   break-inside: avoid;
   margin: 0 0 16px;
@@ -410,6 +414,161 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 /* Not on yet: an outline where the lit lamp would be. */
 .group--wip .group__list li::before { background: transparent; border: 1.5px solid var(--accent); }
 .group--later .group__list li::before { background: transparent; border: 1.5px dashed var(--border-strong); }
+
+/* ─────────────  what works today: each feature with its demo  ─────────────
+   The demo sits in a frame drawn like one of the app's panels: a strip of
+   tabs on a hairline, the picture, and a line saying what it shows and when.
+   Wider than the rest of the page, so the app's own text stays readable. */
+.wrap--wide { max-width: 1320px; }
+.tour { display: grid; gap: 76px; }
+.feat {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 40px;
+  align-items: start;
+}
+/* Every other feature puts its picture on the right, in the wide column. */
+.feat:nth-child(even) { grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); }
+.feat:nth-child(even) > .shot { order: 2; }
+
+.feat__text { padding-top: 4px; }
+.feat__head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.feat__head .ic { width: 19px; height: 19px; color: var(--accent); }
+.feat__head h3 { font-size: 23px; letter-spacing: -0.01em; }
+.feat__head .tag { margin-left: 4px; }
+.feat__lede { margin: 0 0 14px; font-size: 17px; line-height: 1.45; color: var(--text); }
+.feat .group__list { padding: 0; border-top: 1px solid var(--border); }
+.feat .group__list li { padding-left: 22px; padding-right: 0; }
+.feat .group__list li::before { left: 2px; }
+
+.shot {
+  margin: 0;
+  min-width: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.shot__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 6px 0 7px;
+  border-bottom: 1px solid var(--border);
+}
+.shot__tabs {
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.shot__tabs::-webkit-scrollbar { display: none; }
+.shot__tab {
+  flex: none;
+  height: 27px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+}
+.shot__tab:hover { color: var(--text); border-color: var(--border-strong); }
+/* The shot on screen: lit, like a product picked in the app. */
+.shot__tab[aria-selected="true"] { color: var(--accent-text); border-color: var(--accent); background: var(--accent-soft); }
+.shot__tools { display: flex; gap: 2px; margin-left: auto; }
+.shot__btn {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 27px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+}
+.shot__btn:hover { color: var(--text); border-color: var(--border-strong); }
+.shot__btn .ic { width: 15px; height: 15px; }
+/* Play and pause belong to videos, and show what a press will do. */
+.shot__play { display: none; }
+.shot--video .shot__play { display: inline-grid; }
+.shot__play .ic--pause, .shot.is-playing .shot__play .ic--play { display: none; }
+.shot.is-playing .shot__play .ic--pause { display: block; }
+
+/* Every capture is 16:10, the window it was taken in; the exported GIF sits
+   in the same frame on the ground of the app's theme. */
+.shot__stage {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  background: var(--shot-bg);
+  cursor: zoom-in;
+}
+.shot__item {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.shot__item[hidden] { display: none; }
+.shot__cap {
+  margin: 0;
+  padding: 10px 13px 11px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-faint);
+}
+
+/* ─────────────  full size  ───────────── */
+.lightbox {
+  width: min(96vw, 1680px);
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  overflow: hidden;
+}
+.lightbox::backdrop { background: var(--scrim); }
+.lightbox__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 42px;
+  padding: 6px 6px 6px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.lightbox__cap {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.lightbox__stage { background: var(--shot-bg); }
+.lightbox__stage img, .lightbox__stage video {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: calc(94vh - 44px);
+  object-fit: contain;
+}
 
 /* ─────────────  faq  ───────────── */
 .head--left { margin-bottom: 18px; }
@@ -477,6 +636,68 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
   overflow: hidden; white-space: nowrap;
 }
 
+/* ─────────────  community  ─────────────
+   The server as a card in the page's own terms: a keylined panel, not
+   Discord's embed. Its one borrowed colour is Discord's online green, on the
+   same square lamp the beta chip uses. */
+/* It follows the download band directly; a keyline keeps them two sections. */
+#community.section--band { border-top: 1px solid var(--border); }
+
+.invite {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 16px 18px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-align: left;
+  transition: border-color var(--t) var(--ease);
+}
+.invite:hover { border-color: var(--border-strong); }
+/* Each card's square holds its platform's mark, not the app's logo: the name
+   beside it already says WeatherTS. Discord's in its blurple, X's in the text
+   colour (its own mark is black or white, never a hue). */
+.invite__icon {
+  display: grid; place-items: center;
+  width: 56px; height: 56px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--text);
+}
+.invite__icon .ic { width: 26px; height: 26px; }
+.invite__icon--discord { color: #5865f2; }
+.invite__icon--discord .ic { width: 30px; height: 30px; }
+.invite__body { display: grid; gap: 4px; min-width: 0; }
+.invite__name {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
+  margin: 0;
+  font-size: 17px; font-weight: 700;
+}
+.invite__tag {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--mono);  font-size: 12px; font-weight: 600; color: var(--text-faint);
+}
+.invite__stats {
+  display: flex; flex-wrap: wrap; gap: 2px 14px;
+  margin: 0;
+  font-family: var(--mono);  font-size: 12.5px; color: var(--text-dim);
+}
+.invite__stats[hidden] { display: none; }
+.invite__stat { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.invite__stat::before { content: ""; width: 7px; height: 7px; border-radius: 1px; background: var(--text-faint); }
+.invite__stat--online::before { background: #23a55a; animation: lamp 2.4s ease-in-out infinite; }
+.invite__desc { margin: 0; font-size: 14.5px; color: var(--text-dim); }
+.invite__join:hover .ic { transform: rotate(-10deg) scale(1.1); }
+/* The X card under the server's: the same panel, a gap between them. */
+.invite + .invite { margin-top: 10px; }
+/* An icon-only link in the bar: the X mark is its own name. */
+.topbar__x { padding: 0 10px; }
+
 /* ─────────────  waitlist  ───────────── */
 .waitlist { max-width: 480px; margin: 0 auto; }
 .waitlist__field { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -512,7 +733,10 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
   padding-bottom: 26px;
   border-bottom: 1px solid var(--border);
 }
-.footer__brand p:last-child { margin: 0; color: var(--text-faint); font-size: 14.5px; }
+.footer__brand p:not(.hero__brand) { margin: 0; color: var(--text-faint); font-size: 14.5px; }
+/* The address under the line: where to write, readable and copyable as it is. */
+.footer__mail { display: inline-block; margin-top: 8px; font-family: var(--mono); font-size: 13px; color: var(--text-dim); text-decoration: none; }
+.footer__mail:hover { color: var(--accent-text); }
 .footer__h { margin: 0 0 10px; font-size: 13px; font-weight: 700; }
 .footer__col { display: flex; flex-direction: column; gap: 7px; }
 .footer__col a { color: var(--text-dim); font-size: 14.5px; text-decoration: none; }
@@ -527,6 +751,14 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 }
 
 /* ─────────────  narrower screens  ───────────── */
+/* The demos stack over their text before either gets cramped. */
+@media (max-width: 1100px) {
+  .tour { gap: 60px; }
+  .feat, .feat:nth-child(even) { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+  .feat:nth-child(even) > .shot { order: 0; }
+  .feat__text { max-width: 760px; padding-top: 0; }
+}
+
 @media (max-width: 980px) {
   .people { grid-template-columns: repeat(2, 1fr); }
   .footer__grid { grid-template-columns: 1fr 1fr; }
@@ -558,7 +790,24 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
   .section { padding: 60px 0; }
   .facts { grid-template-columns: repeat(2, 1fr); }
   .road { grid-template-columns: 1fr; }
-  .groups { columns: 1; }
+  .tour { gap: 48px; }
+  .feat__head h3 { font-size: 20px; }
+  .shot__tab { padding: 0 8px; font-size: 12.5px; }
+  .shot__cap { font-size: 11.5px; }
+  .invite { grid-template-columns: auto 1fr; }
+  .invite__join { grid-column: 1 / -1; justify-content: center; }
+}
+
+/* The bar's own buttons (theme, Discord, GitHub) go to icons where the row is
+   short of room: on a phone, to share the first row with the name, and on a
+   small laptop, where the sections still sit on the same row. The words stay
+   for screen readers. */
+@media (max-width: 520px), (min-width: 901px) and (max-width: 1180px) {
+  .topbar__end .topbar__link { padding: 0 9px; }
+  .topbar__end .topbar__link span {
+    position: absolute; width: 1px; height: 1px; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
 }
 
 @media (max-width: 480px) {
@@ -613,8 +862,15 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 /* A group's lamps switch on one after another as it comes into view. */
 .group__list li { transition: opacity 0.5s var(--ease-out), transform 0.5s var(--ease-out); transition-delay: calc(var(--i, 0) * 60ms + 200ms); }
 .group__list li::before { transition: background-color 0.25s var(--ease), box-shadow 0.25s var(--ease), transform 0.35s var(--ease-out); transition-delay: calc(var(--i, 0) * 60ms + 380ms); }
-.js .group.reveal:not(.is-in) .group__list li { opacity: 0; transform: translateX(-8px); }
-.js .group.reveal:not(.is-in) .group__list li::before { background-color: transparent; box-shadow: inset 0 0 0 1.5px var(--border-strong); transform: scale(0.6); }
+.js .group.reveal:not(.is-in) .group__list li,
+.js .feat.reveal:not(.is-in) .group__list li { opacity: 0; transform: translateX(-8px); }
+.js .group.reveal:not(.is-in) .group__list li::before,
+.js .feat.reveal:not(.is-in) .group__list li::before { background-color: transparent; box-shadow: inset 0 0 0 1.5px var(--border-strong); transform: scale(0.6); }
+
+.feat__head .ic { transition: transform 0.35s var(--ease-out); }
+.feat:hover .feat__head .ic { transform: rotate(-12deg) scale(1.12); }
+.shot { transition: border-color var(--t) var(--ease); }
+.shot:hover { border-color: var(--border-strong); }
 
 .group { transition: border-color var(--t) var(--ease); }
 .group:hover { border-color: var(--border-strong); }
@@ -633,5 +889,5 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
-  .js .reveal, .js .group.reveal .group__list li { opacity: 1; transform: none; }
+  .js .reveal, .js .group.reveal .group__list li, .js .feat.reveal .group__list li { opacity: 1; transform: none; }
 }

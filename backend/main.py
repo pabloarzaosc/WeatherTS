@@ -35,6 +35,7 @@ import surface_obs
 import nexrad_core
 import observations
 import nexrad_level2
+import radar_xsect
 import nexrad_availability
 import nexrad_storms
 import storm_attributes
@@ -47,6 +48,9 @@ import acars_core
 import area_sounding
 import satellite
 import sat_net
+import glm
+import rivers
+import brazil_rivers
 
 # Certificates loaded once, and new connections opened a dozen at a time, for
 # every module's sessions -- those made above too (see fast_tls).
@@ -562,6 +566,34 @@ def nexrad_data(
     )
 
 
+@app.get("/api/nexrad/xsect")
+def nexrad_xsect(
+    site: str = Query(...),
+    a: str = Query(..., description="lat,lon"),
+    b: str = Query(..., description="lat,lon"),
+    fam: str = Query("B", min_length=1, max_length=1),
+    at: float | None = Query(None, gt=0),
+    key: str = Query(""),
+    top: float = Query(16.0, ge=4, le=25),
+):
+    """A vertical cross-section, A to B, through the Level II volume nearest
+    `at` (or `key`, or the newest). Layout: [4-byte header len][JSON header]
+    [codes u8 * rows*cols], top row first; the header carries the lut."""
+    try:
+        pa = tuple(float(x) for x in a.split(","))
+        pb = tuple(float(x) for x in b.split(","))
+        if len(pa) != 2 or len(pb) != 2:
+            raise ValueError("a and b must be lat,lon")
+        out = radar_xsect.cross_section(site, pa, pb, fam.upper(), at, key, top)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+    header = json.dumps(out["meta"]).encode("utf-8")
+    body = struct.pack("<I", len(header)) + header + out["codes"].tobytes()
+    return Response(content=body, media_type="application/octet-stream", headers={"Cache-Control": "no-store"})
+
+
 @app.get("/api/nexrad/scans")
 def nexrad_scans(
     site: str = Query(...),
@@ -965,6 +997,99 @@ def stations_series(
 ):
     try:
         return stations.station_series(station, hours, network)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/glm/flashes")
+def glm_flashes(
+    sat: str = Query("both", pattern="^(both|goes19|goes18)$"),
+    minutes: int = Query(15, ge=1, le=glm.MAX_MINUTES),
+    end: float | None = Query(None, gt=0),
+    bbox: str = Query(""),
+):
+    """Lightning flashes from the GOES GLMs over the `minutes` before `end`
+    (now when left out), inside bbox "west,south,east,north". Packed floats:
+    see glm.pack. A window still downloading says so in its `pending`."""
+    try:
+        box = None
+        if bbox:
+            parts = [float(x) for x in bbox.split(",")]
+            if len(parts) != 4:
+                raise ValueError("bbox must be west,south,east,north")
+            box = (parts[0], parts[1], parts[2], parts[3])
+        data = glm.window(sat, minutes, end, box)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+    return Response(content=data, media_type="application/octet-stream", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/rivers/gauges")
+def rivers_gauges():
+    """Every NWS river gauge: stage now, its flood category, the category
+    stages, and the forecast's highest category."""
+    try:
+        return rivers.gauges()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/rivers/brazil")
+def rivers_brazil():
+    """Brazil's river stations: SGB's alert stations with the level they are
+    in, and ANA's telemetry stations."""
+    try:
+        return brazil_rivers.stations()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/rivers/context")
+def rivers_context(lid: str = Query(..., min_length=3, max_length=40)):
+    """Around a gauge: the river's other gauges, the normal flow for each date
+    (USGS), the rain past and forecast."""
+    try:
+        if lid.upper().startswith("BR:"):
+            return brazil_rivers.context(lid)
+        return rivers.context(lid)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/rivers/hydrograph")
+def rivers_hydrograph(lid: str = Query(..., min_length=3, max_length=40)):
+    """One gauge's observed and forecast stages, flood categories, crests and
+    impacts; "BR:<code>" for a Brazilian station."""
+    try:
+        if lid.upper().startswith("BR:"):
+            return brazil_rivers.hydrograph(lid)
+        return rivers.hydrograph(lid)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/glm/prefetch")
+def glm_prefetch(
+    sat: str = Query("both", pattern="^(both|goes19|goes18)$"),
+    start: float = Query(..., gt=0),
+    end: float = Query(..., gt=0),
+    bbox: str = Query(""),
+):
+    """Start downloading every GLM file from `start` to `end` and return at
+    once: a loop's span, read ahead of its play."""
+    try:
+        box = tuple(float(x) for x in bbox.split(",")) if bbox else None
+        if box is not None and len(box) != 4:
+            raise ValueError("bbox must be west,south,east,north")
+        return glm.prefetch(sat, start, end, box)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
 
