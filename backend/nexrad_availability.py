@@ -100,7 +100,7 @@ def _newest(sid: str, code: str, since: datetime, until: Optional[datetime] = No
 def _check(sid: str, with_level2: bool = True, at: Optional[int] = None, ck: str = "") -> dict[str, Any]:
     catalog = n2.merged_catalog(n3.product_catalog())
 
-    l3_codes = sorted({n3._SRV_SOURCE.get(t["code"], t["code"])  # noqa: SLF001
+    l3_codes = sorted({n3._DERIVED_SOURCE.get(t["code"], t["code"])  # noqa: SLF001
                        for fam in catalog if fam.get("source") != "level2" for t in fam["tilts"]} | {"N0B"})
     # Now, or the moment archive playback starts: the two hours before it, and
     # the first minutes of the loop that runs on from it.
@@ -170,7 +170,7 @@ def _check(sid: str, with_level2: bool = True, at: Optional[int] = None, ck: str
             continue
         tilts = []
         for t in fam["tilts"]:
-            src = n3._SRV_SOURCE.get(t["code"], t["code"])  # noqa: SLF001
+            src = n3._DERIVED_SOURCE.get(t["code"], t["code"])  # noqa: SLF001
             if not l3_has(src):
                 continue
             angle = by_slot.get(t["tilt"])

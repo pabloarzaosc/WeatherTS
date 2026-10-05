@@ -167,15 +167,6 @@ export function buildMesh(
     gv[i] = threshold !== null && v < threshold ? NaN : v;
   }
 
-  // count first so the typed arrays are allocated once
-  let quads = 0;
-  for (let i = 0; i < gv.length; i++) if (Number.isFinite(gv[i])) quads++;
-
-  const verts = quads * 6; // two triangles
-  const positions = new Float32Array(verts * 2);
-  const colors = new Uint8Array(verts * 4);
-  const vertValues = new Float32Array(verts);
-
   const kmPerDegLon = KM_PER_DEG_LAT * Math.cos((siteLat * Math.PI) / 180);
   // Azimuths repeat for every gate, so the trig is hoisted out of the hot loop.
   const sinAz = new Float64Array(nAz + 1);
@@ -229,26 +220,18 @@ export function buildMesh(
     gvSrc = b;
   }
 
-  // Value at a gate-grid corner: mean of the up-to-4 (blurred, when smoothing)
-  // gates touching it. Azimuth wraps; the owning gate is always one of them, so
-  // a drawn gate's corners are never empty.
-  const cornerVal = (ai: number, gi: number): number => {
-    let sum = 0;
-    let n = 0;
-    for (let da = -1; da <= 0; da++) {
-      const aa = (ai + da + nAz) % nAz;
-      for (let dg = -1; dg <= 0; dg++) {
-        const gg = gi + dg;
-        if (gg < 0 || gg >= nGates) continue;
-        const v = gvSrc[aa * nGates + gg];
-        if (Number.isFinite(v)) {
-          sum += v;
-          n += 1;
-        }
-      }
-    }
-    return n ? sum / n : NaN;
-  };
+  if (doSmooth) {
+    return buildSmoothMesh(scan, pal, gv, gvSrc, sinAz, cosAz, kmPerDegLon, mx, my);
+  }
+
+  // Flat gates. Count first so the typed arrays are allocated once
+  let quads = 0;
+  for (let i = 0; i < gv.length; i++) if (Number.isFinite(gv[i])) quads++;
+
+  const verts = quads * 6; // two triangles
+  const positions = new Float32Array(verts * 2);
+  const colors = new Uint8Array(verts * 4);
+  const vertValues = new Float32Array(verts);
 
   const rgba = new Uint8Array(4);
   let p = 0;
@@ -288,18 +271,260 @@ export function buildMesh(
       const x01 = mx(siteLon + (r0 * s1) / kmPerDegLon);
       const y01 = my(siteLat + (r0 * c1) / KM_PER_DEG_LAT);
 
-      const v00 = doSmooth ? cornerVal(a, g) : v;
-      const v10 = doSmooth ? cornerVal(a, g + 1) : v;
-      const v11 = doSmooth ? cornerVal(a + 1, g + 1) : v;
-      const v01 = doSmooth ? cornerVal(a + 1, g) : v;
-
-      emit(x00, y00, v00);
-      emit(x10, y10, v10);
-      emit(x11, y11, v11);
-      emit(x00, y00, v00);
-      emit(x11, y11, v11);
-      emit(x01, y01, v01);
+      emit(x00, y00, v);
+      emit(x10, y10, v);
+      emit(x11, y11, v);
+      emit(x00, y00, v);
+      emit(x11, y11, v);
+      emit(x01, y01, v);
     }
+  }
+
+  return { positions, colors, values: vertValues, lut, vertexCount: verts };
+}
+
+// Marching squares, per cell mask (bit i = corner i has data): how many
+// vertices the cell's polygon has. The polygon walks the four corners in order,
+// keeping the corners with data and adding an edge midpoint wherever data
+// starts or stops -- so 1 corner is a triangle, 2 a quad, 3 a pentagon, the
+// diagonal pair a hexagon (joined, which keeps diagonal echoes in one piece).
+const POLY_VERTS = (() => {
+  const t = new Uint8Array(16);
+  for (let m = 0; m < 16; m++) {
+    let n = 0;
+    for (let i = 0; i < 4; i++) {
+      const here = (m >> i) & 1;
+      const next = (m >> ((i + 1) & 3)) & 1;
+      if (here) n++;
+      if (here !== next) n++;
+    }
+    t[m] = n;
+  }
+  return t;
+})();
+
+/**
+ * The smoothed mesh. Flat gates are quads on the radar's own grid, so an echo's
+ * edge is a staircase of whole gates -- smoothing the colours inside left the
+ * edges square, gates over a kilometre wide far from the radar. Here the mesh
+ * joins the gates' CENTRES instead, colours interpolating between them, and a
+ * cell at the edge of an echo is cut halfway between the gate with data and the
+ * one without (marching squares). The staircase becomes diagonals: the outline
+ * follows the echo, not the grid.
+ *
+ * The cut sits where the gate's own edge was, so an echo keeps its size; a lone
+ * gate becomes a diamond on its centre. Gates with no data stay empty, and
+ * colours come from the (blurred) values exactly as before.
+ */
+function buildSmoothMesh(
+  scan: PolarScan,
+  pal: ReturnType<typeof buildLut>,
+  gv: Float32Array,
+  gvSrc: Float32Array,
+  sinAz: Float64Array,
+  cosAz: Float64Array,
+  kmPerDegLon: number,
+  mx: (lon: number) => number,
+  my: (lat: number) => number,
+): RadarMesh {
+  const { lut, meta } = scan;
+  const { nAz, nGates, siteLat, siteLon, rangeStartKm, gateWidthKm } = meta;
+
+  // How surrounded by echo each gate is: its own presence and its eight
+  // neighbours', weighted 4-2-1 (centre, sides, corners) over 16. A gate in a
+  // solid echo is 1, one on a straight edge 0.75 and the empty gate across from
+  // it 0.25 -- so a cut placed where this crosses 0.5 is the gate's own edge,
+  // and the echo keeps its size. At a jutting corner the field is lower and the
+  // cut moves in (the corner rounds off); in a notch it is higher and the cut
+  // moves out (the notch fills in). Marching squares on a blurred mask is what
+  // turns the staircase into a curve.
+  const nCells = nAz * nGates;
+  const pres = new Float32Array(nCells);
+  for (let a = 0; a < nAz; a++) {
+    const rows = [(a - 1 + nAz) % nAz, a, (a + 1) % nAz];
+    const wa = [1, 2, 1];
+    for (let g = 0; g < nGates; g++) {
+      let s = 0;
+      for (let k = 0; k < 3; k++) {
+        const base = rows[k] * nGates;
+        const w = wa[k];
+        if (g > 0 && Number.isFinite(gv[base + g - 1])) s += w;
+        if (Number.isFinite(gv[base + g])) s += 2 * w;
+        if (g < nGates - 1 && Number.isFinite(gv[base + g + 1])) s += w;
+      }
+      pres[a * nGates + g] = s / 16;
+    }
+  }
+  // A gate is drawn if it has data, or if it is an empty gate deep enough in
+  // an echo (a one-gate hole) -- holes that small are speckle, not clear air.
+  const inside = new Uint8Array(nCells);
+  for (let i = 0; i < nCells; i++) inside[i] = Number.isFinite(gv[i]) || pres[i] >= 0.5 ? 1 : 0;
+  // The colour of a filled hole: its neighbours' mean.
+  const valueAt = (i: number): number => {
+    const v = gvSrc[i];
+    if (Number.isFinite(v)) return v;
+    const a = Math.floor(i / nGates);
+    const g = i - a * nGates;
+    let s = 0;
+    let k = 0;
+    for (let da = -1; da <= 1; da++) {
+      const base = ((a + da + nAz) % nAz) * nGates;
+      for (let dg = -1; dg <= 1; dg++) {
+        const gg = g + dg;
+        if (gg < 0 || gg >= nGates) continue;
+        const w = gvSrc[base + gg];
+        if (Number.isFinite(w)) {
+          s += w;
+          k++;
+        }
+      }
+    }
+    return k ? s / k : NaN;
+  };
+  // Where along an edge from an inside gate to an outside one the cut falls.
+  // A gate too thin to reach 0.5 itself (a lone gate, a one-gate line) keeps
+  // the plain midpoint, so small echoes are never dropped.
+  const cutAt = (pin: number, pout: number): number => {
+    if (pin <= 0.5 || pin - pout <= 1e-6) return 0.5;
+    const t = (pin - 0.5) / (pin - pout);
+    return t < 0.15 ? 0.15 : t > 0.85 ? 0.85 : t;
+  };
+  const has = (a: number, g: number) => inside[a * nGates + g] === 1;
+
+  // Pass 1: count, so the arrays are allocated once.
+  let tris = 0;
+  for (let a = 0; a < nAz; a++) {
+    const b = (a + 1) % nAz;
+    for (let g = 0; g < nGates - 1; g++) {
+      const m = (has(a, g) ? 1 : 0) | (has(a, g + 1) ? 2 : 0) | (has(b, g + 1) ? 4 : 0) | (has(b, g) ? 8 : 0);
+      if (m) tris += POLY_VERTS[m] - 2;
+    }
+  }
+  const verts = tris * 3;
+  const positions = new Float32Array(verts * 2);
+  const colors = new Uint8Array(verts * 4);
+  const vertValues = new Float32Array(verts);
+
+  // Gate centres, a radial at a time: the azimuth halfway between its edges
+  // (as a vector, so a radial straddling north is right) and each gate's
+  // middle range. Two rows are live at once, plus the first for the wrap.
+  const centreRow = (a: number, out: Float64Array) => {
+    let s = sinAz[a] + sinAz[a + 1];
+    let c = cosAz[a] + cosAz[a + 1];
+    const n = Math.hypot(s, c) || 1;
+    s /= n;
+    c /= n;
+    for (let g = 0; g < nGates; g++) {
+      const r = rangeStartKm + (g + 0.5) * gateWidthKm;
+      out[2 * g] = mx(siteLon + (r * s) / kmPerDegLon);
+      out[2 * g + 1] = my(siteLat + (r * c) / KM_PER_DEG_LAT);
+    }
+  };
+  const first = new Float64Array(nGates * 2);
+  let rowA = new Float64Array(nGates * 2);
+  let rowB = new Float64Array(nGates * 2);
+  centreRow(0, first);
+  rowA.set(first);
+
+  const rgba = new Uint8Array(4);
+  let p = 0;
+  let c = 0;
+  let vi = 0;
+  const put = (x: number, y: number, v: number) => {
+    positions[p++] = x;
+    positions[p++] = y;
+    lookup(pal, v, rgba);
+    colors[c++] = rgba[0];
+    colors[c++] = rgba[1];
+    colors[c++] = rgba[2];
+    colors[c++] = rgba[3];
+    vertValues[vi++] = v;
+  };
+
+  // The cell's polygon, at most six points: x, y, value.
+  const px = new Float64Array(6);
+  const py = new Float64Array(6);
+  const pv = new Float64Array(6);
+  const cx = new Float64Array(4);
+  const cy = new Float64Array(4);
+  const cv = new Float64Array(4);
+  const ch = new Uint8Array(4);
+  const ci = new Int32Array(4);
+
+  for (let a = 0; a < nAz; a++) {
+    const b = (a + 1) % nAz;
+    if (b === 0) rowB.set(first);
+    else centreRow(b, rowB);
+    for (let g = 0; g < nGates - 1; g++) {
+      // Corners in order round the cell: (a,g) (a,g+1) (b,g+1) (b,g).
+      const i0 = a * nGates + g;
+      const i1 = i0 + 1;
+      const i3 = b * nGates + g;
+      const i2 = i3 + 1;
+      ch[0] = inside[i0];
+      ch[1] = inside[i1];
+      ch[2] = inside[i2];
+      ch[3] = inside[i3];
+      const m = ch[0] | (ch[1] << 1) | (ch[2] << 2) | (ch[3] << 3);
+      if (!m) continue;
+      ci[0] = i0;
+      ci[1] = i1;
+      ci[2] = i2;
+      ci[3] = i3;
+      cx[0] = rowA[2 * g];
+      cy[0] = rowA[2 * g + 1];
+      cx[1] = rowA[2 * g + 2];
+      cy[1] = rowA[2 * g + 3];
+      cx[2] = rowB[2 * g + 2];
+      cy[2] = rowB[2 * g + 3];
+      cx[3] = rowB[2 * g];
+      cy[3] = rowB[2 * g + 1];
+      cv[0] = ch[0] ? valueAt(i0) : NaN;
+      cv[1] = ch[1] ? valueAt(i1) : NaN;
+      cv[2] = ch[2] ? valueAt(i2) : NaN;
+      cv[3] = ch[3] ? valueAt(i3) : NaN;
+
+      if (m === 15) {
+        put(cx[0], cy[0], cv[0]);
+        put(cx[1], cy[1], cv[1]);
+        put(cx[2], cy[2], cv[2]);
+        put(cx[0], cy[0], cv[0]);
+        put(cx[2], cy[2], cv[2]);
+        put(cx[3], cy[3], cv[3]);
+        continue;
+      }
+
+      let n = 0;
+      for (let i = 0; i < 4; i++) {
+        const j = (i + 1) & 3;
+        if (ch[i]) {
+          px[n] = cx[i];
+          py[n] = cy[i];
+          pv[n] = cv[i];
+          n++;
+        }
+        if (ch[i] !== ch[j]) {
+          // On the edge where the echo ends (see cutAt), in the colour of the
+          // end that is drawn.
+          const from = ch[i] ? i : j;
+          const to = ch[i] ? j : i;
+          const t = cutAt(pres[ci[from]], pres[ci[to]]);
+          px[n] = cx[from] + t * (cx[to] - cx[from]);
+          py[n] = cy[from] + t * (cy[to] - cy[from]);
+          pv[n] = cv[from];
+          n++;
+        }
+      }
+      // Every case's polygon is convex: a fan from its first point.
+      for (let k = 1; k < n - 1; k++) {
+        put(px[0], py[0], pv[0]);
+        put(px[k], py[k], pv[k]);
+        put(px[k + 1], py[k + 1], pv[k + 1]);
+      }
+    }
+    const t = rowA;
+    rowA = rowB;
+    rowB = t;
   }
 
   return { positions, colors, values: vertValues, lut, vertexCount: verts };

@@ -1178,9 +1178,9 @@ _L2_WINS = {"C", "X", "W"}
 # derived field, so it belongs to the Level 3 grid even though we compute it.
 _L2_ORDER = ["B", "G", "W", "X", "P", "C", "F"]
 _L2_SHORT = {"B": "REF", "G": "VEL", "W": "SW", "X": "ZDR", "P": "PHI", "C": "RHO", "F": "CFP"}
-_L3_ORDER = ["B", "G", "S", "X", "K", "C", "DVL", "EET", "H", "HHC", "OHA", "DAA", "DTA"]
+_L3_ORDER = ["B", "G", "S", "R", "X", "K", "C", "DVL", "EET", "H", "HHC", "OHA", "DAA", "DTA"]
 _L3_SHORT = {
-    "B": "REF", "G": "VEL", "S": "SRM", "C": "CC", "X": "ZDR", "K": "KDP",
+    "B": "REF", "G": "VEL", "S": "SRM", "R": "NROT", "C": "CC", "X": "ZDR", "K": "KDP",
     "H": "HC", "HHC": "HHC", "EET": "ET", "DVL": "VIL",
     "OHA": "ACC", "DAA": "ACC-D", "DTA": "STA",
 }
@@ -1228,6 +1228,7 @@ _MERGED: list[tuple[str, str]] = [
     ("B", "level3"),    # Reflectivity
     ("G", "level3"),    # Velocity
     ("S", "level3"),    # Storm-relative velocity (derived, L3 only)
+    ("R", "level3"),    # Normalized rotation (derived from velocity, L3 only)
     ("C", "level2"),    # Correlation coefficient  -- L2 wins
     ("X", "level2"),    # Differential reflectivity -- L2 wins
     ("W", "level2"),    # Spectrum width            -- L2 only

@@ -81,6 +81,9 @@ FAMILIES: dict[str, dict[str, Any]] = {
     # SRV is *computed* from super-res base velocity, not read from the N0S
     # product -- see _SRV_SOURCE. That's why it carries velocity's tilt list.
     "S": {"label": "Storm Relative Velocity", "units": "kt", "kind": "srv", "tilts": ["0", "A", "1"]},
+    # Normalized rotation, computed from the same super-res velocity cuts -- see
+    # _nrot_polar. Unitless: 1 is significant rotation, 2.5 extreme.
+    "R": {"label": "Normalized Rotation (NROT)", "units": "", "kind": "nrot", "tilts": ["0", "A", "1"]},
     "C": {"label": "Correlation Coefficient", "units": "", "kind": "cc", "tilts": _ALL_TILTS},
     "X": {"label": "Differential Reflectivity", "units": "dB", "kind": "zdr", "tilts": _ALL_TILTS},
     "K": {"label": "Specific Differential Phase", "units": "°/km", "kind": "kdp", "tilts": _ALL_TILTS},
@@ -270,6 +273,7 @@ PALETTES: dict[str, dict[str, Any]] = {
     "SW": {"label": "Spectrum Width", "pal": PAL_TABLES["SW"]},
     "PHI": {"label": "Differential Phase", "pal": PAL_TABLES["PHI"]},
     "CFP": {"label": "Clutter Filter Power", "pal": PAL_TABLES["CFP"]},
+    "NROT": {"label": "Normalized Rotation", "pal": PAL_TABLES["NROT"]},
     "EET": {"label": "Echo Tops (legacy)", "pal": PAL_TABLES["EET"]},
     "DAA": {"label": "1-hr Precip Accum (legacy)", "pal": PAL_TABLES["DAA"]},
     "DTA": {"label": "Storm Total Accum (legacy)", "pal": PAL_TABLES["DTA"]},
@@ -280,7 +284,7 @@ PALETTES: dict[str, dict[str, Any]] = {
 _KIND_DEFAULT_PALETTE = {
     "ref": "FILE_DR", "vel": "FILE_amixof2BV", "srv": "FILE_SRV", "cc": "CC", "zdr": "FILE_ZDR",
     "kdp": "FILE_KDP", "hca": "FILE_HC", "sw": "FILE_SW", "tops": "FILE_ET_steep", "vil": "FILE_VIL",
-    "precip": "FILE_OHP", "storm_precip": "FILE_STP", "phi": "PHI", "cfp": "CFP",
+    "precip": "FILE_OHP", "storm_precip": "FILE_STP", "phi": "PHI", "cfp": "CFP", "nrot": "NROT",
 }
 
 # One palette per product in the picker: the one that product actually uses.
@@ -630,9 +634,9 @@ def list_scans(site: str, product: str, date: Optional[str] = None, limit: int =
 
     site = (site or "").upper().strip()
     product = (product or DEFAULT_PRODUCT).upper().strip()
-    # SRV frames are velocity frames -- list the source cut so scrubbing the loop
+    # SRV and NROT frames are velocity frames -- list the source cut so scrubbing the loop
     # hands polar_data a key it can actually decode.
-    product = _SRV_SOURCE.get(product, product)
+    product = _DERIVED_SOURCE.get(product, product)
 
     if start is not None:
         begin = datetime.fromtimestamp(start, timezone.utc)
@@ -793,6 +797,12 @@ def _value_lut(f: "Level3File", product: str) -> np.ndarray:
 # apps display. These map the SRV wire code to the velocity cut it comes from.
 _SRV_SOURCE = {"N0S": "N0G", "NAS": "NAG", "N1S": "N1G"}
 
+# Normalized rotation is derived from the same cuts.
+_NROT_SOURCE = {"N0R": "N0G", "NAR": "NAG", "N1R": "N1G"}
+
+# Every derived product and the velocity cut its frames are.
+_DERIVED_SOURCE = {**_SRV_SOURCE, **_NROT_SOURCE}
+
 _KT_PER_KMH = 0.539957
 
 
@@ -915,6 +925,154 @@ def _srv_polar(site: str, product: str, src_product: str, key: Optional[str]) ->
     return out
 
 
+# Normalized rotation (NROT), after GR2Analyst's: the azimuthal shear of the
+# velocity, divided by a shear that counts as significant at that range, so one
+# scale reads the same near the radar and far from it. 1 is significant
+# rotation, 2.5 extreme; positive is cyclonic (counter-clockwise), negative
+# anticyclonic.
+#
+# The shear comes from Level III velocity because the RPG has already
+# dealiased it -- on raw Level II velocity every Nyquist fold would read as an
+# enormous shear. It is the slope across a window of 5 radials x 5 gates
+# (least squares, so a missing gate or two does not matter), in m/s per metre
+# of arc: s^-1.
+#
+# The divisor falls with range because the beam widens: far out, a vortex is
+# smeared across more of the window and its measured shear drops. GR's own
+# divisor is empirical and not published; this one is set so a tornadic
+# couplet near the radar (60-90 kt across a few radials) reads 3-5, a strong
+# mesocyclone at 80-120 km about 1-2, and the noise of quiet echo under 0.2.
+_NROT_WIN = 2            # half-width: 5 radials x 5 gates
+_NROT_K0 = 0.010         # s^-1 counted as significant within _NROT_R0
+_NROT_R0 = 30.0          # km
+_NROT_MIN_KM = 6.0       # nearer than this it is ground clutter more than weather
+# Near the radar a 0.5 deg radial is a few tens of metres wide, and any noise in
+# the clutter there read as a huge shear (|NROT| 5 at 4-8 km, on a quiet day).
+# The spacing between radials counts as at least one gate's length, so the
+# shear is always taken over at least ~1 km.
+_NROT_MIN_ARC_KM = 0.25
+_NROT_MIN_GATES = 14     # of the 25 in the window
+_NROT_MAX = 5.0
+
+
+def _nrot_field(vel_kt: np.ndarray, az: np.ndarray, rng_km: np.ndarray) -> np.ndarray:
+    """NROT for every gate of a velocity cut (NaN where there is too little
+    data). `vel_kt` is radials x gates; `az` the radial edges in degrees,
+    `rng_km` the gate edges."""
+    v = vel_kt.astype(np.float32) / np.float32(_MS_TO_KT)   # m/s
+    w = _NROT_WIN
+    ok = np.isfinite(v)
+    okf = ok.astype(np.float32)
+    v0 = np.where(ok, v, np.float32(0.0))
+
+    # The window sums are separable: a plain box along the gates (by running
+    # sums), then along the radials the box and its x and x^2 moments. A loop
+    # can play 60 of these, so this is the cost that matters -- 25 shifts of the
+    # whole scan took 1.5-4 s a frame; this takes a fraction of that.
+    def gate_box(a: np.ndarray) -> np.ndarray:
+        c = np.cumsum(np.pad(a, ((0, 0), (w + 1, w))), axis=1, dtype=np.float32)
+        return c[:, 2 * w + 1:] - c[:, : -(2 * w + 1)]
+
+    def az_moment(a: np.ndarray, power: int) -> np.ndarray:
+        out = np.zeros_like(a)
+        for dx in range(-w, w + 1):
+            if power and dx == 0:
+                continue
+            # Radials wrap around the circle.
+            out += np.float32(dx ** power) * np.roll(a, -dx, axis=0)
+        return out
+
+    g_ok = gate_box(okf)
+    g_v = gate_box(v0)
+    n = az_moment(g_ok, 0)
+    sx = az_moment(g_ok, 1)
+    sxx = az_moment(g_ok, 2)
+    sv = az_moment(g_v, 0)
+    sxv = az_moment(g_v, 1)
+    denom = n * sxx - sx * sx
+    with np.errstate(invalid="ignore", divide="ignore"):
+        slope = (n * sxv - sx * sv) / denom                # m/s per radial
+    dtheta = np.radians(float(np.median(np.diff(az))) % 360.0 or 0.5)
+    r_mid_km = 0.5 * (rng_km[:-1] + rng_km[1:])
+    with np.errstate(invalid="ignore", divide="ignore"):
+        arc_m = np.maximum(dtheta * r_mid_km, _NROT_MIN_ARC_KM) * 1000.0   # m between radials
+        shear = slope / arc_m[None, :]                                        # s^-1
+    sig = _NROT_K0 * np.sqrt(_NROT_R0 / np.maximum(r_mid_km, _NROT_R0))
+    nrot = shear / sig[None, :]
+    bad = (n < _NROT_MIN_GATES) | ~np.isfinite(v) | (denom <= 0) | (r_mid_km < _NROT_MIN_KM)[None, :]
+    nrot[bad] = np.nan
+    return np.clip(nrot, -_NROT_MAX, _NROT_MAX).astype(np.float32)
+
+
+def _nrot_polar(site: str, product: str, src_product: str, key: Optional[str]) -> dict:
+    """Normalized rotation built from a super-res base-velocity cut."""
+    if not key:
+        key = _latest_key(site, src_product)
+    if not key:
+        raise RuntimeError(f"No recent velocity scan for K{site}.")
+
+    cache_key = (site, product, key)
+    hit = _POLAR_CACHE.get(cache_key)
+    if hit is not None:
+        _POLAR_CACHE.move_to_end(cache_key)
+        return hit
+
+    f = Level3File(io.BytesIO(_SESSION.get(f"{S3}{key}", timeout=_HTTP_TIMEOUT).content))
+    d = f.sym_block[0][0]
+    codes = np.asarray(d["data"], dtype=np.uint8)
+    az = np.array(d["start_az"] + [d["end_az"][-1]], dtype=np.float32)
+    rng = np.linspace(0, f.max_range, codes.shape[-1] + 1)
+    vals = _value_lut(f, src_product)[codes]  # kt, dealiased by the RPG, NaN where no data
+    nrot = _nrot_field(vals, az, rng)
+
+    pid = _resolve_palette(product, None)
+    _, vmin, vmax = get_cmap(pid)
+    lut = np.empty(256, dtype=np.float32)
+    lut[0] = np.nan
+    lut[1:] = np.linspace(vmin, vmax, 255, dtype=np.float32)
+    t = (nrot - vmin) / (vmax - vmin or 1.0)
+    q = np.clip(np.rint(t * 254.0) + 1.0, 1, 255)
+    q[~np.isfinite(nrot)] = 0
+    out_codes = q.astype(np.uint8)
+
+    spec = PRODUCTS[product]
+    out = {
+        "az": az,
+        "lut": lut,
+        "codes": out_codes,
+        "meta": {
+            "site": icao_for(site),
+            "siteLat": float(f.lat),
+            "siteLon": float(f.lon),
+            "product": product,
+            "productLabel": spec["label"],
+            "units": spec["units"],
+            "kind": spec["kind"],
+            "family": spec.get("family"),
+            "tilt": spec.get("tilt"),
+            "elevation": float(f.metadata.get("el_angle")) if f.metadata.get("el_angle") is not None else None,
+            "defaultPalette": pid,
+            "vmin": vmin,
+            "vmax": vmax,
+            "nAz": int(out_codes.shape[0]),
+            "nGates": int(out_codes.shape[1]),
+            "rangeStartKm": float(rng[0]),
+            "gateWidthKm": float(rng[1] - rng[0]),
+            "maxRangeKm": float(f.max_range),
+            "validUnix": _utc_unix(f.metadata.get("prod_time")) or key_time(key),
+            "scanUnix": key_time(key),
+            "key": key,
+            "derivedFrom": src_product,
+            "vcp": int(f.prod_desc.vcp),
+            "mode": _OP_MODES.get(int(f.prod_desc.op_mode), f"Mode {f.prod_desc.op_mode}"),
+        },
+    }
+    _POLAR_CACHE[cache_key] = out
+    while len(_POLAR_CACHE) > _POLAR_CACHE_MAX:
+        _POLAR_CACHE.popitem(last=False)
+    return out
+
+
 def _null_scan(site: str, product: str, key: str, f: "Level3File") -> dict:
     """A product published with nothing in it -- a "null product".
 
@@ -980,10 +1138,13 @@ def polar_data(site: str, product: str, key: Optional[str] = None) -> dict:
     if product not in PRODUCTS:
         product = DEFAULT_PRODUCT
 
-    # SRV is derived from the matching super-res velocity cut, not fetched.
+    # SRV and NROT are derived from the matching super-res velocity cut, not fetched.
     src = _SRV_SOURCE.get(product)
     if src:
         return _srv_polar(site, product, src, key)
+    src = _NROT_SOURCE.get(product)
+    if src:
+        return _nrot_polar(site, product, src, key)
 
     if not key:
         key = _latest_key(site, product)

@@ -373,4 +373,27 @@ for _d in _pal_dirs():
     _FILE_TABLES.update(_load_pal_dir(_d))
 
 PAL_FILES: dict[str, str] = {f"FILE_{k}": v for k, v in _FILE_TABLES.items()}
+# Normalized rotation (NROT): diverging around zero. Near zero is a faint grey
+# so the field shows where there is velocity without burying the map;
+# cyclonic (positive) runs green -> yellow at 1 (significant) -> red -> magenta
+# at 2.5 (extreme) -> white; anticyclonic runs through the blues.
+PAL_TABLES["NROT"] = """Product: NROT
+Units: NROT
+Step: 1
+Color4: -5.0  200 170 255 255
+Color4: -3.5  140  60 255 255
+Color4: -2.0   60  80 255 255
+Color4: -1.0    0 170 255 255
+Color4: -0.5   70 130 160 220
+Color4: -0.25  90 100 110 110
+Color4:  0.0   70  70  70  70
+Color4:  0.25  90 100 110 110
+Color4:  0.5    0 160  60 230
+Color4:  1.0  255 230   0 255
+Color4:  1.5  255 140   0 255
+Color4:  2.0  255  30  30 255
+Color4:  2.5  230   0 200 255
+Color4:  3.5  255 160 255 255
+Color4:  5.0  255 255 255 255"""
+
 PAL_TABLES.update(PAL_FILES)
