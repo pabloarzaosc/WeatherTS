@@ -30,6 +30,15 @@ import { lsrLayer } from "./modules/lsrLayer";
 import { glmLayer } from "./modules/glmLayer";
 import { riversLayer } from "./modules/riversLayer";
 import { nwmLayer } from "./modules/nwmLayer";
+import { auroraLayer, spaceFieldLayer } from "./modules/spaceLayers";
+import {
+  tropicalGuidanceLayer,
+  tropicalReconLayer,
+  tropicalSeasonLayer,
+  tropicalSstLayer,
+  tropicalStormsLayer,
+  tropicalWspLayer,
+} from "./modules/tropicalLayers";
 // import { frontsLayer } from "./modules/frontsLayer";
 import { acarsLayer } from "./modules/acarsLayer";
 import { chasersLayer } from "./modules/chasersLayer";
@@ -40,6 +49,8 @@ import { drawLayer } from "./modules/drawLayer";
 // Satellite imagery is the bottom of the stack: an opaque picture of the whole
 // planet that borders, fields and radar are all read over.
 registerLayer(satelliteLayer);
+// Sea surface temperature is a picture of the ocean, under everything drawn on it.
+registerLayer(tropicalSstLayer);
 registerLayer(boundariesLayer);
 registerLayer(graticuleLayer);
 registerLayer(terminatorLayer);
@@ -59,6 +70,10 @@ registerLayer(acarsLayer);
 // (panels/FrontsView.tsx) and the backend stay as they are; restoring this line
 // and the import above brings the product back.
 // registerLayer(frontsLayer);
+// Space weather grids are backdrops for whole regions -- the aurora oval, HF
+// absorption, the ionosphere -- so radar is read over them.
+registerLayer(spaceFieldLayer);
+registerLayer(auroraLayer);
 registerLayer(nexradLayer);
 // The water model's streams over the radar's rain, under the gauges that measure them.
 registerLayer(nwmLayer);
@@ -66,6 +81,14 @@ registerLayer(nwmLayer);
 registerLayer(glmLayer);
 // River gauges: a flooding river is read against the radar's rain over it.
 registerLayer(riversLayer);
+// Tropical cyclones over the radar and satellite they are read against: the
+// probability field lowest, then a season's tracks, the recon flights, the
+// storms themselves and the model tracks on top.
+registerLayer(tropicalWspLayer);
+registerLayer(tropicalSeasonLayer);
+registerLayer(tropicalReconLayer);
+registerLayer(tropicalStormsLayer);
+registerLayer(tropicalGuidanceLayer);
 // Ground truth sits on top of every product it might be checked against.
 registerLayer(lsrLayer);
 // Home pins first: they are the static backdrop to the live positions above.

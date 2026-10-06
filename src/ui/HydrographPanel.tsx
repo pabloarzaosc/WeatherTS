@@ -589,16 +589,20 @@ function FlowChip({ cls }: { cls: FlowClass }) {
 /** The river's gauges in a line, source to mouth, each in its category's
  *  colour: where the water is now, and where it is going. */
 function Chain({ nodes, net, onPick }: { nodes: ChainNode[]; net: Hydrograph["net"]; onPick: (lid: string) => void }) {
+  // How many steps each gauge is from this one: a narrow screen keeps the
+  // nearest two each way (see .hydro__node[data-far] in storms.css).
+  const self = nodes.findIndex((n) => n.self);
   return (
     <div className="hydro__chain" role="list" aria-label="Gauges along the river">
       <span className="hydro__chainend">upstream</span>
       <div className="hydro__chainline">
-        {nodes.map((n) => (
+        {nodes.map((n, i) => (
           <button
             key={n.lid}
             type="button"
             role="listitem"
             className={`hydro__node${n.self ? " is-self" : ""}`}
+            data-far={self >= 0 && Math.abs(i - self) > 2 ? "" : undefined}
             onClick={() => !n.self && onPick(n.lid)}
             title={`${n.river ? `${n.river} · ` : ""}${n.place} (${gaugeId(n.lid)}): ${statusLabel(n.status, net === "ana" ? "sgb" : net)}`}
           >

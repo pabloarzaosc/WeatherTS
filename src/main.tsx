@@ -10,6 +10,8 @@ import "./styles/theme.css";
 import "./styles/app.css";
 import "./styles/sounding.css";
 import "./styles/storms.css";
+import "./styles/space.css";
+import "./styles/tropical.css";
 import "./styles/auth.css";
 
 // Side-effect import: every LayerModule registers itself here. The store and the

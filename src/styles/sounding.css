@@ -94,13 +94,18 @@
   animation: fade-up var(--t) var(--ease-out) both;
 }
 
-/* Expanded takes the whole window, side panel included, for close reading. */
+/* Expanded takes the whole window, side panel included, for close reading --
+   all but the tool dock, which sits above it and would hide its first 50 px. */
 .sv.is-expanded {
   position: fixed;
   top: calc(var(--topbar-h) + var(--tabsbar-h) + 2px);
-  left: 2px;
+  left: calc(var(--dock-w) + 2px);
   right: 2px;
   bottom: calc(var(--dock-h) + 2px);
+}
+.app[data-panel="right"] .sv.is-expanded {
+  left: 2px;
+  right: calc(var(--dock-w) + 2px);
 }
 
 .sv__head {

@@ -2497,7 +2497,7 @@ body:has(.sv) .rdxy { display: none; }
 .hydro__node.is-self i { outline: 2px solid var(--accent); outline-offset: 1px; }
 .hydro__node.is-self span { font-weight: 700; }
 .hydro__node span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
-.hydro__node small { font-family: var(--mono); font-variation-settings: var(--mono-axes); font-size: 9.5px; color: var(--text-faint); }
+.hydro__node small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-variation-settings: var(--mono-axes); font-size: 9.5px; color: var(--text-faint); }
 .hydro__node:hover:not(.is-self) span { color: var(--accent-text); }
 
 .hydro__trend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 11.5px; color: var(--text-dim); }
@@ -2715,6 +2715,26 @@ body:has(.sv) .rdxy { display: none; }
     border-left: 0;
     border-top: 1px solid var(--border);
   }
+}
+
+/* Nine gauges in a phone's width were a letter each, their readings run
+   together: the nearest two each way stay. */
+@container (max-width: 560px) {
+  .hydro__node[data-far] { display: none; }
+}
+
+/* A phone held sideways leaves the charts a sliver once the header, the
+   controls and the facts are stacked: there the whole screen scrolls and each
+   chart keeps a height of its own. */
+@media (max-height: 500px) {
+  .sv.hydro-screen { overflow-y: auto; }
+  .sv.hydro-screen .hydro__body { flex: none; overflow: visible; }
+  .sv.hydro-screen .hydro__main { min-height: 0; }
+  .sv.hydro-screen .hydro__stack { flex: none; }
+  .sv.hydro-screen .hydro__panel--stage { flex: none; height: 230px; }
+  .sv.hydro-screen .hydro__panel--flow { flex: none; height: 170px; }
+  .sv.hydro-screen .hydro__panel--rain { flex: none; height: 140px; }
+  .sv.hydro-screen .hydro__side { max-height: none; overflow: visible; }
 }
 
 .floodv__tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }

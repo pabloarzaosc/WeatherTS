@@ -12,6 +12,7 @@ import {
   Satellite,
   Zap,
   Waves,
+  Sun,
 } from "lucide-react";
 
 import { useAppStore } from "../../store/useAppStore";
@@ -24,6 +25,9 @@ import { OutlooksView } from "./OutlooksView";
 import { SatelliteView } from "./SatelliteView";
 import { LightningView } from "./LightningView";
 import { FloodView } from "./FloodView";
+import { SpaceView } from "./SpaceView";
+import { TropicalView } from "./TropicalView";
+import { HurricaneIcon } from "../tropical/HurricaneIcon";
 import { useOutlookStore } from "../../store/useOutlookStore";
 import { AdvancedTab, FavoritesTab, MineTab } from "./CatalogTabs";
 import { ActiveLayers } from "./ActiveLayers";
@@ -38,7 +42,7 @@ const CAT_TABS: { id: CatalogTab; label: string }[] = [
 
 const ALERT_LAYER_ID = "nws-alerts";
 
-type Panel = "surface" | "radar" | "satellite" | "lsr" | "pressure" | "sounding" | "observations" | "outlooks" | "lightning" | "flooding";
+type Panel = "surface" | "radar" | "satellite" | "lsr" | "pressure" | "sounding" | "observations" | "outlooks" | "lightning" | "flooding" | "space" | "tropical";
 
 // Quick-launch grid à la pro workstation. Alerts toggles its layer directly;
 // the rest open their panel below the grid. (The top toolbar's outlook picker
@@ -63,6 +67,8 @@ const CATEGORIES: {
   { id: "outlooks", label: "Outlooks", icon: <Tornado size={15} />, ready: true, panel: "outlooks" },
   { id: "lightning", label: "Lightning", icon: <Zap size={15} />, ready: true, panel: "lightning" },
   { id: "flooding", label: "Flooding", icon: <Waves size={15} />, ready: true, panel: "flooding" },
+  { id: "tropical", label: "Tropical", icon: <HurricaneIcon size={15} />, ready: true, panel: "tropical" },
+  { id: "space", label: "Space", icon: <Sun size={15} />, ready: true, panel: "space" },
 ];
 
 /** The Catalog tab — a quick category launcher. Clicking a category with an
@@ -168,6 +174,16 @@ export function CatalogView() {
           {openPanel === "flooding" && (
             <div className="catalog__panel">
               <FloodView />
+            </div>
+          )}
+          {openPanel === "tropical" && (
+            <div className="catalog__panel">
+              <TropicalView />
+            </div>
+          )}
+          {openPanel === "space" && (
+            <div className="catalog__panel">
+              <SpaceView />
             </div>
           )}
           {openPanel === "lightning" && (

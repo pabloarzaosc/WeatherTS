@@ -90,7 +90,7 @@ export function SoundingPlotOptions() {
       <section className="snd-section">
         <div className="snd-labelrow">
           <span>Parcel</span>
-          <button type="button" className="snd-star" onClick={() => apply(reset)} title="Back to defaults">
+          <button type="button" className="snd-star snd-star--text" onClick={() => apply(reset)} title="Back to defaults">
             reset
           </button>
         </div>

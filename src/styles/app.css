@@ -1990,6 +1990,13 @@ html[data-reduce-motion="true"] .status__livedot {
   background: transparent;
   color: var(--text-faint);
 }
+/* The same small square, holding a word instead of the star: sized to it,
+   or "reset" ran out of a 25 px box. */
+.snd-star--text {
+  width: auto;
+  padding: 0 7px;
+  font-size: 10.5px;
+}
 .snd-star.is-on {
   color: #facc15;
   background: rgba(250, 204, 21, 0.12);
@@ -4327,7 +4334,11 @@ html[data-reduce-motion="true"] *::after {
   right: var(--map-right);
   z-index: 22;
   width: 232px;
-  max-height: calc(100vh - var(--topbar-h) - var(--tabsbar-h) - var(--dock-h) - 32px);
+  /* Stops above the zoom buttons, which share this right-hand column (their
+     bottom sits at --dock-h + 78px and the stack is about 144px tall). Run to
+     the bottom, the open product list covered them on any screen under about
+     900px tall; the list scrolls instead. */
+  max-height: max(180px, calc(100vh - var(--topbar-h) - var(--tabsbar-h) - var(--dock-h) - 264px));
   display: flex;
   flex-direction: column;
   border-radius: var(--radius);
@@ -5181,6 +5192,7 @@ html[data-reduce-motion="true"] *::after {
   text-align: left;
 }
 .set__guide:hover { border-color: rgba(190, 200, 210, 0.3); }
+a.set__guide { text-decoration: none; }
 .set__guide > span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .set__guide b { font-size: 12.5px; font-weight: 600; color: var(--text); }
 .set__guide i { font-style: normal; font-size: 11px; color: var(--text-faint); }

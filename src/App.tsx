@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { MapView } from "./map/MapView";
 import { Dock } from "./ui/Dock";
 import { SearchBar } from "./ui/SearchBar";
@@ -7,6 +8,10 @@ import { ZoomControls } from "./ui/ZoomControls";
 import { MeasureTool } from "./ui/MeasureTool";
 import { CrossSectionTool } from "./ui/CrossSectionTool";
 import { HydrographPanel } from "./ui/HydrographPanel";
+import { SpaceDashboard } from "./ui/space/SpaceDashboard";
+import { SpaceMapHud } from "./ui/space/SpaceMapHud";
+import { TropicalDashboard } from "./ui/tropical/TropicalDashboard";
+import { TropicalMapHud } from "./ui/tropical/TropicalMapHud";
 import { DrawTool } from "./ui/DrawTool";
 import { AlertController } from "./ui/AlertController";
 import { AlertPanel } from "./ui/AlertPanel";
@@ -42,7 +47,47 @@ import { useAppStore } from "./store/useAppStore";
 import { selectRailOpen, useAlertStore } from "./store/useAlertStore";
 import { useLayoutStore } from "./store/useLayoutStore";
 
+/** The app's phone layout, where the side panel and the alert rail are sheets over the map. */
+const PHONE = "(max-width: 820px), (max-height: 500px)";
+
+/**
+ * On a phone both side surfaces are full-height sheets over the map, so with
+ * both open they lie on top of each other -- the catalog's buttons over the
+ * alert list's. Opening one there puts the other away.
+ */
+function usePhoneSheets() {
+  useEffect(() => {
+    const mq = window.matchMedia(PHONE);
+    const closeRail = () => {
+      const a = useAlertStore.getState();
+      a.setListOpen(false);
+      a.select(null);
+    };
+    const unPanel = useAppStore.subscribe(
+      (s) => s.leftPanelOpen,
+      (open) => {
+        if (open && mq.matches && selectRailOpen(useAlertStore.getState())) closeRail();
+      },
+    );
+    const unRail = useAlertStore.subscribe(selectRailOpen, (open) => {
+      if (open && mq.matches && useAppStore.getState().leftPanelOpen) useAppStore.getState().toggleLeftPanel();
+    });
+    // Both open already: at start, or a window narrowed into the phone layout.
+    const settle = () => {
+      if (mq.matches && useAppStore.getState().leftPanelOpen && selectRailOpen(useAlertStore.getState())) closeRail();
+    };
+    settle();
+    mq.addEventListener("change", settle);
+    return () => {
+      unPanel();
+      unRail();
+      mq.removeEventListener("change", settle);
+    };
+  }, []);
+}
+
 export default function App() {
+  usePhoneSheets();
   // The HUD's left inset (--map-left) has to follow the panel, or the product
   // picker and colour bar stay parked in the panel's old column once it closes.
   const leftPanelOpen = useAppStore((s) => s.leftPanelOpen);
@@ -80,6 +125,10 @@ export default function App() {
         <MeasureTool />
         <CrossSectionTool />
         <HydrographPanel />
+        <SpaceMapHud />
+        <TropicalMapHud />
+        <SpaceDashboard />
+        <TropicalDashboard />
         <DrawTool />
         <OutlookLegend />
         <AlertPanel />

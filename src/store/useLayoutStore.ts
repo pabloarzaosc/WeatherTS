@@ -23,7 +23,7 @@ export interface Offset {
 
 /** The draggable HUD overlays. These are stable storage keys -- renaming one
  *  silently drops a user's saved position, so treat them as persisted data. */
-export type DraggableId = "products" | "zoom" | "readout" | "colorbar" | "obsColorbar" | "drawbar" | "xsect" | "hydro";
+export type DraggableId = "products" | "zoom" | "readout" | "colorbar" | "obsColorbar" | "drawbar" | "xsect" | "hydro" | "spaceLegend" | "tropicalLegend";
 
 interface LayoutState {
   panelSide: Side;

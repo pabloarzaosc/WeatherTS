@@ -13,6 +13,7 @@ import os
 import struct
 import sys
 import threading
+from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
 
 import anyio
@@ -47,6 +48,8 @@ import spc_md
 import acars_core
 import area_sounding
 import satellite
+import space_sdo
+import tropical
 import sat_net
 import glm
 import rivers
@@ -1042,6 +1045,125 @@ def rivers_brazil():
     in, and ANA's telemetry stations."""
     try:
         return brazil_rivers.stations()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+_SID = r"^[a-z]{2}\d{6}$"
+# A deck id (al122005) or an IBTrACS one (2005236N23285).
+_TRACK_ID = r"^([a-z]{2}\d{6}|\d{7}[NS]\d{5})$"
+_BASIN = r"^(al|ep|cp|wp|io|sh|sl)$"
+
+
+def _tropical(fn, *args, **kw):
+    try:
+        return fn(*args, **kw)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/tropical/storms")
+def tropical_storms():
+    """Every active tropical system worldwide: NHC's and JTWC's storms and invests."""
+    return _tropical(tropical.storms)
+
+
+@app.get("/api/tropical/track")
+def tropical_track(id: str = Query(..., pattern=_TRACK_ID)):
+    """A storm's best track with wind radii, and its ACE."""
+    return _tropical(tropical.track, id)
+
+
+@app.get("/api/tropical/guidance")
+def tropical_guidance(id: str = Query(..., pattern=_SID), cycle: Optional[str] = Query(None, pattern=r"^\d{10}$"),
+                      which: str = Query("selected", pattern=r"^(selected|all)$")):
+    """Model track and intensity guidance from the storm's ATCF a-deck."""
+    return _tropical(tropical.guidance, id, cycle, which)
+
+
+@app.get("/api/tropical/season")
+def tropical_season(basin: str = Query(..., pattern=_BASIN), year: int = Query(..., ge=1842, le=2100),
+                    invests: bool = False):
+    """A season: every storm's summary and track, and ACE day by day."""
+    return _tropical(tropical.season, basin, year, invests)
+
+
+@app.get("/api/tropical/hurdat")
+def tropical_hurdat(basin: str = Query(..., pattern=r"^(al|ep)$"), year_from: int = Query(1851, alias="from"),
+                    year_to: int = Query(2100, alias="to"), min_peak: float = Query(0, alias="min")):
+    """HURDAT2 tracks over a span of seasons, for the archive map."""
+    return _tropical(tropical.hurdat_tracks, basin, year_from, year_to, min_peak)
+
+
+@app.get("/api/tropical/records")
+def tropical_records(basin: str = Query(..., pattern=r"^(al|ep)$")):
+    """HURDAT2's record book and formations by month."""
+    return _tropical(tropical.records, basin)
+
+
+@app.get("/api/tropical/density")
+def tropical_density(basin: str = Query(..., pattern=r"^(al|ep)$"), year_from: int = Query(1991, alias="from"),
+                     year_to: int = Query(2100, alias="to")):
+    """Named-storm track density on a 2-degree grid."""
+    return _tropical(tropical.density, basin, year_from, year_to)
+
+
+@app.get("/api/tropical/recon")
+def tropical_recon(basin: str = Query("al", pattern=r"^(al|ep|cp)$"), hours: float = Query(24, gt=0, le=240),
+                   start: Optional[str] = None, end: Optional[str] = None):
+    """Hurricane Hunter HDOBs gathered into missions: the last hours, or a span."""
+    def go():
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+        if start and end:
+            a = _dt.fromisoformat(start.replace("Z", "+00:00"))
+            b = _dt.fromisoformat(end.replace("Z", "+00:00"))
+            if (b - a).days > 21:
+                raise HTTPException(status_code=400, detail="At most three weeks at a time")
+        else:
+            b = _dt.now(_tz.utc)
+            a = b - _td(hours=hours)
+        return tropical.recon(basin, a, b)
+    return _tropical(go)
+
+
+@app.get("/api/tropical/recon/years")
+def tropical_recon_years():
+    return _tropical(tropical.recon_years)
+
+
+@app.get("/api/tropical/enso")
+def tropical_enso():
+    """ONI, the weekly Nino indices, MEI v2, Nino 3.4 since 1870, the Tropical
+    North Atlantic index and the AMO."""
+    return _tropical(tropical.enso)
+
+
+@app.get("/api/tropical/mjo")
+def tropical_mjo():
+    """The MJO every day since 1991, on RMM's axes, with its phase."""
+    return _tropical(tropical.mjo)
+
+
+@app.get("/api/space/sdo")
+def space_sdo_latest(size: int = Query(512, ge=256, le=4096)):
+    """SDO's newest picture of each channel at one size."""
+    try:
+        return space_sdo.latest(size)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/space/sdo/frames")
+def space_sdo_frames(
+    ch: str = Query(..., pattern=r"^[A-Za-z0-9]{3,16}$"),
+    size: int = Query(1024, ge=256, le=4096),
+    hours: float = Query(24, gt=0, le=72),
+):
+    """Every SDO picture of one channel over the last hours, for a loop."""
+    try:
+        return space_sdo.frames(ch, size, hours)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
 

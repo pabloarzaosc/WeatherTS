@@ -6,6 +6,7 @@ import {
   Compass,
   Eye,
   Gauge,
+  Heart,
   Layers,
   LayoutPanelLeft,
   Map as MapIcon,
@@ -274,6 +275,15 @@ function GuidesBlock() {
           <i>Release log for every version</i>
         </span>
       </button>
+      {/* WeatherTS has no income but donations; nothing in the app is behind
+          them. Opens in the browser (electron/main.js hands http links out). */}
+      <a className="set__guide" href="https://github.com/sponsors/pabloarzaosc" target="_blank" rel="noopener">
+        <Heart size={14} />
+        <span>
+          <b>Support WeatherTS</b>
+          <i>Sponsor on GitHub, any amount</i>
+        </span>
+      </a>
     </div>
   );
 }
