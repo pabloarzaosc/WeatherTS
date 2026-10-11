@@ -38,3 +38,8 @@ SparkRadar-main/
 
 # Cloudflare Wrangler local state (web/proxy)
 .wrangler/
+
+# The web build and the site assembled from it and the landing page
+dist-web
+dist-site
+

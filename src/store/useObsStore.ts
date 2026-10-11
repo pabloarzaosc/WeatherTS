@@ -35,6 +35,7 @@ const K_ROADS = "weatherts.obs.roads";
 const K_OPEN = "weatherts.obs.groups";
 const K_HOURS = "weatherts.obs.hours";
 const K_WINDOWS = "weatherts.obs.windows";
+const K_ARCHIVE = "weatherts.obs.archiveAt";
 
 /** How far back the timeline goes. A loop keeps every frame up to 240 of them
  *  (a week of hourly analyses is all 168); past that the backend keeps every
@@ -58,6 +59,9 @@ interface ObsState {
   runs: ObsRun[];
   /** One map, or a compare grid of runs or of models at the same valid time. */
   view: ObsView;
+  /** The mesoanalysis archive's picked moment (unix s): its day is the frames,
+   *  and the map opens on its hour. Null opens the newest whole day. */
+  archiveAt: number | null;
   /** The Compare models grid: a model and a product per window, remembered. */
   windows: ObsWindow[];
 
@@ -114,6 +118,8 @@ interface ObsState {
   /** Open another run (null: the newest), on the same valid time where it has it. */
   /** Another run, on the same valid time -- or on `at`, when given. */
   setRun: (run: string | null, at?: number) => void;
+  /** Open the archive on another moment: that day's hours, landing on it. */
+  setArchiveAt: (unix: number | null) => void;
   setView: (view: ObsView) => void;
   setWindows: (windows: ObsWindow[]) => void;
   setHours: (h: number) => void;
@@ -181,6 +187,10 @@ function sourceFor(catalog: ObsCatalog | null, product: string): string | null {
   return p.sources.includes("hrrr-anl") ? "hrrr-anl" : p.sources[0];
 }
 
+function isArchive(catalog: ObsCatalog | null, source: string): boolean {
+  return !!catalog?.sources.find((s) => s.id === source)?.archive;
+}
+
 /** The view a newly picked model keeps: an analysis has no runs to compare
  *  (a models grid needs none), and tracks are drawn on the one map. */
 function viewFor(catalog: ObsCatalog | null, id: string, view: ObsView): ObsView {
@@ -220,6 +230,7 @@ export const useObsStore = create<ObsState>((set, get) => ({
   run: null,
   runs: [],
   view: "single",
+  archiveAt: Number(read(K_ARCHIVE)) || null,
   windows: readWindows(),
   busy: false,
   error: null,
@@ -295,6 +306,9 @@ export const useObsStore = create<ObsState>((set, get) => ({
     const atNewest = before.index < 0 || before.index >= before.frames.length - 1;
     const pinned = before.frames[before.index]?.key;
     if (!keepPlace) set({ busy: true, error: null });
+    const archive = isArchive(before.catalog, before.source);
+    // The archive opens on its picked hour, not on the day's last one.
+    if (archive && !keepPlace && landOn == null && before.archiveAt != null) landOn = before.archiveAt;
     try {
       const frames = await fetchObsFrames(
         before.source,
@@ -302,6 +316,7 @@ export const useObsStore = create<ObsState>((set, get) => ({
         before.field,
         before.hours,
         before.run ?? undefined,
+        archive ? (before.archiveAt ?? undefined) : undefined,
       );
       if (mine.signal.aborted) return;
       const unchanged =
@@ -369,6 +384,21 @@ export const useObsStore = create<ObsState>((set, get) => ({
     // The status stays until the new run's frame is drawn: picking the run
     // already on screen changes no frame, and nothing would write it again.
     set({ run, loopArmed: get().playing && get().loopArmed });
+    void get().loadFrames();
+  },
+
+  setArchiveAt: (unix) => {
+    write(K_ARCHIVE, unix == null ? "" : String(Math.floor(unix)));
+    set({ archiveAt: unix, loopArmed: get().playing && get().loopArmed });
+    if (!isArchive(get().catalog, get().source)) return;
+    const { frames } = get();
+    // Another hour of the day on screen: only the frame moves.
+    if (unix != null && frames.length && unix >= frames[0].unix && unix <= frames[frames.length - 1].unix) {
+      get().goToUnix(unix);
+      return;
+    }
+    landOn = unix;
+    set({ frames: [], index: -1, valid: null });
     void get().loadFrames();
   },
 
@@ -446,8 +476,12 @@ export const useObsStore = create<ObsState>((set, get) => ({
   },
 
   goToUnix: (unix) => {
-    const { frames } = get();
+    const { frames, catalog, source } = get();
     if (!frames.length) return;
+    // Live radar beside the archive is years away from it: the archive stays
+    // on its own hour rather than jumping to the end of its day.
+    if (unix != null && isArchive(catalog, source) &&
+        (unix < frames[0].unix - 3 * 3600 || unix > frames[frames.length - 1].unix + 3 * 3600)) return;
     if (unix == null) {
       set({ index: frames.length - 1 });
       return;
@@ -509,3 +543,14 @@ export const selectObsProducts = (s: ObsState) => s.catalog?.products ?? NO_PROD
 /** The product being drawn, or null before the catalogue lands. */
 export const selectObsProduct = (s: ObsState): ObsProduct | null =>
   s.catalog?.products.find((p) => p.id === s.field) ?? null;
+
+// The archive's moment follows the hour on screen, so a reload or a restart
+// reopens the same hour of the same day.
+useObsStore.subscribe((s, prev) => {
+  if (s.index === prev.index && s.frames === prev.frames) return;
+  if (!isArchive(s.catalog, s.source)) return;
+  const f = s.frames[s.index];
+  if (!f || f.unix === s.archiveAt) return;
+  write(K_ARCHIVE, String(f.unix));
+  useObsStore.setState({ archiveAt: f.unix });
+});

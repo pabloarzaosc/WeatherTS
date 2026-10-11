@@ -40,6 +40,9 @@ export interface ObsSource {
   /** A forecast model's analysis twin: where its products go back in time,
    *  every hour of the last week (the panel's Replay). */
   replay?: string;
+  /** The mesoanalysis archive: the first and newest hour it opens on (unix s).
+   *  Its frames are the day around a picked moment, not the latest hours. */
+  archive?: { from: number; to: number };
 }
 
 export interface ObsCatalog {
@@ -121,18 +124,20 @@ export function obsDensity(): number {
 
 /** Passing the field lets the server start on its newest hour before the layer
  *  is even switched on. `run` picks one run of a forecast model; without it,
- *  the newest. */
+ *  the newest. `at` is the archive's picked moment: its day comes back. */
 export async function fetchObsFrames(
   source: string,
   signal?: AbortSignal,
   field?: string,
   hours?: number,
   run?: string,
+  at?: number,
 ): Promise<ObsFrame[]> {
   const q = new URLSearchParams({ source });
   if (field) q.set("field", field);
   if (hours) q.set("hours", String(hours));
   if (run) q.set("run", run);
+  if (at) q.set("at", String(Math.floor(at)));
   const res = await fetch(`${BASE}/api/obs/frames?${q}`, { signal });
   if (!res.ok) throw new Error(await detail(res));
   return (await res.json()).frames as ObsFrame[];

@@ -9,8 +9,7 @@ import {
   quickStartDone,
   useOnboardingStore,
 } from "../store/useOnboardingStore";
-
-const api = () => (window as unknown as { electronAPI?: { getVersion?: () => Promise<string> } }).electronAPI;
+import { appVersion } from "../lib/appVersion";
 
 type UnitSystem = "imperial" | "metric";
 
@@ -88,8 +87,7 @@ export function QuickStart() {
     markQuickStartDone();
     // A fresh install has not "missed" anything, so treat the running version
     // as already read -- otherwise What's New would pop straight afterwards.
-    void api()
-      ?.getVersion?.()
+    void appVersion()
       .then((v) => v && markVersionSeen(v))
       .catch(() => {});
     close();

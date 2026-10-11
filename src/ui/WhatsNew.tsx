@@ -12,8 +12,8 @@ import {
   quickStartDone,
   useOnboardingStore,
 } from "../store/useOnboardingStore";
+import { appVersion as runningVersion } from "../lib/appVersion";
 
-const api = () => (window as unknown as { electronAPI?: { getVersion?: () => Promise<string> } }).electronAPI;
 
 function formatDate(iso: string | null): string {
   if (!iso) return "";
@@ -41,8 +41,7 @@ export function WhatsNew() {
   // pending: a first-run user should not meet two panels at once.
   useEffect(() => {
     let cancelled = false;
-    void api()
-      ?.getVersion?.()
+    void runningVersion()
       .then((v) => {
         if (cancelled || !v) return;
         setAppVersion(v);

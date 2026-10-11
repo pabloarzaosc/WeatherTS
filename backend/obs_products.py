@@ -482,6 +482,43 @@ SOURCES.update({
 # The HiResW members and the HREF mean, as their files name their records --
 # read off each file's own .idx, long spellings and all. The three HiResW runs
 # share one file layout and one 5 km Lambert grid; so does the HREF.
+# ---------------------------------------------------------------------------
+# The mesoanalysis archive: any hour since 2005 (see meso_archive.py)
+# ---------------------------------------------------------------------------
+# Worked out from each hour's own profile rather than read from the file, so
+# they exist -- and mean the same -- in the RUC years too.
+_PROFILE_DERIVED = (
+    "sbcape", "sbcin", "mlcape", "mlcin", "mucape", "mucin", "cape3", "li", "bli",
+    "lcl_msl", "mllcl", "lfc_msl", "el_msl", "ushr1", "vshr1", "ushr6", "vshr6", "ustm", "vstm",
+    "srh1", "srh3", "esrh", "ebwd", "stp_eff", "scp_eff", "lr03",
+)
+
+SOURCES["rap-archive"] = {
+    "label": "Mesoanalysis archive 13 km", "org": "NOAA/NCEP, NCEI", "coverage": "North America, 2005 on",
+    "note": "Any hour since January 2005: the RAP's analysis (the RUC's before May 2012), with SPC's "
+            "severe parameters worked out from its own profiles. Pick the day below.",
+    "urls": {"archive": "archive:{ymd}{hh}"},
+    "reader": "archive", "archive": True, "group": "Archive",
+    # The same 13 km Lambert grid as the live RAP analysis, every year: its
+    # regrid mapping is shared.
+    "grid": "rap-anl",
+    "step": 0.13, "days": 1, "cadence": 60,
+    "lov": -95.0, "latin": 25.0,
+    # Bumped when meso_profile's sums change, so no hour is served from before.
+    "reread": "p1",
+    # Only what the RUC's files carry as well as the RAP's: the rest is either
+    # worked out from the profile or not in the early years at all.
+    "raw": {
+        **_without(_NCEP_COMMON, "u80", "v80", "tcdc", "lcdc", "mcdc", "hcdc", "smoke", "refc",
+                   "lfc_msl", "el_msl"),
+        **_upper((500,), dpt=False),
+        "prate": "PRATE:surface",
+        "crain": "CRAIN:surface", "csnow": "CSNOW:surface", "cicep": "CICEP:surface", "cfrzr": "CFRZR:surface",
+        **{name: f"derived:{name}" for name in _PROFILE_DERIVED},
+    },
+}
+
+
 _HRW_RAW = {
     "absv500": "ABSV:500 mb",
     "bli": "4LFTX:180-0 mb above ground",
@@ -2010,6 +2047,8 @@ PRODUCTS: dict[str, dict[str, Any]] = {
                decimals=1, note="Steep mid-level lapse rates (7+ °C/km) are the elevated mixed layer hail feeds on."),
     "lr85": _p("850-500mb Lapse Rate", UA, "lr85", "°C/km", LAPSE_CKM, sub="Lapse Rates", lines=own(1, lo=7),
                decimals=1),
+    "lr03": _p("0-3 km Lapse Rate", UA, "lr03", "°C/km", LAPSE_CKM, sub="Lapse Rates", lines=own(1, lo=7),
+               decimals=1, note="From the 2 m temperature to 3 km above ground: steep low levels speed updrafts."),
     # ----- Precipitation
     "refc": _p("Composite Reflectivity", "Precipitation", "refc", "dBZ", REFL_DBZ, stepped=True,
                note="The model's own reflectivity, not the radar mosaic."),
@@ -2059,6 +2098,8 @@ PRODUCTS: dict[str, dict[str, Any]] = {
     # ----- Severe weather: parcel heights
     "lcl": _p("LCL Height", SV, "lcl", "m", LCL_M, sub="Parcel Heights",
               note="Above ground. Below 1000 m favours tornadoes; the HRRR gives its own parcel's, RTMA uses Espy's estimate."),
+    "mllcl": _p("Mixed-Layer LCL Height", SV, "mllcl", "m", LCL_M, sub="Parcel Heights",
+                note="Above ground, for the lowest 100 mb's mean parcel: the LCL in SPC's STP."),
     "lfc": _p("LFC Height", SV, "lfc", "m", LFC_M, sub="Parcel Heights",
               note="Above ground, most-unstable parcel; only where there is CAPE."),
     "el": _p("Equilibrium Level Height", SV, "el", "m", EL_M, sub="Parcel Heights",
@@ -2075,6 +2116,14 @@ PRODUCTS: dict[str, dict[str, Any]] = {
                note="The barbs are the shear vector itself; 40 kt and up supports supercells."),
     "stm": _p("Bunkers Storm Motion", SV, "stmspd", "kt", STM_KT, sub="Kinematics", convert="ms->kt",
               barbs=("ustm", "vstm"), note="The right-moving supercell's expected motion (0-6 km)."),
+    "esrh": _p("Effective Storm-Relative Helicity", SV, "esrh", "m²/s²", SRH_M2S2, sub="Kinematics",
+               lines=own(100, lo=100),
+               note="Over the effective inflow layer: the levels whose parcels have 100 J/kg of CAPE and no more "
+                    "than 250 of CIN. Zero where storms would have no inflow to draw on."),
+    "ebwd": _p("Effective Bulk Shear", SV, "ebwd", "kt", SHR6_KT, sub="Kinematics", convert="ms->kt",
+               lines=own(10, lo=30),
+               note="From the base of the effective inflow layer half way to the most unstable parcel's "
+                    "equilibrium level. 40 kt and up supports supercells."),
     # ----- Severe weather: composites
     "stp": _p("Significant Tornado Parameter", SV, "stp", "", STP_PAL, sub="Composite", lines=own(1, lo=1),
               decimals=1, note="Fixed layer: SBCAPE, surface LCL, 0-1 km SRH, 0-6 km shear."),
@@ -2084,6 +2133,13 @@ PRODUCTS: dict[str, dict[str, Any]] = {
                decimals=1, note="SPC's SHIP, with the 2 m mixing ratio standing in for the most-unstable parcel's."),
     "ehi1": _p("0-1 km Energy-Helicity Index", SV, "ehi1", "", EHI_PAL, sub="Composite", lines=own(1, lo=1), decimals=1),
     "ehi3": _p("0-3 km Energy-Helicity Index", SV, "ehi3", "", EHI_PAL, sub="Composite", lines=own(1, lo=1), decimals=1),
+    "stp_eff": _p("Significant Tornado Parameter (effective)", SV, "stp_eff", "", STP_PAL, sub="Composite",
+                  lines=own(1, lo=1), decimals=1,
+                  note="SPC's effective-layer STP with CIN (Thompson et al. 2012): MLCAPE, ML LCL, effective SRH, "
+                       "effective shear, MLCIN; zero where the inflow layer is not at the ground."),
+    "scp_eff": _p("Supercell Composite Parameter (effective)", SV, "scp_eff", "", SCP_PAL, sub="Composite",
+                  lines=own(2, lo=2), decimals=1,
+                  note="MUCAPE, effective SRH and effective shear, with the MUCIN term, as SPC draws it."),
     "craven": _p("Craven-Brooks Significant Severe", SV, "craven", "10³ m³/s³", CRAVEN_PAL, sub="Composite",
                  convert="x1e-3", lines=own(20, lo=20),
                  note="MLCAPE times 0-6 km shear; 20 000 m³/s³ separates significant severe from the rest."),

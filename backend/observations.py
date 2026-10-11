@@ -54,6 +54,7 @@ from scipy.ndimage import gaussian_filter, maximum_filter
 from scipy.spatial import cKDTree
 
 import atcf
+import meso_archive
 import model_fields
 import model_sources as ms
 import mrms
@@ -195,7 +196,7 @@ def track_data(source: str, field: str, key: str) -> dict[str, Any]:
 
 # The model menu's shelves, in the order it lists them; a source keeps its
 # place in SOURCES within its shelf.
-_GROUP_ORDER = ("Analyses", "Radar mosaic", "Convection-allowing", "CAM ensemble", "Regional", "Global", "Ensemble", "Tropical")
+_GROUP_ORDER = ("Analyses", "Archive", "Radar mosaic", "Convection-allowing", "CAM ensemble", "Regional", "Global", "Ensemble", "Tropical")
 
 
 # Within a shelf, the order a model viewer lists them in; anything unlisted
@@ -222,7 +223,8 @@ def catalog() -> dict[str, Any]:
             {"id": sid, "label": s["label"], "org": s["org"], "coverage": s["coverage"], "note": s["note"],
              "products": _OFFERS[sid], "forecast": _is_fc(sid), "tracks": _tracks(sid),
              "group": s.get("group", "Analyses"), "cadence": _cadence(sid),
-             **({"replay": s["replay"]} if s.get("replay") in SOURCES else {})}
+             **({"replay": s["replay"]} if s.get("replay") in SOURCES else {}),
+             **({"archive": archive_range()} if s.get("archive") else {})}
             for sid, s in sorted(SOURCES.items(), key=lambda kv: _shelf(kv[0]))
         ],
         "products": [
@@ -372,6 +374,8 @@ _READERS: dict[str, Callable[[str, str], Optional[np.ndarray]]] = {
     "scan": lambda url, m: ms.scan_values_at(*_scan_urls(url, m)),
     # MRMS: a file per product per time, found in the product's own listing.
     "mrms": lambda url, m: mrms.values_at(url.replace("{var}", m)),
+    # The mesoanalysis archive: an hour read whole and kept ("archive:YYYYMMDDHH").
+    "archive": lambda url, m: meso_archive.values_at(url, m),
 }
 _FIELDS: dict[str, Callable[[str, str], Optional["ms.Field"]]] = {
     "idx": lambda url, m: ms.fetch_at(url, m),
@@ -379,6 +383,7 @@ _FIELDS: dict[str, Callable[[str, str], Optional["ms.Field"]]] = {
     "file": lambda url, m: ms.file_fetch_at(url.replace("{var}", m)),
     "scan": lambda url, m: ms.scan_fetch_at(*_scan_urls(url, m)),
     "mrms": lambda url, m: mrms.field_at(url.replace("{var}", m)),
+    "archive": lambda url, m: meso_archive.fetch_at(url, m),
 }
 
 
@@ -392,6 +397,8 @@ def _is_out(source: str, url: str, key: str) -> bool:
     reader = _reader(source)
     if reader == "mrms":
         return mrms.has(url.replace("{var}", SOURCES[source]["probe"]))
+    if reader == "archive":
+        return meso_archive.has(url)
     if reader == "ecmwf":
         return ms.has_index(url)
     if reader == "file":
@@ -442,6 +449,10 @@ def frames(source: str = DEFAULT_SOURCE) -> list[dict]:
     """
     if source not in SOURCES:
         raise ValueError(f"Unknown analysis source: {source}")
+    if is_archive(source):
+        with _LOCK:
+            hit = _FRAMES.get(source)
+        return hit[1] if hit else archive_frames(source, None)
     with _LOCK:
         hit = _FRAMES.get(source)
     if hit and time.time() - hit[0] < SOURCES[source].get("frames_ttl", _FRAMES_TTL):
@@ -459,6 +470,29 @@ def frames(source: str = DEFAULT_SOURCE) -> list[dict]:
     return _discover_frames(source)
 
 
+def is_archive(source: str) -> bool:
+    return bool(SOURCES.get(source, {}).get("archive"))
+
+
+def archive_frames(source: str, at: Optional[int]) -> list[dict]:
+    """An archive source's frames: the convective day (12Z-11Z) around the
+    instant `at`, or the newest whole day before now. The list is kept as the
+    source's frames, so everything that asks for them -- a compare window, the
+    newest hour, a loop -- sees the day that was picked."""
+    if not is_archive(source):
+        raise ValueError(f"{source} is not an archive")
+    out = [{"key": _key(source, h), "unix": int(h.timestamp()), "label": h.strftime("%d %b %Y %HZ")}
+           for h in meso_archive.window(at)]
+    with _LOCK:
+        _FRAMES[source] = (time.time(), out)
+    return out
+
+
+def archive_range() -> dict[str, int]:
+    """The first and the newest hour the archive can open on (unix)."""
+    return {"from": int(meso_archive.FIRST.timestamp()), "to": int(meso_archive.latest().timestamp())}
+
+
 # A loop longer than this many frames plays every k-th hour instead: a week of
 # RTMA-RU is 672 quarter-hours, and each one is several fields to download.
 MAX_LOOP_FRAMES = 240
@@ -474,7 +508,7 @@ def frames_for(source: str, hours: float) -> list[dict]:
     mosaic) moved every kept frame each time a new one came in: the loop being
     downloaded became a different loop every minute and never finished."""
     every = frames(source)
-    if not every or _is_fc(source):
+    if not every or _is_fc(source) or is_archive(source):
         return every
     span = max(1.0, min(float(hours), SOURCES[source]["days"] * 24.0)) * 3600.0
     newest = every[-1]["unix"]
@@ -2728,6 +2762,20 @@ def _wanted(source: str, field: str) -> bool:
     with _LOCK:
         want = (_WANT["source"], _WANT["field"])
     return want == ("", "") or want == (source, field)
+
+
+def warm_hour(source: str, field: str, key: str, width: int = DEFAULT_WIDTH) -> None:
+    """Start making one hour now -- the archive's picked moment, which is
+    neither the newest frame nor next to one already drawn."""
+    if source not in SOURCES or field not in _OFFERS.get(source, ()) or not key:
+        return
+    _focus(source, field)
+    job = (source, field, key, width)
+    with _LOCK:
+        if job in _RENDER or job in _WARMING:
+            return
+        _WARMING.add(job)
+    threading.Thread(target=_warm_one, args=(job, False), daemon=True, name="obs-hour").start()
 
 
 def _warm_one(job: tuple, background: bool = True) -> None:

@@ -38,7 +38,8 @@ import { themeLinkedBasemap } from "./map/basemaps";
 
 // DEV-only hook so the sounding viewer can be driven without a right-click
 // (headless preview can't size the WebGL map). Harmless in production builds.
-if (import.meta.env.DEV) {
+// VITE_PROBE turns them on in a test build of the web version.
+if (import.meta.env.DEV || import.meta.env.VITE_PROBE) {
   (window as unknown as { __openSounding?: (lat: number, lon: number) => void }).__openSounding = (lat, lon) =>
     useSoundingViewerStore.getState().openAt(lat, lon);
   // Read-only handles on the stores, for checking state from the console the
@@ -64,6 +65,8 @@ if (import.meta.env.DEV) {
 // Seed per-layer UI state from the registry defaults, then apply the saved
 // reduced-motion preference.
 useAppStore.getState().initLayers();
+// Then put back the workspace the last visit left: layers, radar, map view...
+restoreSession();
 
 // Coerce any stale persisted view (e.g. the removed "Tools" tab) to the catalog.
 const persistedView = useAppStore.getState().dataView as string;
@@ -93,16 +96,25 @@ useThemeStore.subscribe(syncTheme);
 setInterval(syncTheme, 60_000);
 
 import { ErrorBoundary } from "./ErrorBoundary";
+import { restoreSession } from "./lib/session";
+import { DesktopLogin, isDesktopLogin } from "./ui/auth/DesktopLogin";
+import { isElectron } from "./lib/auth";
 
 // The gate wraps App rather than living inside it: the workspace mounts once
 // the session check has answered -- for a guest as much as for an account -- so
 // nothing in it starts out assuming the wrong one.
+// weatherts.tech/app/?desktop-login=1 is the Windows app's Google sign-in
+// page (ui/auth/DesktopLogin), not the workspace.
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <LoginGate>
-        <App />
-      </LoginGate>
+      {!isElectron && isDesktopLogin() ? (
+        <DesktopLogin />
+      ) : (
+        <LoginGate>
+          <App />
+        </LoginGate>
+      )}
     </ErrorBoundary>
   </React.StrictMode>,
 );

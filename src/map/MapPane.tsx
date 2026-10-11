@@ -2,6 +2,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import maplibregl from "maplibre-gl";
 
 import { INITIAL_VIEW } from "./mapStyle";
+import { noteView, savedView } from "../lib/session";
 import { buildBasemapStyle } from "./basemaps";
 import { registerMap, setActivePane, allMaps, subscribeMaps, getActivePaneId, PRIMARY_PANE } from "./mapInstance";
 import { LayerManager } from "../layers/manager";
@@ -62,11 +63,13 @@ export function MapPane({ id }: { id: string }) {
     const store = useAppStore;
 
     // A new pane opens on the view the others are already at, rather than
-    // snapping the user back out to the world.
+    // snapping the user back out to the world; the first one on the view the
+    // last visit ended on.
     const peer = allMaps()[0];
+    const last = savedView();
     const start = peer
       ? { center: peer.getCenter(), zoom: peer.getZoom(), bearing: peer.getBearing(), pitch: peer.getPitch() }
-      : { center: INITIAL_VIEW.center, zoom: INITIAL_VIEW.zoom, bearing: 0, pitch: 0 };
+      : (last ?? { center: INITIAL_VIEW.center, zoom: INITIAL_VIEW.zoom, bearing: 0, pitch: 0 });
 
     const map = new maplibregl.Map({
       container: host.current,
@@ -93,6 +96,14 @@ export function MapPane({ id }: { id: string }) {
     });
 
     registerMap(id, map);
+    // The camera the next visit opens on. The panes share one camera, so the
+    // primary's is enough, kept as it settles rather than on every frame.
+    if (primary) {
+      map.on("moveend", () => {
+        const c = map.getCenter();
+        noteView({ center: [c.lng, c.lat], zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() });
+      });
+    }
     useNexradStore.getState().addPane(id);
     if (import.meta.env.DEV) {
       const w = window as unknown as { __map?: maplibregl.Map; __panes?: Record<string, maplibregl.Map> };

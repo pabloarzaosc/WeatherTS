@@ -11,8 +11,8 @@ import { TERMS_VERSION } from "./consent";
  * are typed. Row Level Security is what actually guards the data.
  */
 
-const SUPABASE_URL = "https://xlwvpzhxpkmuxjtiagwq.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_AhX1NQFvuufEV4_3YLNQXQ_uE73b5H2";
+export const SUPABASE_URL = "https://xlwvpzhxpkmuxjtiagwq.supabase.co";
+export const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_AhX1NQFvuufEV4_3YLNQXQ_uE73b5H2";
 
 export const isElectron = Boolean(
   (window as unknown as { electronAPI?: { isElectron?: boolean } }).electronAPI?.isElectron,
@@ -25,7 +25,8 @@ export const isElectron = Boolean(
  *  link, which the main process forwards to the renderer. */
 export const OAUTH_REDIRECT = isElectron
   ? "weatherts://auth-callback"
-  : `${window.location.origin}/`;
+  : // Back to the app, not the site's root: the web build lives at /app/.
+    `${window.location.origin}${import.meta.env.BASE_URL}`;
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
@@ -491,7 +492,17 @@ export type OAuthProvider = "google";
  * so, since the user cannot see the address bar to know what they are typing
  * into. The redirect comes back as a deep link, which completeOAuth finishes.
  */
+/** Where the desktop signs in with Google: weatherts.tech's own page, in the
+ *  browser, which hands the session back through the weatherts:// deep link.
+ *  Supabase's redirect would show Google's chooser "continue to
+ *  <project>.supabase.co" (see lib/googleSignIn.ts). */
+export const DESKTOP_LOGIN_URL = "https://weatherts.tech/app/?desktop-login=1";
+
 export async function signInWithProvider(provider: OAuthProvider) {
+  if (isElectron && provider === "google") {
+    window.open(DESKTOP_LOGIN_URL, "_blank");
+    return DESKTOP_LOGIN_URL;
+  }
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider,
     options: { redirectTo: OAUTH_REDIRECT, skipBrowserRedirect: isElectron },

@@ -3,6 +3,7 @@ import { AlertTriangle, ChevronRight, Loader2, Search, X } from "lucide-react";
 
 import { useAppStore } from "../../store/useAppStore";
 import { LayerPower } from "../LayerPower";
+import { MesoArchive } from "./MesoArchive";
 import { Select } from "../Select";
 import { fhText, type ObsCatalog, type ObsProduct, type ObsView } from "../../lib/observations";
 import {
@@ -224,6 +225,7 @@ export function ObservationsView() {
 
   const src = catalog?.sources.find((s) => s.id === source);
   const forecast = src?.forecast ?? false;
+  const archive = src?.archive;
   // A run only looks ahead; its analysis twin holds every hour of the week.
   const replaySrc = forecast && src?.replay && product
     ? catalog?.sources.find((s) => s.id === src.replay && s.products.includes(product.id))
@@ -302,6 +304,8 @@ export function ObservationsView() {
         {src && <div className="sfx__ends"><span>{src.note}</span></div>}
       </div>
 
+      {archive && <MesoArchive range={archive} part="day" />}
+
       <div className="sfx__block">
         <div className="sfx__head">
           <span>Product</span>
@@ -358,7 +362,9 @@ export function ObservationsView() {
         </div>
       </div>
 
-      {!forecast && (
+      {archive && <MesoArchive range={archive} part="events" />}
+
+      {!forecast && !archive && (
       <div className="sfx__block">
         <div className="sfx__head">
           <span>Loop</span>
@@ -504,7 +510,13 @@ export function ObservationsView() {
 
       <div className="sfx__block sfx__block--tight">
         <div className="mslp__note">
-          {forecast
+          {archive
+            ? `The day's 24 hours are the frames on the map timeline. An hour is read whole from NOAA's
+               archive the first time (a few seconds; the years before 2021 come from NCEI, slower) and opens
+               instantly after. The severe parameters are worked out from each hour's own profile, the same
+               way for every year: SB, ML (lowest 100 mb) and MU (lowest 300 mb) parcels, the effective inflow
+               layer, Bunkers storm motion.`
+            : forecast
             ? `The run's forecast hours are the frames on the map timeline; the newest run opens on the
                hour nearest now. A run still coming in shows the hours already out.`
             : `Every hour of the last three days is a frame on the map timeline at the bottom, the same

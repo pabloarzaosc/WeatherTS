@@ -5,16 +5,19 @@ import { ArrowLeft, Loader2, MailCheck, Radio, Satellite, Siren, Users, Wind, Wi
 import {
   GRACE_DAYS,
   graceRemaining,
+  isElectron,
   resendVerification,
   sendPasswordReset,
   signInWithPassword,
   signInWithProvider,
   signUpWithPassword,
+  supabase,
   updatePassword,
   type AuthError,
   type OAuthProvider,
 } from "../../lib/auth";
 import { useAuthStore } from "../../store/useAuthStore";
+import { GoogleButton } from "./GoogleButton";
 
 type Mode = "signin" | "signup" | "forgot" | "sent" | "verify" | "reset" | "consent";
 
@@ -293,10 +296,16 @@ export function AuthScreen({
             </div>
 
             <div className="auth__providers">
-              <button type="button" className="auth__provider" onClick={() => oauth("google")} disabled={!!busy}>
-                {busy === "google" ? <Loader2 size={14} className="gate__spin" /> : <GoogleMark />}
-                Continue with Google
-              </button>
+              {isElectron ? (
+                <button type="button" className="auth__provider" onClick={() => oauth("google")} disabled={!!busy}>
+                  {busy === "google" ? <Loader2 size={14} className="gate__spin" /> : <GoogleMark />}
+                  Continue with Google
+                </button>
+              ) : (
+                // Google's own button on the web, so its account chooser names
+                // weatherts.tech rather than the Supabase project (lib/googleSignIn).
+                <GoogleButton client={supabase} onError={(m) => setError(m)} />
+              )}
             </div>
 
             <div className="auth__or">

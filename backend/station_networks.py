@@ -1035,8 +1035,12 @@ def _config() -> dict[str, Any]:
 
 
 def inmet_token() -> Optional[str]:
-    tok = str(_config().get("inmet_token") or "").strip()
-    return tok or None
+    # The hosted backend (the web version) takes it from its environment only:
+    # it serves everyone, so no visitor may set or clear it.
+    import os  # noqa: PLC0415
+
+    tok = os.environ.get("INMET_TOKEN") or str(_config().get("inmet_token") or "")
+    return tok.strip() or None
 
 
 def _inmet_get(path: str) -> Any:

@@ -71,7 +71,7 @@ export const useSpaceStore = create<SpaceState>()(
     {
       name: "weatherts-space",
       version: 1,
-      partialize: (s) => ({ tab: s.tab, range: s.range, field: s.field }),
+      partialize: (s) => ({ open: s.open, tab: s.tab, range: s.range, field: s.field }),
     },
   ),
 );

@@ -1,7 +1,7 @@
 {
   "name": "weatherts",
   "private": true,
-  "version": "1.8.0",
+  "version": "1.9.0",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
@@ -17,7 +17,9 @@
     "splash:sync": "node scripts/sync-splash.mjs",
     "preview": "vite preview",
     "release:announce": "node scripts/announce-release.mjs",
-    "landing:indexnow": "node scripts/indexnow.mjs"
+    "landing:indexnow": "node scripts/indexnow.mjs",
+    "web:build": "node scripts/sync-splash.mjs && tsc && vite build --mode web && node scripts/build-site.mjs",
+    "web:deploy": "npm run web:build && wrangler pages deploy dist-site --project-name weatherts --branch main"
   },
   "dependencies": {
     "@fontsource-variable/recursive": "^5.3.0",
@@ -38,6 +40,7 @@
     "electron": "^35.0.0",
     "electron-builder": "^26.15.3",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "wrangler": "^4.146.0"
   }
 }

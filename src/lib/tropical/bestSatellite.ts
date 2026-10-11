@@ -42,6 +42,43 @@ function inside(b: [number, number, number, number], lat: number, lon: number, m
 
 const area = (b: [number, number, number, number]) => (b[2] - b[0]) * (b[3] - b[1]);
 
+/**
+ * GOES's CONUS (and GOES-West's PACUS) sectors are rectangles in the imager's
+ * own scan angles, which on the map are slanted: their latitude/longitude box
+ * holds whole corners the picture never covers (Hurricane Rachel at 120 W,
+ * 20 N sat inside GOES-East's CONUS box, out in the black). So a storm counts
+ * as inside only if its scan angles are, with ~100 km to spare. The extents
+ * are the files' x/y_image_bounds: 5000 x 3000 pixels of 28 microradians.
+ */
+const ABI_SCAN: Record<string, { x: [number, number]; y: [number, number] }> = {
+  "goes19/conus": { x: [-0.10136, 0.03864], y: [0.04424, 0.12824] },
+  "goes18/conus": { x: [-0.07, 0.07], y: [0.04424, 0.12824] },
+};
+
+/** ABI fixed-grid scan angles (radians) of a place, or null past the limb. */
+function abiScan(lat: number, lon: number, sub: number): { x: number; y: number } | null {
+  const rEq = 6378137;
+  const rPol = 6356752.31414;
+  const H = 42164160;
+  const e2 = 1 - (rPol * rPol) / (rEq * rEq);
+  const r = Math.PI / 180;
+  const phiC = Math.atan(((rPol * rPol) / (rEq * rEq)) * Math.tan(lat * r));
+  const rc = rPol / Math.sqrt(1 - e2 * Math.cos(phiC) ** 2);
+  const sx = H - rc * Math.cos(phiC) * Math.cos((lon - sub) * r);
+  const sy = -rc * Math.cos(phiC) * Math.sin((lon - sub) * r);
+  const sz = rc * Math.sin(phiC);
+  if (H * (H - sx) < sy * sy + ((rEq * rEq) / (rPol * rPol)) * sz * sz) return null;
+  return { x: Math.asin(-sy / Math.hypot(sx, sy, sz)), y: Math.atan(sz / sx) };
+}
+
+function inScanSector(key: string, lat: number, lon: number, sub: number): boolean {
+  const ext = ABI_SCAN[key];
+  if (!ext) return true;
+  const s = abiScan(lat, lon, sub);
+  const m = 0.003; // ~100 km at the sub-point
+  return !!s && s.x >= ext.x[0] + m && s.x <= ext.x[1] - m && s.y >= ext.y[0] + m && s.y <= ext.y[1] - m;
+}
+
 /** The region's product for a kind of view, matched by name across imagers. */
 function productFor(region: SatRegion, view: SatView): SatRegion["products"][number] | undefined {
   const p = region.products;
@@ -86,7 +123,8 @@ export async function bestSatellite(lat: number, lon: number, view: SatView): Pr
           try {
             const probe = productFor(r, "ir") ?? r.products[0];
             const f = await fetchSatFrames(s.id, r.id, probe.id, 1, AbortSignal.timeout(10_000));
-            return f.bounds && f.frames.length && inside(f.bounds, lat, lon, 1) ? { s, r, box: f.bounds, angle } : null;
+            const covered = f.bounds && f.frames.length && inside(f.bounds, lat, lon, 1) && inScanSector(`${s.id}/${r.id}`, lat, lon, SUBPOINT[s.id]);
+            return covered ? { s, r, box: f.bounds!, angle } : null;
           } catch {
             return null;
           }

@@ -140,6 +140,7 @@ export function MapTimeline() {
   const obsVisible = useAppStore((s) => s.layers["observations"]?.visible ?? false);
   const obsFrames = useObsStore((s) => s.frames);
   const obsForecast = useObsStore((s) => s.catalog?.sources.find((x) => x.id === s.source)?.forecast ?? false);
+  const obsArchive = useObsStore((s) => !!s.catalog?.sources.find((x) => x.id === s.source)?.archive);
   const obsIndex = useObsStore((s) => s.index);
   const obsBusy = useObsStore((s) => s.busy);
   const lsrVisible = useAppStore((s) => s.layers["lsr"]?.visible ?? false);
@@ -261,7 +262,7 @@ export function MapTimeline() {
   const atLiveEdge =
     (isRadar && radarArchiveDay === null && value >= maxHour) ||
     (isSat && value >= maxHour) ||
-    (isObs && !obsForecast && value >= maxHour) ||
+    (isObs && !obsForecast && !obsArchive && value >= maxHour) ||
     (isLsr && value >= maxHour) ||
     (isFronts && value === lastFrontAnalysis) ||
     (!active && isRaob && value >= maxHour);

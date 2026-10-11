@@ -4825,6 +4825,39 @@ html[data-reduce-motion="true"] *::after {
   color: var(--text);
 }
 .sfx__chip--wide { width: 100%; border-radius: var(--radius); padding: 7px 10px; text-align: center; }
+
+/* The mesoanalysis archive's notable days: one row each, name over place and hour. */
+.mesoev {
+  display: flex;
+  flex-direction: column;
+  max-height: 268px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.mesoev__row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  text-align: left;
+}
+.mesoev__row:last-child { border-bottom: 0; }
+.mesoev__row:hover { background: rgba(var(--wash-rgb), 0.04); color: var(--text); }
+.mesoev__row.is-on { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--text); }
+.mesoev__name { font-size: 12px; font-weight: 600; }
+.mesoev__sub { display: flex; justify-content: space-between; gap: 8px; font-size: 10.5px; color: var(--text-faint); }
+.mesoev__when {
+  flex: none;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+}
+.mesoev__row.is-on .mesoev__when { color: var(--accent); }
+.sfx__chip--wide svg { vertical-align: -1px; margin-right: 4px; }
 .sfx__count { margin-left: 5px; font-style: normal; font-family: var(--mono); font-size: 10px; color: var(--text-faint); }
 .sfx__token { display: flex; gap: 6px; }
 .sfx__token input {

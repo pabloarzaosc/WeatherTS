@@ -21,7 +21,7 @@
 export const TERMS_VERSION = "2026-08-23";
 
 /** Where someone can ask about any of this. */
-export const CONTACT_EMAIL = "hello@weatherts.app";
+export const CONTACT_EMAIL = "contact@weatherts.tech";
 
 export interface ConsentPoint {
   /** The thing itself: a field, a permission, a recipient. */

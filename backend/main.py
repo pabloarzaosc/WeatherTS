@@ -64,7 +64,10 @@ app = FastAPI(title="WeatherTS Sounding API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET"],
+    # POST too: the web build (weatherts.tech/app) is a real cross-origin page,
+    # where the desktop's Electron skips CORS -- the cancel, prefetch and
+    # sounding calls are POSTs.
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
     expose_headers=["X-Sat-Detail"],
 )
@@ -72,6 +75,44 @@ app.add_middleware(
 # level 6, not the default 9: on a radar scan 9 costs ~600 ms of CPU to save
 # ~5% over 6, which takes ~20 ms.
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
+
+
+if os.environ.get("WEATHERTS_HOSTED"):
+    # The web version's backend serves everyone from a fixed monthly budget:
+    # one address may make 1500 requests in any 5 minutes (5 a second on
+    # average, far above a person looping radar and satellite at once), and
+    # past that gets 429 until its window empties. The desktop's own backend
+    # serves one person and never counts.
+    import threading as _threading
+    import time as _time
+    from collections import deque as _deque
+
+    from starlette.responses import JSONResponse as _JSONResponse
+
+    _RATE_WINDOW_S = 300.0
+    _RATE_MAX = 1500
+    _rate_hits: dict[str, _deque] = {}
+    _rate_lock = _threading.Lock()
+
+    @app.middleware("http")
+    async def _rate_limit(request, call_next):
+        # Behind Cloudflare the visitor is CF-Connecting-IP; behind Modal's
+        # proxy, the first X-Forwarded-For.
+        fwd = request.headers.get("cf-connecting-ip") or request.headers.get("x-forwarded-for", "")
+        ip = fwd.split(",")[0].strip() or (request.client.host if request.client else "?")
+        now = _time.monotonic()
+        with _rate_lock:
+            q = _rate_hits.setdefault(ip, _deque())
+            while q and now - q[0] > _RATE_WINDOW_S:
+                q.popleft()
+            if len(q) >= _RATE_MAX:
+                return _JSONResponse({"detail": "Too many requests from this address; try again in a few minutes."}, status_code=429)
+            q.append(now)
+            if len(_rate_hits) > 50_000:
+                # Forget addresses that went quiet, so the table cannot grow without end.
+                for k in [k for k, v in _rate_hits.items() if not v or now - v[-1] > _RATE_WINDOW_S]:
+                    del _rate_hits[k]
+        return await call_next(request)
 
 
 # An analysis endpoint waits on downloads for seconds. Run as a plain `def`,
@@ -742,10 +783,19 @@ def obs_frames(
     field: str = Query("", description="the field about to be drawn — its newest hour starts warming"),
     hours: float = Query(0, ge=0, le=24 * 7, description="only the last this many hours, thinned to a loop"),
     run: str = Query("", description="a forecast model's run (YYYYMMDDHH); the newest when empty"),
+    at: int = Query(0, ge=0, description="the archive: the instant whose day to open (unix s)"),
 ):
     """The timeline's frames, oldest first: the last `hours` of them, or every
-    hour the source keeps -- or, for a forecast model, one run's hours."""
+    hour the source keeps -- or, for a forecast model, one run's hours, or for
+    the archive, the day around `at`."""
     try:
+        if observations.is_archive(source):
+            out = observations.archive_frames(source, at or None)
+            if field and out:
+                # The picked hour is the one about to be drawn.
+                pick = min(out, key=lambda f: abs(f["unix"] - at)) if at else out[-1]
+                observations.warm_hour(source, field, pick["key"])
+            return {"frames": out}
         # A model opened is a strip made ahead: Compare runs then opens at once.
         observations.warm_strip(source, run)
         if run:
@@ -972,6 +1022,11 @@ def stations_networks_status():
 def stations_inmet_token(payload: dict = Body(...)):
     """Keep the user's INMET token (empty clears it) and read the network with it."""
     import station_networks  # noqa: PLC0415
+
+    if os.environ.get("WEATHERTS_HOSTED"):
+        # One server for every visitor of the web version: a token set here
+        # would be everyone's, and anyone could clear it.
+        raise HTTPException(status_code=403, detail="The web version cannot store an INMET token; the desktop app can.")
 
     return station_networks.set_inmet_token(str(payload.get("token") or ""))
 

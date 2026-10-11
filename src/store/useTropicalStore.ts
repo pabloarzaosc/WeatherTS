@@ -76,6 +76,9 @@ export const useTropicalStore = create<TropicalState>()(
       name: "weatherts-tropical",
       version: 1,
       partialize: (s) => ({
+        // Open stays open across a reload, on the storm it was showing.
+        open: s.open,
+        storm: s.storm,
         tab: s.tab,
         guidanceAll: s.guidanceAll,
         wspKt: s.wspKt,

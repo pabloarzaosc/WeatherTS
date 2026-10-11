@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
 
+import { IS_WEB } from "../../lib/apiConfig";
 import { fetchStationNetworks, saveInmetToken, type StationNetworksStatus } from "../../lib/surfaceObs";
 import { useAppStore } from "../../store/useAppStore";
 import { LayerPower } from "../LayerPower";
@@ -133,7 +134,7 @@ function NetworkBlock() {
             : "no token"}
         </b>
       </div>
-      {status?.inmet.configured ? (
+      {IS_WEB ? null : status?.inmet.configured ? (
         <button type="button" className="sfx__chip sfx__chip--wide" disabled={saving} onClick={() => save("")}>
           {saving ? "Working..." : "Remove the INMET token"}
         </button>
@@ -160,7 +161,8 @@ function NetworkBlock() {
       )}
       <p className="sfx__note">
         INMET's 520 automatic stations need a personal token: free, asked for by e-mail to{" "}
-        <b>cadastro.act@inmet.gov.br</b>. It stays on this computer.
+        <b>cadastro.act@inmet.gov.br</b>.{" "}
+        {IS_WEB ? "Enter yours in the desktop app: the web version cannot keep one." : "It stays on this computer."}
       </p>
       {(error || status?.inmet.error) && (
         <p className="sfx__note is-error">
