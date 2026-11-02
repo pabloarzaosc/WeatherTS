@@ -40,7 +40,10 @@ WYO_URL = "https://weather.uwyo.edu/wsgi/sounding"
 # Recent synoptic times to expose on the timeline (00Z/12Z), newest last.
 SYNOPTIC_WINDOW = 20  # 10 days of 00/12Z. A twice-daily site gives ~20 frames,
                       # a 00Z-only site ~10 -- and probing them is concurrent,
-                      # so a wider window costs almost nothing in wall time.
+                      # so a wider window costs almost nothing in wall time on IEM.
+# Wyoming is another matter: a file takes 1 to 20 s, so the whole window was 15 to
+# 35 s to open a Brazilian station, and over 2 min when one of them hung. Four days.
+WYOMING_WINDOW = 8
 MISSING = -9999.0
 MS2KT = 1.9438445  # Wyoming reports wind speed in m/s; SHARPpy wants knots.
 
@@ -57,6 +60,12 @@ _SESSION.mount(
         )
     ),
 )
+
+# Its own session: one slow answer is one gap in the timeline, not four tries at
+# 30 s each with the whole sounding waiting on them.
+_WYO_TIMEOUT = (6, 20)
+_WYO_SESSION = requests.Session()
+_WYO_SESSION.mount("https://", HTTPAdapter(max_retries=Retry(total=1, connect=1, read=0, backoff_factor=0.4)))
 
 _CACHE: dict[tuple, tuple[float, Optional[dict]]] = {}
 _RESULT_CACHE: dict[tuple, tuple[float, dict]] = {}
@@ -226,7 +235,20 @@ def _parse_wyoming(html: str) -> list[dict]:
             "wd": drct if has_wind else MISSING,
             "ws": sped * MS2KT if has_wind else MISSING,
         })
-    return _clean_levels(levels)
+    return _thin_levels(_clean_levels(levels))
+
+
+def _thin_levels(levels: list[dict]) -> list[dict]:
+    """A high-resolution BUFR ascent has up to 2500 levels, and SHARPpy took half a
+    minute over them with no gain on the plot. Every 5 hPa near the ground, 3 aloft."""
+    if len(levels) <= 300:
+        return levels
+    out = [levels[0]]
+    for lv in levels[1:-1]:
+        if out[-1]["p"] - lv["p"] >= max(3.0, 0.005 * lv["p"]):
+            out.append(lv)
+    out.append(levels[-1])
+    return out
 
 
 def _fetch_wyoming(wmo: str, unix: int) -> list[dict]:
@@ -239,16 +261,18 @@ def _fetch_wyoming(wmo: str, unix: int) -> list[dict]:
     dt = datetime.fromtimestamp(unix, tz=timezone.utc)
     dtstr = f"{dt.year}-{dt.month:02d}-{dt.day:02d} {dt.hour}:00:00"
     try:
-        resp = _SESSION.get(
+        resp = _WYO_SESSION.get(
             WYO_URL,
             params={"datetime": dtstr, "id": wmo, "src": "BUFR", "type": "TEXT:LIST"},
-            timeout=_HTTP_TIMEOUT,
+            timeout=_WYO_TIMEOUT,
         )
     except requests.exceptions.RequestException as exc:
         raise NetworkError(
             "Could not reach the RAOB data source after several tries - check the "
             "internet connection and try again."
         ) from exc
+    if resp.status_code >= 500:
+        raise NetworkError("The RAOB data source is having trouble - try again in a moment.")
     levels = _parse_wyoming(resp.text) if resp.ok else []
     _CACHE[key] = (now, levels)
     return levels
@@ -280,18 +304,26 @@ def _available_slots(
     Probed concurrently: eight sequential fetches would put seconds on the
     first open of every station, and they are independent of one another.
     """
+    trouble: list[NetworkError] = []
+
     def probe(unix: int):
         try:
             levels, source = _levels_at(station, wmo, unix)
-        except NetworkError:
-            raise
+        except NetworkError as exc:
+            trouble.append(exc)
+            return None
         except Exception:  # noqa: BLE001 - one bad slot is a gap, not a failure
             return None
         return (unix, levels, source) if len(levels) >= 4 else None
 
     with ThreadPoolExecutor(max_workers=min(8, len(slots))) as pool:
         results = list(pool.map(probe, slots))
-    return [r for r in results if r]
+    found = [r for r in results if r]
+    # Only when nothing came is it a failure: a station with two cycles out of eight
+    # should open, not report the internet down because a third one hung.
+    if not found and trouble:
+        raise trouble[0]
+    return found
 
 
 def _find_available(
@@ -323,6 +355,8 @@ def build_raob(station: str, name: str, lat: float, lon: float, hour: int, wmo: 
         raise NoObservationError("No station id was provided.")
 
     slots = _recent_synoptic()
+    if station.isdigit():
+        slots = slots[-WYOMING_WINDOW:]
 
     view = view or {}
     # `render` belongs in the key as much as the plot options do. Without it,

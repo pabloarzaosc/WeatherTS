@@ -18,7 +18,7 @@ export interface LayerCategoryMeta {
 
 /** Category groups for the layer panel, in display order (top -> bottom). */
 export const LAYER_CATEGORIES: LayerCategoryMeta[] = [
-  { id: "alerts", label: "Alerts (NWS)" },
+  { id: "alerts", label: "Alerts" },
   // Second only to warnings: on a chase day, where the others are is checked
   // as often as the radar itself.
   { id: "chasers", label: "Chasers" },

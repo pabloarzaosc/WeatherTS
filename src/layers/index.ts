@@ -19,6 +19,7 @@ import { boundariesLayer } from "./modules/boundaries";
 import { graticuleLayer } from "./modules/graticule";
 import { terminatorLayer } from "./modules/terminator";
 import { alertsLayer } from "./modules/alertsLayer";
+import { mosaicLayers } from "./modules/mosaicLayers";
 import { outlookLayers } from "./modules/outlooksLayer";
 import { raobLayer } from "./modules/raobLayer";
 import { vwpLayer } from "./modules/vwpLayer";
@@ -58,6 +59,7 @@ registerLayer(boundariesLayer);
 registerLayer(graticuleLayer);
 registerLayer(terminatorLayer);
 for (const layer of outlookLayers) registerLayer(layer);
+for (const layer of mosaicLayers) registerLayer(layer);
 registerLayer(alertsLayer);
 // Above the outlooks it refines: an MD is hours newer than the day outlook.
 registerLayer(mesoscaleLayer);

@@ -4474,6 +4474,12 @@ html[data-reduce-motion="true"] *::after {
   font-size: 10.5px;
   color: var(--text-faint);
 }
+/* the list still filling: a product appears once the radar is known to have it */
+.rpp__reading {
+  padding: 6px 10px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
 /* a product the selected radar is not publishing */
 .rpp__item.is-unavailable .rpp__btn {
   opacity: 0.45;

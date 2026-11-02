@@ -77,7 +77,8 @@ export interface ProductFamily {
   short?: string;
   /** The selected radar is not publishing this product at the moment. */
   unavailable?: boolean;
-  /** Still being checked at the selected radar. */
+  /** Not known yet at the selected radar: not offered until it is, though the
+   *  product on screen stays listed. */
   checking?: boolean;
   source?: "level2" | "level3";
   /** "derived": computed from the Level II volume (backend/radar_derived.py). */
@@ -172,6 +173,9 @@ export interface SiteAvailability {
   level2: boolean;
   /** Only Level III has been checked so far; Level II's answer follows. */
   level2Pending?: boolean;
+  /** What any radar of its kind can have, not yet this one's word: its codes
+   *  apply, its products wait for the answer that follows. */
+  provisional?: boolean;
   /** The archive moment this answer is for; null for now. */
   at?: number | null;
   checkedAt: number;
@@ -193,16 +197,26 @@ export async function fetchSiteAvailability(site: string, quick = false, at: num
  * ones the radar is publishing, labelled with the angle it flies -- 0.3 where
  * it has a cut that low, 0.4 where its lowest is 0.4, no 0.9 or 1.8 in clear
  * air -- and a product it is not publishing at all marked unavailable.
- * With nothing checked yet the list stays as the catalogue has it.
+ *
+ * A product the radar has not confirmed yet is marked checking, not listed: the
+ * list only grows while a radar is read, and the catalogue never passes for this
+ * radar's. It keeps the catalogue's tilts for whichever pane has it on screen.
  */
 export function withAvailability(grids: ProductGrids, avail: SiteAvailability | null): ProductGrids {
-  if (!avail) return grids;
+  if (!avail) return grids.map((f) => ({ ...f, checking: true }));
   return grids.map((f) => {
-    // Level II not checked yet: its products stay as they are, marked checking.
+    // Level II not checked yet: its products wait for the answer that follows.
     if (avail.level2Pending && f.source === "level2") return { ...f, checking: true };
-    const tilts = avail.families[f.id];
-    if (!tilts) return f;
-    return { ...f, label: avail.labels?.[f.id] ?? f.label, tilts, unavailable: tilts.length === 0 };
+    // A family the answer does not name is one this radar does not have: a
+    // European radar's says nothing of Long Range Reflectivity.
+    const tilts = avail.families[f.id] ?? [];
+    return {
+      ...f,
+      label: avail.labels?.[f.id] ?? f.label,
+      tilts,
+      unavailable: tilts.length === 0,
+      checking: !!avail.provisional && tilts.length > 0,
+    };
   });
 }
 
@@ -210,6 +224,8 @@ export function withAvailability(grids: ProductGrids, avail: SiteAvailability | 
  * What a TDWR can have, before its own answer is in: the tilts its products are
  * always published at (backend/tdwr.py), under the same families, and nothing
  * else. Applied the moment one is picked, so no NEXRAD code is ever asked of it.
+ * Provisional, because one can have less (Houston and New Orleans have answered
+ * with echo tops alone), and listing all five would have them vanish a second later.
  */
 export function tdwrAvailability(grids: ProductGrids): SiteAvailability {
   const families: Record<string, TiltOption[]> = {};
@@ -220,7 +236,7 @@ export function tdwrAvailability(grids: ProductGrids): SiteAvailability {
   families.TZL = [{ tilt: null, code: "TZL", elev: null, source: "level3" }];
   families.DVL = [{ tilt: null, code: "NVL", elev: null, source: "level3" }];
   families.EET = [{ tilt: null, code: "NET", elev: null, source: "level3" }];
-  return { site: "", newestScan: null, cuts: [], families, labels: { EET: "Echo Tops" }, level2: false, checkedAt: Math.floor(Date.now() / 1000) };
+  return { site: "", newestScan: null, cuts: [], families, labels: { EET: "Echo Tops" }, level2: false, provisional: true, checkedAt: Math.floor(Date.now() / 1000) };
 }
 
 /** The catalogue as an answer: where a NEXRAD starts from when a TDWR's codes are

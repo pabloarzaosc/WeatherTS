@@ -130,7 +130,7 @@ export function PaneCompare({ id }: { id: string }) {
 /** The right half's product list (Change product). */
 function ComparePicker({ id, current, hostFamily }: { id: string; current: string; hostFamily: string }) {
   const ref = useRef<HTMLDivElement>(null);
-  useNexradStore((s) => s.grids);
+  const grids = useNexradStore((s) => s.grids);
   const fams = compareFamilies().filter((f) => !f.unavailable);
   useEffect(() => {
     const down = (e: PointerEvent) => {
@@ -163,6 +163,7 @@ function ComparePicker({ id, current, hostFamily }: { id: string; current: strin
         </button>
       </div>
       <div className="pcmp__picklist">
+        {grids.some((f) => f.checking) && <div className="pcmp__reading">Reading this radar's products…</div>}
         {groups.map((g) => (
           <div key={g.title}>
             <div className="pcmp__group">{g.title}</div>

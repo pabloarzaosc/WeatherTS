@@ -17,6 +17,7 @@ import {
   NWS_ARCHIVE_S,
   type AlertFeature,
 } from "../lib/nwsAlerts";
+import { fetchWorldAlerts, WORLD_SOURCES, worldSourceKey } from "../lib/worldAlerts";
 import { ALERT_MOTION_SOURCE, ALERT_SOURCE } from "../layers/modules/alertsLayer";
 
 const POLL_MS = 180_000; // refresh active alerts every 3 min
@@ -54,6 +55,9 @@ const MAX_WINDOWS = 60;
  * few frames (Pablo, 2026-09-26). Longer spans fall back to per frame.
  */
 const SPAN_UNION_S = 3 * 86400;
+/** Of a source outside the US, this much of what has ended comes along anyway. */
+const WORLD_LOOKBACK_S = 6 * 3600;
+const WORLD_RETRY_MS = 15_000;
 
 interface Stretch {
   features: AlertFeature[];
@@ -80,6 +84,12 @@ export function AlertController() {
     let life = new AbortController();
     let live: AlertFeature[] = [];
     let liveRead = false;
+    /** The alerts of each source outside the US, ended ones too: the backend
+     *  keeps its own history, there being no archive to ask as there is for the NWS. */
+    const world = new Map<string, AlertFeature[]>();
+    const worldReading = new Set<string>();
+    let worldSince = 0;
+    let worldNowSig = "";
     const stretches = new Map<number, Stretch>();
     const queue: number[] = [];
     let running = 0;
@@ -116,6 +126,21 @@ export function AlertController() {
      *  (the same shapes known) changes nothing, and sends nothing to the map. */
     const liveSig = (features: AlertFeature[]): string =>
       features.map((f) => `${f.alert.id}${f.geometry ? "+" : "-"}`).join(",");
+    const usOn = () => getSetting<boolean>("alerts.source.us");
+    /** What of the world's alerts belongs on the map at this moment. A source
+     *  issuing days ahead (INMET) waits for its start, unless the timeline is
+     *  ahead of now, where the map's filter picks what is in force then. */
+    const worldLive = (ahead: boolean): AlertFeature[] => {
+      const t = now();
+      const out: AlertFeature[] = [];
+      for (const list of world.values()) {
+        for (const f of list) {
+          const w = alertWindow(f.alert);
+          if (w.end > t && (ahead || w.start <= t)) out.push(f);
+        }
+      }
+      return out;
+    };
 
     // Every pane, not the focused one: with the screen split, only the pane
     // last clicked was getting new alerts, and a warning issued after the split
@@ -157,12 +182,13 @@ export function AlertController() {
       const t = s.timeFilter;
       const span = t !== null ? spanFor(t, s.timeRange) : null;
       if (!span && !isPast(t)) {
-        const sig = `live|${epoch}`;
+        const ahead = t !== null && t > now() + LIVE_SLACK_S;
+        const sig = `live|${epoch}|${ahead}`;
         if (sig !== shownSig) {
           shownSig = sig;
-          s.setFeatures(live);
+          s.setFeatures([...live, ...worldLive(ahead)]);
         }
-        if (liveRead) status("ready", `${live.length} active`);
+        if (liveRead) status("ready", `${useAlertStore.getState().features.length} active`);
         return;
       }
       const need = span ?? stretchesFor(t as number);
@@ -173,6 +199,7 @@ export function AlertController() {
         const byId = new Map<string, AlertFeature>();
         for (const w of need) for (const f of stretches.get(w)?.features ?? []) byId.set(f.alert.id, f);
         for (const f of live) if (!byId.has(f.alert.id)) byId.set(f.alert.id, f);
+        for (const list of world.values()) for (const f of list) byId.set(f.alert.id, f);
         s.setFeatures([...byId.values()]);
       }
       if (waiting > 0) status("loading", "reading the alerts of this time");
@@ -184,6 +211,14 @@ export function AlertController() {
       liveCtrl?.abort();
       liveCtrl = new AbortController();
       const signal = liveCtrl.signal;
+      loadWorld();
+      if (!usOn()) {
+        if (live.length) epoch++;
+        live = [];
+        liveRead = true;
+        compose();
+        return;
+      }
       if (!isPast(useAlertStore.getState().timeFilter)) useAlertStore.getState().setStatus("loading");
       try {
         const features = await fetchActiveAlerts(signal);
@@ -213,6 +248,40 @@ export function AlertController() {
       }
     };
 
+    /** Every source outside the US that is on, each as it comes: one is 15 s
+     *  when its feed is cold, and none of them should wait for it. */
+    const loadWorld = () => {
+      const s = useAlertStore.getState();
+      const wanted = Math.min(now() - WORLD_LOOKBACK_S, s.timeRange?.[0] ?? Infinity, s.timeFilter ?? Infinity);
+      worldSince = Math.floor(wanted / 600) * 600;
+      for (const { id } of WORLD_SOURCES) {
+        if (!getSetting<boolean>(worldSourceKey(id))) {
+          if (world.delete(id)) epoch++;
+          continue;
+        }
+        if (worldReading.has(id)) continue;
+        worldReading.add(id);
+        const signal = life.signal;
+        void fetchWorldAlerts(id, worldSince, signal)
+          .then(({ features, loading }) => {
+            if (signal.aborted) return;
+            // Still reading: what it has so far now, and the rest in a moment.
+            if (loading) window.setTimeout(() => useAlertStore.getState().active && !signal.aborted && loadWorld(), WORLD_RETRY_MS);
+            const sig = (l: AlertFeature[]) => l.map((f) => `${f.alert.id}|${f.alert.ends ?? ""}`).join(",");
+            if (!world.has(id) || sig(features) !== sig(world.get(id)!)) {
+              world.set(id, features);
+              epoch++;
+              compose();
+            }
+          })
+          .catch(() => {
+            /* a source that is down keeps what it last gave; the next poll tries again */
+          })
+          .finally(() => worldReading.delete(id));
+      }
+      compose();
+    };
+
     /**
      * One stretch of the past. Zone shapes matter MORE here than live, not
      * less: warnings carry their own polygon and expire within the hour, so the
@@ -232,7 +301,9 @@ export function AlertController() {
       // empty list, so an archive day's warnings come from IEM instead.
       const archived = end < asked - NWS_ARCHIVE_S;
       try {
-        const raw = archived
+        const raw = !usOn()
+          ? []
+          : archived
           ? await fetchArchivedWarnings(w * WINDOW_S, end, signal)
           : await fetchAlertsIssued(w * WINDOW_S, Math.min(end, asked), signal);
         if (signal.aborted) return;
@@ -297,6 +368,7 @@ export function AlertController() {
       if (!s.active) return;
       const t = s.timeFilter;
       const range = s.timeRange;
+      if (Math.min(range?.[0] ?? Infinity, t ?? Infinity) < worldSince) loadWorld();
       const needed = new Set<number>();
       if (range && range[0] < now() - LIVE_SLACK_S) {
         const first = Math.floor((range[0] - ISSUE_LOOKBACK_S) / WINDOW_S);
@@ -348,12 +420,15 @@ export function AlertController() {
       // those. The past's stretches are never pruned: expired is their point.
       const t = now();
       const kept = live.filter((f) => alertWindow(f.alert).end > t);
-      if (kept.length === live.length) return;
+      const worldShown = worldLive(false);
+      const sig = worldShown.map((f) => f.alert.id).join(",");
+      if (kept.length === live.length && sig === worldNowSig) return;
+      worldNowSig = sig;
       live = kept;
       epoch++;
       compose();
       if (!isPast(s.timeFilter) && s.selectedIds.length > 0) {
-        const liveIds = new Set(kept.map((f) => f.alert.id));
+        const liveIds = new Set([...kept, ...worldShown].map((f) => f.alert.id));
         const selectedIds = s.selectedIds.filter((id) => liveIds.has(id));
         if (selectedIds.length !== s.selectedIds.length) {
           if (selectedIds.length > 0) s.selectMany(selectedIds);
@@ -381,10 +456,25 @@ export function AlertController() {
           queue.length = 0;
           live = [];
           liveRead = false;
+          world.clear();
+          worldReading.clear();
+          worldNowSig = "";
           shownSig = "";
           useAlertStore.getState().setFeatures([]);
           draw();
         }
+      },
+    );
+    // A source switched on or off in Settings: read again, with what it leaves out.
+    const unsubSources = useSettingsStore.subscribe(
+      (s) => ["alerts.source.us", ...WORLD_SOURCES.map((w) => worldSourceKey(w.id))].map((k) => String(s.values[k])).join(),
+      () => {
+        if (!useAlertStore.getState().active) return;
+        stretches.clear();
+        queue.length = 0;
+        epoch++;
+        void load();
+        fetchPast();
       },
     );
     const unsubFeatures = useAlertStore.subscribe((s) => s.features, draw);
@@ -422,6 +512,7 @@ export function AlertController() {
       unsubTime();
       unsubRange();
       unsubStyle();
+      unsubSources();
       window.clearTimeout(restyleTimer);
       setBackgroundKeeper("alerts", null);
       window.clearInterval(pollTimer);

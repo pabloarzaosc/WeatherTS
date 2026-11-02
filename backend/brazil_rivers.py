@@ -36,7 +36,8 @@ import requests
 
 import rivers  # the rain at a point, and its cache, are shared with the NWS side
 
-SACE = "https://sace.sgb.gov.br"
+# Under /niveis since 2026-10: the old root answers 404 for these pages.
+SACE = "https://sace.sgb.gov.br/niveis"
 ANA = "http://telemetriaws1.ana.gov.br/ServiceANA.asmx"
 BRT = 3 * 3600  # Brasília time is UTC-3 all year (no daylight saving since 2019)
 MAP_TTL = 10 * 60
@@ -528,8 +529,12 @@ def _sace_stations(ana: dict[str, dict]) -> list[dict]:
 
 
 def _sace_for(code: str, ana: dict[str, dict]) -> Optional[dict]:
-    """The SACE station for a code: its own, or the ANA station it is."""
-    merged = _sace_stations(ana)
+    """The SACE station for a code: its own, or the ANA station it is. None with
+    SACE down: ANA's own stations still have their level, flow and rain."""
+    try:
+        merged = _sace_stations(ana)
+    except Exception:  # noqa: BLE001
+        return None
     low = code.lower()
     return next((s for s in merged if s["code"].lower() == low), None) or next(
         (s for s in merged if s["ana"] == code), None

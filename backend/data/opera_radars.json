@@ -1,0 +1,2033 @@
+[
+{
+"code": "behel",
+"cc": "BE",
+"name": "Helchteren",
+"op": "RMI",
+"lat": 51.0702,
+"lon": 5.4054,
+"band": "C",
+"pol": "D",
+"km": "200",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "bejab",
+"cc": "BE",
+"name": "Jabbeke",
+"op": "RMI",
+"lat": 51.1919,
+"lon": 3.0641,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "bewid",
+"cc": "BE",
+"name": "Wideumont",
+"op": "RMI",
+"lat": 49.9135,
+"lon": 5.5044,
+"band": "C",
+"pol": "S",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "chalb",
+"cc": "CH",
+"name": "Albis",
+"op": "MeteoSwiss",
+"lat": 47.2843,
+"lon": 8.512,
+"band": "C",
+"pol": "D",
+"km": "246",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "chdol",
+"cc": "CH",
+"name": "La Dole",
+"op": "MeteoSwiss",
+"lat": 46.4251,
+"lon": 6.0994,
+"band": "C",
+"pol": "D",
+"km": "246",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "chppm",
+"cc": "CH",
+"name": "Plaine Monte",
+"op": "MeteoSwiss",
+"lat": 46.3706,
+"lon": 7.4866,
+"band": "C",
+"pol": "D",
+"km": "246",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "chwei",
+"cc": "CH",
+"name": "Weissfluhgiptel",
+"op": "MeteoSwiss",
+"lat": 46.835,
+"lon": 9.7945,
+"band": "C",
+"pol": "D",
+"km": "246",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "czbrd",
+"cc": "CZ",
+"name": "Brdy-Praha",
+"op": "CHMI",
+"lat": 49.6583,
+"lon": 13.8178,
+"band": "C",
+"pol": "D",
+"km": "260",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "czska",
+"cc": "CZ",
+"name": "Skalky",
+"op": "CHMI",
+"lat": 49.5011,
+"lon": 16.7885,
+"band": "C",
+"pol": "D",
+"km": "260",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "deasb",
+"cc": "DE",
+"name": "Isle of Borkum",
+"op": "DWD",
+"lat": 53.564,
+"lon": 6.7482,
+"band": "C",
+"pol": "S",
+"km": "180",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "deboo",
+"cc": "DE",
+"name": "Boostedt",
+"op": "DWD",
+"lat": 54.0043,
+"lon": 10.0468,
+"band": "C",
+"pol": "D",
+"km": "180",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "dedrs",
+"cc": "DE",
+"name": "Dresden",
+"op": "DWD",
+"lat": 51.1246,
+"lon": 13.7686,
+"band": "C",
+"pol": "D",
+"km": "180",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "deeis",
+"cc": "DE",
+"name": "Eisberg",
+"op": "DWD",
+"lat": 49.5407,
+"lon": 12.4028,
+"band": "C",
+"pol": "D",
+"km": "180",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "deess",
+"cc": "DE",
+"name": "Essen",
+"op": "DWD",
+"lat": 51.4055,
+"lon": 6.9669,
+"band": "C",
+"pol": "D",
+"km": "180",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "defbg",
+"cc": "DE",
+"name": "Feldberg",
+"op": "DWD",
+"lat": 47.8736,
+"lon": 8.0039,
+"band": "C",
+"pol": "D",
+"km": "180",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "defld",
+"cc": "DE",
+"name": "Flechtdorf",
+"op": "DWD",
+"lat": 51.3112,
+"lon": 8.802,
+"band": "C",
+"pol": "D",
+"km": "180",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "dehnr",
+"cc": "DE",
+"name": "Hannover",
+"op": "DWD",
+"lat": 52.46,
+"lon": 9.6945,
+"band": "C",
+"pol": "D",
+"km": "180",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "deisn",
+"cc": "DE",
+"name": "Isen/München",
+"op": "DWD",
+"lat": 48.1747,
+"lon": 12.1017,
+"band": "C",
+"pol": "D",
+"km": "180",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "demem",
+"cc": "DE",
+"name": "Memmingen",
+"op": "DWD",
+"lat": 48.0421,
+"lon": 10.2192,
+"band": "C",
+"pol": "D",
+"km": "180",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "deneu",
+"cc": "DE",
+"name": "Neuhaus",
+"op": "DWD",
+"lat": 50.5001,
+"lon": 11.1351,
+"band": "C",
+"pol": "D",
+"km": "180",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "denhb",
+"cc": "DE",
+"name": "Neuheilenbach",
+"op": "DWD",
+"lat": 50.1097,
+"lon": 6.5483,
+"band": "C",
+"pol": "D",
+"km": "180",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "deoft",
+"cc": "DE",
+"name": "Offenthal",
+"op": "DWD",
+"lat": 49.9847,
+"lon": 8.7129,
+"band": "C",
+"pol": "D",
+"km": "180",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "depro",
+"cc": "DE",
+"name": "Protzel/Berlin",
+"op": "DWD",
+"lat": 52.6486,
+"lon": 13.858,
+"band": "C",
+"pol": "D",
+"km": "180",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "deros",
+"cc": "DE",
+"name": "Rostock",
+"op": "DWD",
+"lat": 54.1757,
+"lon": 12.058,
+"band": "C",
+"pol": "D",
+"km": "180",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "detur",
+"cc": "DE",
+"name": "Tuerkheim",
+"op": "DWD",
+"lat": 48.5853,
+"lon": 9.7828,
+"band": "C",
+"pol": "D",
+"km": "180",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "deumd",
+"cc": "DE",
+"name": "Ummendorf",
+"op": "DWD",
+"lat": 52.1601,
+"lon": 11.1761,
+"band": "C",
+"pol": "D",
+"km": "180",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "dkbor",
+"cc": "DK",
+"name": "Bornholm",
+"op": "DMI",
+"lat": 55.1127,
+"lon": 14.8875,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "dkrom",
+"cc": "DK",
+"name": "Römö",
+"op": "DMI",
+"lat": 55.1731,
+"lon": 8.552,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "dksam",
+"cc": "DK",
+"name": "Samsø",
+"op": "DMI",
+"lat": 55.8119,
+"lon": 10.5853,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "dksin",
+"cc": "DK",
+"name": "Sindal",
+"op": "DMI",
+"lat": 57.4893,
+"lon": 10.1365,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "dkste",
+"cc": "DK",
+"name": "Stevns",
+"op": "DMI",
+"lat": 55.3262,
+"lon": 12.4493,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "eehar",
+"cc": "EE",
+"name": "Harku",
+"op": "EEA",
+"lat": 59.3971,
+"lon": 24.6021,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "eesur",
+"cc": "EE",
+"name": "Sürgavere",
+"op": "EEA",
+"lat": 58.4823,
+"lon": 25.5187,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "esahr",
+"cc": "ES",
+"name": "Málaga",
+"op": "AEMET",
+"lat": 36.61343,
+"lon": -4.65933,
+"band": "",
+"pol": "",
+"km": "",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "esatn",
+"cc": "ES",
+"name": "Gran Canaria",
+"op": "AEMET",
+"lat": 28.01879,
+"lon": -15.61454,
+"band": "",
+"pol": "",
+"km": "",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "esclg",
+"cc": "ES",
+"name": "Sevilla",
+"op": "AEMET",
+"lat": 37.68868,
+"lon": -6.33308,
+"band": "",
+"pol": "",
+"km": "",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "esgld",
+"cc": "ES",
+"name": "Barcelona",
+"op": "AEMET",
+"lat": 41.40818,
+"lon": 1.88489,
+"band": "",
+"pol": "",
+"km": "",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "eslid",
+"cc": "ES",
+"name": "Autilla Pino (Palencia)",
+"op": "AEMET",
+"lat": 41.9956,
+"lon": -4.6028,
+"band": "C",
+"pol": "S",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "espdg",
+"cc": "ES",
+"name": "Zaragoza",
+"op": "AEMET",
+"lat": 41.73399,
+"lon": -0.54594,
+"band": "",
+"pol": "",
+"km": "",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "essft",
+"cc": "ES",
+"name": "Cáceres",
+"op": "AEMET",
+"lat": 39.42883,
+"lon": -6.28528,
+"band": "",
+"pol": "",
+"km": "",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "essse",
+"cc": "ES",
+"name": "Baquio (Vizcaya)",
+"op": "AEMET",
+"lat": 43.4033,
+"lon": -2.8419,
+"band": "C",
+"pol": "S",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "estjv",
+"cc": "ES",
+"name": "Madrid",
+"op": "AEMET",
+"lat": 40.17592,
+"lon": -3.71368,
+"band": "",
+"pol": "",
+"km": "",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "fianj",
+"cc": "FI",
+"name": "Anjalankoski",
+"op": "FMI",
+"lat": 60.9039,
+"lon": 27.1081,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "fikan",
+"cc": "FI",
+"name": "Kankaanpää",
+"op": "FMI",
+"lat": 61.8108,
+"lon": 22.502,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "fikau",
+"cc": "FI",
+"name": "Kaunispää",
+"op": "FMI",
+"lat": 68.4344,
+"lon": 27.444,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "fikes",
+"cc": "FI",
+"name": "Kesälahti",
+"op": "FMI",
+"lat": 61.9069,
+"lon": 29.7977,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "fikor",
+"cc": "FI",
+"name": "Korpo",
+"op": "FMI",
+"lat": 60.1285,
+"lon": 21.6434,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "fikuo",
+"cc": "FI",
+"name": "Kuopio",
+"op": "FMI",
+"lat": 62.8626,
+"lon": 27.3815,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "filuo",
+"cc": "FI",
+"name": "Luosto",
+"op": "FMI",
+"lat": 67.1391,
+"lon": 26.8969,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "finur",
+"cc": "FI",
+"name": "Nurmes",
+"op": "FMI",
+"lat": 63.8378,
+"lon": 29.4489,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "fipet",
+"cc": "FI",
+"name": "Petäjävesi",
+"op": "FMI",
+"lat": 62.3045,
+"lon": 25.4401,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "fiuta",
+"cc": "FI",
+"name": "Utajärvi",
+"op": "FMI",
+"lat": 64.7749,
+"lon": 26.3189,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "fivih",
+"cc": "FI",
+"name": "Vihti",
+"op": "FMI",
+"lat": 60.5562,
+"lon": 24.4956,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "fivim",
+"cc": "FI",
+"name": "Vimpeli",
+"op": "FMI",
+"lat": 63.1048,
+"lon": 23.8209,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frabb",
+"cc": "FR",
+"name": "Abbeville",
+"op": "Météo-France",
+"lat": 50.136,
+"lon": 1.8347,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "fraja",
+"cc": "FR",
+"name": "Ajaccio",
+"op": "Météo-France",
+"lat": 41.9531,
+"lon": 8.7005,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frale",
+"cc": "FR",
+"name": "Aléria",
+"op": "Météo-France",
+"lat": 42.1298,
+"lon": 9.4964,
+"band": "S",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frave",
+"cc": "FR",
+"name": "Avesnes",
+"op": "Météo-France",
+"lat": 50.1283,
+"lon": 3.8118,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frbla",
+"cc": "FR",
+"name": "Blaisy-Haut",
+"op": "Météo-France",
+"lat": 47.3552,
+"lon": 4.7759,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frbol",
+"cc": "FR",
+"name": "Bollène",
+"op": "Météo-France",
+"lat": 44.323,
+"lon": 4.7621,
+"band": "S",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frbor",
+"cc": "FR",
+"name": "Bordeaux",
+"op": "Météo-France",
+"lat": 44.8315,
+"lon": -0.6919,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frbou",
+"cc": "FR",
+"name": "Bourges",
+"op": "Météo-France",
+"lat": 47.0586,
+"lon": 2.3595,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frcae",
+"cc": "FR",
+"name": "Falaise",
+"op": "Météo-France",
+"lat": 48.9272,
+"lon": -0.1496,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frche",
+"cc": "FR",
+"name": "Cherves",
+"op": "Météo-France",
+"lat": 46.6986,
+"lon": 0.0656,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frcol",
+"cc": "FR",
+"name": "Collobrières",
+"op": "Météo-France",
+"lat": 43.2166,
+"lon": 6.3729,
+"band": "S",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frgre",
+"cc": "FR",
+"name": "Grèzes",
+"op": "Météo-France",
+"lat": 45.1044,
+"lon": 1.3697,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frlep",
+"cc": "FR",
+"name": "Sembadel",
+"op": "Météo-France",
+"lat": 45.2892,
+"lon": 3.7095,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frmcl",
+"cc": "FR",
+"name": "Montclar",
+"op": "Météo-France",
+"lat": 43.9905,
+"lon": 2.6096,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frmom",
+"cc": "FR",
+"name": "Momuy",
+"op": "Météo-France",
+"lat": 43.6245,
+"lon": -0.6094,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frmtc",
+"cc": "FR",
+"name": "Montancy",
+"op": "Météo-France",
+"lat": 47.3686,
+"lon": 7.019,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frnan",
+"cc": "FR",
+"name": "Nancy",
+"op": "Météo-France",
+"lat": 48.7158,
+"lon": 6.5816,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frnim",
+"cc": "FR",
+"name": "Nîmes",
+"op": "Météo-France",
+"lat": 43.8061,
+"lon": 4.5027,
+"band": "S",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frniz",
+"cc": "FR",
+"name": "Saint Nizier",
+"op": "Météo-France",
+"lat": 46.0678,
+"lon": 4.4453,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "fropo",
+"cc": "FR",
+"name": "Opoul",
+"op": "Météo-France",
+"lat": 42.9184,
+"lon": 2.865,
+"band": "S",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frpla",
+"cc": "FR",
+"name": "Plabennec",
+"op": "Météo-France",
+"lat": 48.4609,
+"lon": -4.4298,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frtou",
+"cc": "FR",
+"name": "Toulouse",
+"op": "Météo-France",
+"lat": 43.5743,
+"lon": 1.3763,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frtra",
+"cc": "FR",
+"name": "Trappes",
+"op": "Météo-France",
+"lat": 48.7746,
+"lon": 2.0083,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frtre",
+"cc": "FR",
+"name": "Treillères",
+"op": "Météo-France",
+"lat": 47.3374,
+"lon": -1.6563,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "frtro",
+"cc": "FR",
+"name": "Arcis-sur-Aube",
+"op": "Météo-France",
+"lat": 48.4621,
+"lon": 4.3093,
+"band": "C",
+"pol": "D",
+"km": "256",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "hrbil",
+"cc": "HR",
+"name": "Bilogora",
+"op": "DHMZ",
+"lat": 45.8835,
+"lon": 17.2005,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "hrdeb",
+"cc": "HR",
+"name": "Debeljak",
+"op": "DHMZ",
+"lat": 44.0455,
+"lon": 15.3765,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "hrgol",
+"cc": "HR",
+"name": "Goli",
+"op": "DHMZ",
+"lat": 45.0205,
+"lon": 14.1223,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "hrgra",
+"cc": "HR",
+"name": "Gradište",
+"op": "DHMZ",
+"lat": 45.1592,
+"lon": 18.7033,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "hrulj",
+"cc": "HR",
+"name": "Uljenje",
+"op": "DHMZ",
+"lat": 42.8944,
+"lon": 17.4783,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "hubud",
+"cc": "HU",
+"name": "Budapest",
+"op": "HungaroMet",
+"lat": 47.4294,
+"lon": 19.1817,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "huhar",
+"cc": "HU",
+"name": "Harmashegy",
+"op": "HungaroMet",
+"lat": 46.1775,
+"lon": 18.3372,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "hunap",
+"cc": "HU",
+"name": "Napkor",
+"op": "HungaroMet",
+"lat": 47.9622,
+"lon": 21.8867,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "hupog",
+"cc": "HU",
+"name": "Poganyvar",
+"op": "HungaroMet",
+"lat": 46.6604,
+"lon": 17.0624,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "husze",
+"cc": "HU",
+"name": "Szentes",
+"op": "HungaroMet",
+"lat": 46.6397,
+"lon": 20.4325,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "iedub",
+"cc": "IE",
+"name": "Dublin",
+"op": "Met Éireann",
+"lat": 53.4299,
+"lon": -6.2443,
+"band": "C",
+"pol": "S",
+"km": "250",
+"folders": [
+"PVOL",
+"SCAN"
+]
+},
+{
+"code": "iesha",
+"cc": "IE",
+"name": "Shannon",
+"op": "Met Éireann",
+"lat": 52.6928,
+"lon": -8.9201,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "isbjo",
+"cc": "IS",
+"name": "Bjolfur",
+"op": "IMO",
+"lat": 65.2658,
+"lon": -14.0618,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "iskef",
+"cc": "IS",
+"name": "Keflavik",
+"op": "IMO",
+"lat": 64.0257,
+"lon": -22.6353,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "isska",
+"cc": "IS",
+"name": "Skagi",
+"op": "IMO",
+"lat": 66.0557,
+"lon": -20.268,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "isx2",
+"cc": "IS",
+"name": "Muninn - mobile",
+"op": "IMO",
+"lat": 63.86961,
+"lon": -20.20236,
+"band": "X",
+"pol": "D",
+"km": "120",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "ltlau",
+"cc": "LT",
+"name": "Laukuva",
+"op": "LHMT",
+"lat": 55.609,
+"lon": 22.2395,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "ltvil",
+"cc": "LT",
+"name": "Vilnius",
+"op": "LHMT",
+"lat": 54.6262,
+"lon": 25.1067,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "mtgud",
+"cc": "MT",
+"name": "Gudja",
+"op": "Malta Met",
+"lat": 35.8529,
+"lon": 14.4748,
+"band": "X",
+"pol": "S",
+"km": "200",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "nldhl",
+"cc": "NL",
+"name": "Den Helder",
+"op": "KNMI",
+"lat": 52.9528,
+"lon": 4.7906,
+"band": "C",
+"pol": "D",
+"km": "320",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "nlhrw",
+"cc": "NL",
+"name": "Herwijnen",
+"op": "KNMI",
+"lat": 51.8371,
+"lon": 5.138,
+"band": "C",
+"pol": "D",
+"km": "320",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "noand",
+"cc": "NO",
+"name": "Andoya",
+"op": "MET Norway",
+"lat": 69.2414,
+"lon": 16.0028,
+"band": "C",
+"pol": "S",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "nober",
+"cc": "NO",
+"name": "Berlevaag",
+"op": "MET Norway",
+"lat": 70.5107,
+"lon": 29.0184,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "nobml",
+"cc": "NO",
+"name": "Boemlo",
+"op": "MET Norway",
+"lat": 59.854,
+"lon": 5.09,
+"band": "C",
+"pol": "S",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "nohas",
+"cc": "NO",
+"name": "Hasvik",
+"op": "MET Norway",
+"lat": 70.6052,
+"lon": 22.443,
+"band": "C",
+"pol": "S",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "nohfj",
+"cc": "NO",
+"name": "Hafjell",
+"op": "MET Norway",
+"lat": 61.2318,
+"lon": 10.5273,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "nohgb",
+"cc": "NO",
+"name": "Haegebostad",
+"op": "MET Norway",
+"lat": 58.3601,
+"lon": 7.1648,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "nohur",
+"cc": "NO",
+"name": "Hurum",
+"op": "MET Norway",
+"lat": 59.6272,
+"lon": 10.5645,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "norsa",
+"cc": "NO",
+"name": "Rissa",
+"op": "MET Norway",
+"lat": 63.6905,
+"lon": 10.2037,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "norsg",
+"cc": "NO",
+"name": "Rassegalvarri",
+"op": "MET Norway",
+"lat": 69.2186,
+"lon": 23.4397,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "norst",
+"cc": "NO",
+"name": "Rost",
+"op": "MET Norway",
+"lat": 67.5307,
+"lon": 12.0986,
+"band": "C",
+"pol": "S",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "nosmn",
+"cc": "NO",
+"name": "Soemna",
+"op": "MET Norway",
+"lat": 65.2201,
+"lon": 11.9926,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "nosta",
+"cc": "NO",
+"name": "Stad",
+"op": "MET Norway",
+"lat": 62.1871,
+"lon": 5.1275,
+"band": "C",
+"pol": "S",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "plbrz",
+"cc": "PL",
+"name": "Brzuchania",
+"op": "IMGW",
+"lat": 50.3942,
+"lon": 20.08323,
+"band": "C",
+"pol": "S",
+"km": "250",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "plgdy",
+"cc": "PL",
+"name": "Gdynia-Szemud",
+"op": "IMGW",
+"lat": 54.5009,
+"lon": 18.2718,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "plgsa",
+"cc": "PL",
+"name": "Góra Św. Anny",
+"op": "IMGW",
+"lat": 50.4639,
+"lon": 18.1532,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "plleg",
+"cc": "PL",
+"name": "Legionowo",
+"op": "IMGW",
+"lat": 52.4053,
+"lon": 20.9611,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "plpas",
+"cc": "PL",
+"name": "Pastewnik",
+"op": "IMGW",
+"lat": 50.8925,
+"lon": 16.0395,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "plpoz",
+"cc": "PL",
+"name": "Poznań",
+"op": "IMGW",
+"lat": 52.4133,
+"lon": 16.797,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "plram",
+"cc": "PL",
+"name": "Ramża",
+"op": "IMGW",
+"lat": 50.1513,
+"lon": 18.7251,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "plrze",
+"cc": "PL",
+"name": "Rzeszów",
+"op": "IMGW",
+"lat": 50.1141,
+"lon": 22.037,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "plswi",
+"cc": "PL",
+"name": "Świdwin",
+"op": "IMGW",
+"lat": 53.7958,
+"lon": 15.8368,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "pluzr",
+"cc": "PL",
+"name": "Uzranki",
+"op": "IMGW",
+"lat": 53.8565,
+"lon": 21.4121,
+"band": "C",
+"pol": "D",
+"km": "250",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "robar",
+"cc": "RO",
+"name": "Barnova",
+"op": "ANM",
+"lat": 47.01184,
+"lon": 27.58255,
+"band": "S",
+"pol": "D",
+"km": "230",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "robob",
+"cc": "RO",
+"name": "Bobohalma",
+"op": "ANM",
+"lat": 46.36022,
+"lon": 24.22523,
+"band": "S",
+"pol": "D",
+"km": "230",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "robuc",
+"cc": "RO",
+"name": "Bucuresti",
+"op": "ANM",
+"lat": 44.51267,
+"lon": 26.07735,
+"band": "S",
+"pol": "D",
+"km": "230",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "rocra",
+"cc": "RO",
+"name": "Craiova",
+"op": "ANM",
+"lat": 44.31029,
+"lon": 23.86743,
+"band": "S",
+"pol": "D",
+"km": "230",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "romed",
+"cc": "RO",
+"name": "Medgidia",
+"op": "ANM",
+"lat": 44.24336,
+"lon": 28.25059,
+"band": "S",
+"pol": "D",
+"km": "230",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "roora",
+"cc": "RO",
+"name": "Oradea",
+"op": "ANM",
+"lat": 47.09218,
+"lon": 21.94289,
+"band": "S",
+"pol": "D",
+"km": "230",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "rotim",
+"cc": "RO",
+"name": "Timisoara",
+"op": "ANM",
+"lat": 45.77174,
+"lon": 21.25773,
+"band": "S",
+"pol": "D",
+"km": "230",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "seang",
+"cc": "SE",
+"name": "Ängelholm",
+"op": "SMHI",
+"lat": 56.3675,
+"lon": 12.8517,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "seatv",
+"cc": "SE",
+"name": "Åtvidaberg (Vilebo)",
+"op": "SMHI",
+"lat": 58.1059,
+"lon": 15.9363,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "sebaa",
+"cc": "SE",
+"name": "Bålsta",
+"op": "SMHI",
+"lat": 59.611,
+"lon": 17.5833,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "sehem",
+"cc": "SE",
+"name": "Hemse (Ase)",
+"op": "SMHI",
+"lat": 57.3035,
+"lon": 18.4001,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "sehuv",
+"cc": "SE",
+"name": "Hudiksvall",
+"op": "SMHI",
+"lat": 61.5771,
+"lon": 16.7144,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "sekaa",
+"cc": "SE",
+"name": "Karlskrona",
+"op": "SMHI",
+"lat": 56.2955,
+"lon": 15.6102,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "sekrn",
+"cc": "SE",
+"name": "Kiruna",
+"op": "SMHI",
+"lat": 67.7088,
+"lon": 20.6178,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "selek",
+"cc": "SE",
+"name": "Leksand",
+"op": "SMHI",
+"lat": 60.723,
+"lon": 14.8776,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "sella",
+"cc": "SE",
+"name": "Luleå (Rosvik)",
+"op": "SMHI",
+"lat": 65.4309,
+"lon": 21.865,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "seoer",
+"cc": "SE",
+"name": "Örnsköldsvik",
+"op": "SMHI",
+"lat": 63.6395,
+"lon": 18.4019,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "seosd",
+"cc": "SE",
+"name": "Östersund",
+"op": "SMHI",
+"lat": 63.2951,
+"lon": 14.7591,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "sevax",
+"cc": "SE",
+"name": "Vara",
+"op": "SMHI",
+"lat": 58.2556,
+"lon": 12.826,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"SCAN"
+]
+},
+{
+"code": "skjav",
+"cc": "SK",
+"name": "Maly Javornik",
+"op": "SHMU",
+"lat": 48.2556,
+"lon": 17.1524,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "skkoj",
+"cc": "SK",
+"name": "Kojsovska hola",
+"op": "SHMU",
+"lat": 48.7827,
+"lon": 20.9873,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "skkub",
+"cc": "SK",
+"name": "Kubinska hola",
+"op": "SHMU",
+"lat": 49.2717,
+"lon": 19.2494,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+},
+{
+"code": "sklaz",
+"cc": "SK",
+"name": "Spani laz",
+"op": "SHMU",
+"lat": 48.2404,
+"lon": 19.2573,
+"band": "C",
+"pol": "D",
+"km": "240",
+"folders": [
+"PVOL"
+]
+}
+]

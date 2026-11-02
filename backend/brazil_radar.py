@@ -52,10 +52,10 @@ import time
 import xml.etree.ElementTree as ET
 import zlib
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Collection, Optional
 
 import numpy as np
 import requests
@@ -97,7 +97,23 @@ _ALIASES = {"LONT": "BR-LON", "LONTRAS": "BR-LON", "PNOVA2": "BR-PNV", "PNOVA": 
 
 
 def is_br(site: str) -> bool:
-    return str(site or "").upper().startswith("BR-")
+    """A radar read through this module: Brazil's, or Europe's (opera_radar.py)."""
+    return str(site or "").upper().startswith(("BR-", "EU-"))
+
+
+# Radars whose volumes are put together from somewhere when asked for, not kept
+# beforehand: set by opera_radar.install(). Has handles(radar), scans(), nearest(),
+# inventory(), parts(), volume(), frame_paths(), is_young() and quiet_note().
+REMOTE: Any = None
+
+
+def _remote(radar: str) -> bool:
+    return REMOTE is not None and REMOTE.handles(radar)
+
+
+class NoData(LookupError):
+    """A remote radar has nothing for this request: gone quiet, or no such moment in
+    this frame. Asking again gets the same answer, so no retries (main.py: 400)."""
 
 
 def _km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -155,6 +171,7 @@ class Volume:
     wavelength_m: Optional[float] = None
     zdr_offset_db: Optional[float] = None   # ZDR calibration offset the reader took out (dB), if it did
     listed: Optional[frozenset] = None      # info.json's "files" when load() read the folder
+    ladder: Optional[list[dict]] = None     # a remote radar's tilts as meta.elevations lists them
 
 
 # Canonical moment names, from what each format calls them.
@@ -358,7 +375,10 @@ def _read_gamic(f: Any, name: str) -> Volume:
                   (sweeps[0].unix if sweeps else 0), sweeps=sweeps, files=[name], wavelength_m=wl)
 
 
-def _read_odim(f: Any, name: str) -> Volume:
+def _read_odim(f: Any, name: str, keep_elev: Optional[Callable[[float], bool]] = None,
+               keep_moments: Optional[Collection[str]] = None) -> Volume:
+    """`keep_elev` and `keep_moments` leave the rest of the file unread: a loop on one
+    tilt of a 27 MB volume (opera_radar.py) reads one dataset of it."""
     where = _attrs(f["where"]) if "where" in f else {}
     what = _attrs(f["what"]) if "what" in f else {}
     lat, lon = float(where.get("lat", 0.0)), float(where.get("lon", 0.0))
@@ -376,6 +396,8 @@ def _read_odim(f: Any, name: str) -> Volume:
         dwhat = _attrs(D["what"]) if "what" in D else {}
         if str(dwhat.get("product", "SCAN")).upper() not in ("SCAN", ""):
             continue
+        if keep_elev is not None and not keep_elev(float(dw.get("elangle", 0.0))):
+            continue
         dhow = _attrs(D["how"]) if "how" in D else {}
         nrays = int(dw.get("nrays", 360))
         data: dict[str, np.ndarray] = {}
@@ -383,6 +405,8 @@ def _read_odim(f: Any, name: str) -> Volume:
             Q = D[qk]
             qa = {**dwhat, **(_attrs(Q["what"]) if "what" in Q else {})}
             q = str(qa.get("quantity", "")).upper()
+            if keep_moments is not None and _ODIM_MOMENTS.get(q, q) not in keep_moments:
+                continue
             arr = Q["data"][()]
             vals = arr.astype(np.float32) * np.float32(qa.get("gain", 1.0)) + np.float32(qa.get("offset", 0.0))
             bad = np.zeros(arr.shape, dtype=bool)
@@ -391,7 +415,10 @@ def _read_odim(f: Any, name: str) -> Volume:
                     bad |= arr == qa[m]
             vals[bad] = np.nan
             data[_ODIM_MOMENTS.get(q, q)] = vals
-        if "startazA" in dhow:
+        if keep_moments is not None and not data:
+            continue
+        # A single number in some Swiss files, which is no list of rays.
+        if np.size(dhow.get("startazA", 0)) == nrays:
             az = np.asarray(dhow["startazA"], dtype=np.float64)
         else:
             a1 = int(dw.get("a1gate", 0))
@@ -783,8 +810,8 @@ def import_file(name: str, raw: bytes) -> dict:
             "unix": info["unix"], "moments": moments, "sweeps": len(vol.sweeps), "file": safe}
 
 
-# A radar id as a store folder: "BR-" and letters or digits, never a path.
-_ID_RE = re.compile(r"BR-[A-Z0-9]{1,12}")
+# A radar id as a store folder: "BR-" or "EU-" and letters or digits, never a path.
+_ID_RE = re.compile(r"(?:BR|EU)-[A-Z0-9]{1,12}")
 
 
 def volumes(radar: str) -> list[dict]:
@@ -880,6 +907,8 @@ def sites() -> list[dict]:
     extra = _extra_sites()
     out = []
     for rid, r in list(_known().items()):     # import_file may add a radar meanwhile
+        if _remote(rid):
+            continue    # listed by their own module
         vs = volumes(rid)
         if not vs:
             continue
@@ -945,10 +974,27 @@ def _stale(vol: Volume, now: Optional[frozenset]) -> bool:
 def load(radar: str, stamp: str) -> Volume:
     """A kept volume, every file of it merged: sweeps matched by elevation.
     The cached copy is checked against the folder's info.json first (a
-    small read) and read again when it misses a file listed since (_stale)."""
+    small read) and read again when it misses a file listed since (_stale).
+    A remote radar's frame has no folder: the cached copy stands while the
+    frame is made of the same files."""
     key = (radar, stamp)
     if not _ID_RE.fullmatch(str(radar or "")) or not re.fullmatch(r"\d{14}", str(stamp or "")):
         raise ValueError(f"No volume {stamp} for {radar}")
+    if _remote(radar):
+        names = frozenset(REMOTE.parts(radar, stamp))
+        with _LOCK:
+            hit = _VOLUMES.get(key)
+            if hit is not None and hit.listed == names:
+                _VOLUMES.move_to_end(key)
+                return hit
+        made = REMOTE.volume(radar, stamp)
+        made.listed = names
+        with _LOCK:
+            _VOLUMES[key] = made
+            _VOLUMES.move_to_end(key)
+            while len(_VOLUMES) > _VOL_MAX:
+                _VOLUMES.popitem(last=False)
+        return made
     vdir = STORE / radar / stamp
     with _LOCK:
         hit = _VOLUMES.get(key)
@@ -1434,6 +1480,8 @@ def extra_catalog() -> list[dict]:
 
 
 def _newest_stamp(radar: str, at: Optional[int] = None) -> Optional[str]:
+    if _remote(radar):
+        return REMOTE.nearest(radar, at)
     vs = volumes(radar)
     if not vs:
         return None
@@ -1442,37 +1490,55 @@ def _newest_stamp(radar: str, at: Optional[int] = None) -> Optional[str]:
     return vs[-1]["stamp"]
 
 
+def _carries(fid: str, spec: dict, m: Any) -> bool:
+    """Whether a tilt with these moments makes a family."""
+    if fid == "H":
+        return ("DBZH" in m or "TH" in m) and "ZDR" in m and "RHOHV" in m
+    if fid == "RR":
+        return "DBZH" in m or "TH" in m
+    return spec["moment"] in m
+
+
 def availability(site: str, at: Optional[int] = None) -> dict:
     """What a Brazilian radar's newest (or nearest `at`) volume carries, in the
     viewer's terms: every family's tilts at the angles flown. A radar with no
     volume kept yet (one the relay lists before its first volume lands)
-    answers every family empty, no cuts."""
-    stamp = _newest_stamp(site, at)
+    answers every family empty, no cuts. A remote radar answers from its file
+    index, nothing downloaded: what it has flown of late, by stable slot, and
+    when it last sent if it has stopped."""
     fams: dict[str, list] = {fid: [] for fid in (*TILTED, *VOLUME)}
     cuts: list[float] = []
     newest = None
-    if stamp:
-        vol = load(site, stamp)
-        newest = vol.unix
-        cuts = [round(s.elev, 2) for s in vol.sweeps]
-        has_any = {m for s in vol.sweeps for m in s.data}
+    said: dict[str, Any] = {}
+    if _remote(site):
+        inv = REMOTE.inventory(site, at)
+        newest = inv["newest"]
+        said = {"lastSeenUnix": inv["lastSeen"], "note": inv["note"]}
+        cuts = [round(elev, 2) for _, elev, _m in inv["tilts"]]
+        has_any = {m for _s, _e, ms in inv["tilts"] for m in ms}
         for fid, spec in TILTED.items():
-            tilts = []
-            for i, sw in enumerate(vol.sweeps):
-                m = sw.data
-                if fid == "H":
-                    ok = ("DBZH" in m or "TH" in m) and "ZDR" in m and "RHOHV" in m
-                elif fid == "RR":
-                    ok = "DBZH" in m or "TH" in m
-                else:
-                    ok = spec["moment"] in m
-                if ok:
-                    tilts.append({"tilt": SLOTS[i], "code": f"L2{spec['tok']}{SLOTS[i]}", "elev": round(sw.elev, 2),
-                                  "source": "level2", "superRes": sw.nrays >= 720})
-            fams[fid] = tilts
-        zname = "DBZH" in has_any or "TH" in has_any
-        for fid, spec in VOLUME.items():
-            fams[fid] = [{"tilt": None, "code": spec["code"], "elev": None, "source": "level2"}] if zname else []
+            fams[fid] = [{"tilt": SLOTS[s], "code": f"L2{spec['tok']}{SLOTS[s]}", "elev": round(elev, 2), "source": "level2",
+                          "superRes": False} for s, elev, ms in inv["tilts"] if _carries(fid, spec, ms)]
+        if "DBZH" in has_any or "TH" in has_any:
+            for fid, spec in VOLUME.items():
+                fams[fid] = [{"tilt": None, "code": spec["code"], "elev": None, "source": "level2"}]
+    else:
+        stamp = _newest_stamp(site, at)
+        if stamp:
+            vol = load(site, stamp)
+            newest = vol.unix
+            cuts = [round(s.elev, 2) for s in vol.sweeps]
+            has_any = {m for s in vol.sweeps for m in s.data}
+            for fid, spec in TILTED.items():
+                tilts = []
+                for i, sw in enumerate(vol.sweeps):
+                    if _carries(fid, spec, sw.data):
+                        tilts.append({"tilt": SLOTS[i], "code": f"L2{spec['tok']}{SLOTS[i]}", "elev": round(sw.elev, 2),
+                                      "source": "level2", "superRes": sw.nrays >= 720})
+                fams[fid] = tilts
+            zname = "DBZH" in has_any or "TH" in has_any
+            for fid, spec in VOLUME.items():
+                fams[fid] = [{"tilt": None, "code": spec["code"], "elev": None, "source": "level2"}] if zname else []
     # What only the NEXRADs make (clutter filter power, the precipitation
     # accumulations, the hybrid classification): not here.
     for fid in ("L2F", "HHC", "OHA", "DAA", "DTA"):
@@ -1487,7 +1553,7 @@ def availability(site: str, at: Optional[int] = None) -> dict:
     except Exception:  # noqa: BLE001 -- availability must answer regardless
         pass
     return {"site": site, "live": at is None, "at": at, "newestScan": newest, "volumeUnix": newest, "cuts": cuts,
-            "families": fams, "level2": True, "brazil": True, "checkedAt": int(time.time())}
+            "families": fams, "level2": True, "brazil": True, "checkedAt": int(time.time()), **said}
 
 
 def empty_families(fams: dict) -> dict:
@@ -1505,6 +1571,8 @@ def cuts(site: str, at: Optional[int] = None) -> dict:
 def scans(site: str, limit: int = 0, start: Optional[int] = None) -> list[dict]:
     """The kept volumes as the viewer's scan list, oldest first (none for a
     radar with no volume here yet)."""
+    if _remote(site):
+        return REMOTE.scans(site, limit, start)
     vs = volumes(site)
     if start:
         vs = [v for v in vs if v["unix"] >= start]
@@ -1545,8 +1613,8 @@ def _wire(vol: Volume, sw: Sweep, vals: np.ndarray, *, product: str, label: str,
         "nAz": int(codes.shape[0]), "nGates": int(nb), "rangeStartKm": sw.r0_km, "gateWidthKm": sw.dr_km,
         "maxRangeKm": sw.r0_km + nb * sw.dr_km, "validUnix": vol.unix, "scanUnix": vol.unix, "key": f"L2BR:{stamp}",
         "source": "level2", "superRes": sw.nrays >= 720, "vcp": None,
-        "elevations": [{"elev": round(s.elev, 2), "actual": round(s.elev, 2), "slot": SLOTS[i]}
-                       for i, s in enumerate(vol.sweeps)],
+        "elevations": vol.ladder if vol.ladder is not None else [
+            {"elev": round(s.elev, 2), "actual": round(s.elev, 2), "slot": SLOTS[i]} for i, s in enumerate(vol.sweeps)],
         "radarName": RADARS.get(vol.radar, {}).get("name", vol.name), "files": vol.files,
     }
     if extra:
@@ -1556,6 +1624,65 @@ def _wire(vol: Volume, sw: Sweep, vals: np.ndarray, *, product: str, label: str,
 
 # Products drawn from ZDR: their meta says how much the reader moved it.
 _ZDR_FAMILIES = ("L2X", "H", "RR")
+_Z_MOMENTS = frozenset({"DBZH", "TH"})
+_DUALPOL_MOMENTS = _Z_MOMENTS | {"ZDR", "RHOHV", "KDP", "PHIDP"}
+
+
+# The angles of the NEXRAD's Level III codes (N0B, NAB, N1B...), and the families that
+# exist at a remote radar under its own codes.
+_L3_ANGLE = {"0": 0.5, "A": 0.9, "1": 1.3, "B": 1.8, "2": 2.4, "3": 3.1}
+_L3_CODE = re.compile(r"^N([0A1B23])([BGSRK])$")
+_L3_VOLUME = {"EET": "L2VET", "DVL": "L2VVIL"}
+
+
+def _remote_code(site: str, product: str) -> str:
+    """A remote radar's own code for a Level III one: a pane with a radar of its own
+    holds the focused NEXRAD's code (as tdwr.to_tdwr does for an airport radar), and a
+    first frame can go out before the radar has said what it flies. The tilt nearest
+    that angle of that family's; anything else goes through as it is."""
+    if product in _L3_VOLUME:
+        return _L3_VOLUME[product]
+    m = _L3_CODE.match(product)
+    if not m:
+        return product
+    fam = m.group(2)
+    spec = TILTED[fam]
+    tilts = [(s, elev) for s, elev, ms in REMOTE.inventory(site)["tilts"] if _carries(fam, spec, ms)]
+    if not tilts:
+        return product
+    want = _L3_ANGLE[m.group(1)]
+    slot = min(tilts, key=lambda t: abs(t[1] - want))[0]
+    return f"L2{spec['tok']}{SLOTS[slot]}"
+
+
+def _remote_need(product: str) -> tuple[Optional[int], frozenset]:
+    """The tilt (None: all) and moments a product of a remote radar is made from."""
+    if product in _CODE_VOLUME:
+        return None, _Z_MOMENTS
+    tok, slot = product[2:3], product[3:]
+    fam = _TOK_FAMILY.get(tok)
+    if not product.startswith("L2") or fam is None or len(slot) != 1 or slot not in SLOTS:
+        raise NoData(f"This radar has no product {product}.")
+    moments = _DUALPOL_MOMENTS if fam in ("H", "RR") else frozenset({TILTED[fam]["moment"]})
+    return SLOTS.index(slot), moments
+
+
+def _remote_sweep(vol: Volume, fam: str, spec: dict) -> Optional[Sweep]:
+    """The sweep of a remote radar's one-tilt volume that holds what a family needs.
+    The classification and the rain rate take several moments, which may sit in
+    separate sweeps when they were sent at different times."""
+    if fam not in ("H", "RR"):
+        return next((s for s in vol.sweeps if spec["moment"] in s.data), None)
+    base = next((s for s in vol.sweeps if "DBZH" in s.data or "TH" in s.data), None)
+    if base is None:
+        return None
+    shape = next(iter(base.data.values())).shape
+    data = dict(base.data)
+    for s in vol.sweeps:
+        for k, arr in s.data.items():
+            if arr.shape == shape:
+                data.setdefault(k, arr)
+    return replace(base, data=data)
 
 
 def polar(site: str, product: str, key: str = "") -> dict:
@@ -1567,17 +1694,33 @@ def polar(site: str, product: str, key: str = "") -> dict:
     lands has nothing to draw yet. ZDR, the classification and the rain rate
     of a volume whose ZDR the reader corrected carry zdrOffsetDb: the dB
     added to the published ZDR (0.1 dB steps)."""
+    remote = _remote(site)
     stamp = key.split(":", 1)[1] if key.startswith("L2BR:") else _newest_stamp(site)
     if not stamp:
+        if remote:
+            raise NoData(REMOTE.quiet_note(site))
         raise RuntimeError(f"No volume kept for {site} yet: import a file of it, an archive case "
                            "(scripts/import_nasa_cemaden.py), or wait for the radar relay's first volume.")
-    ck = (site, stamp, product)
+    if remote:
+        product = _remote_code(site, product)
+    ck: tuple = (site, stamp, product)
+    if remote:
+        # A young frame still gains files: a grid stands for the files it was built from.
+        need = _remote_need(product)
+        names = REMOTE.parts(site, stamp, *need)
+        if not names:
+            raise NoData(f"{product} is not in this frame of {site}.")
+        ck += (names,)
     with _LOCK:
         hit = _GRIDS.get(ck)
         if hit is not None:
             _GRIDS.move_to_end(ck)
+            # Young is about now, not about when the grid was built: a frame kept
+            # no-store for good would be read again at every new frame.
+            if remote:
+                hit["meta"]["young"] = REMOTE.is_young(_stamp_unix(stamp))
             return hit
-    vol = load(site, stamp)
+    vol = REMOTE.volume(site, stamp, *need) if remote else load(site, stamp)
     env = None
 
     def need_env() -> dict:
@@ -1592,7 +1735,7 @@ def polar(site: str, product: str, key: str = "") -> dict:
         prods = _volume_products(vol, need_env())
         name = {"CR": "CR", "EET": "ET", "DVL": "VIL", "MEHS": "MEHS", "POSH": "POSH"}[fam]
         if name not in prods:
-            raise RuntimeError("This volume has no reflectivity to build it from.")
+            raise (NoData if remote else RuntimeError)("This volume has no reflectivity to build it from.")
         base, vals = prods[name]
         out = _wire(vol, base, vals, product=product, label=spec["label"], units=spec["units"], kind=spec["kind"],
                     family=fam, tilt=None, stamp=stamp,
@@ -1603,11 +1746,20 @@ def polar(site: str, product: str, key: str = "") -> dict:
             raise RuntimeError(f"Unknown product {product}")
         tok, slot = product[2], product[3:]
         fam = _TOK_FAMILY.get(tok)
-        if fam is None or slot not in SLOTS or SLOTS.index(slot) >= len(vol.sweeps):
+        if fam is None or slot not in SLOTS or (not remote and SLOTS.index(slot) >= len(vol.sweeps)):
             raise RuntimeError(f"Unknown product {product}")
         spec = TILTED[fam]
-        sw = vol.sweeps[SLOTS.index(slot)]
+        if remote:
+            sw = _remote_sweep(vol, fam, spec)
+            if sw is None:
+                raise NoData(f"No {spec['label']} at this elevation in this frame.")
+        else:
+            sw = vol.sweeps[SLOTS.index(slot)]
         extra: dict[str, Any] = {"nyquistKt": round(sw.nyquist * _MS_TO_KT, 1) if sw.nyquist else None}
+        if remote:
+            # A frame's sweeps are not all of its moment: scanUnix (the frame, the
+            # loop's order) stays, and the labels go by when this one was really made.
+            extra.update(validUnix=sw.unix or vol.unix, sweepUnix=sw.unix or vol.unix)
         if fam in _ZDR_FAMILIES and vol.zdr_offset_db is not None and "ZDR" in sw.data:
             # The reader took the offset out: the published ZDR plus this is what is drawn.
             extra["zdrOffsetDb"] = round(-vol.zdr_offset_db, 1)
@@ -1636,13 +1788,13 @@ def polar(site: str, product: str, key: str = "") -> dict:
         elif fam == "H":
             vals = _hca(sw, vol.alt_m, need_env())
             if vals is None:
-                raise RuntimeError("Classification needs reflectivity, ZDR and correlation at this elevation.")
+                raise (NoData if remote else RuntimeError)("Classification needs reflectivity, ZDR and correlation at this elevation.")
             extra.update(freezingM=env["h0"], envSource=env["source"])
         elif fam == "RR":
             hca = _hca(sw, vol.alt_m, need_env()) if "ZDR" in sw.data and "RHOHV" in sw.data else None
             vals = _rain_rate(sw, vol.alt_m, need_env(), hca)
             if vals is None:
-                raise RuntimeError("No reflectivity at this elevation.")
+                raise (NoData if remote else RuntimeError)("No reflectivity at this elevation.")
             extra.update(freezingM=env["h0"], envSource=env["source"])
         else:
             m = spec["moment"]
@@ -1651,6 +1803,12 @@ def polar(site: str, product: str, key: str = "") -> dict:
             vals = sw.data[m]
         out = _wire(vol, sw, np.asarray(vals, dtype=np.float32), product=product, label=spec["label"],
                     units=spec["units"], kind=spec["kind"], family=fam, tilt=slot, stamp=stamp, extra=extra)
+    if remote:
+        meta = out["meta"]
+        if product in _CODE_VOLUME:
+            meta["validUnix"] = max((s.unix for s in vol.sweeps), default=0) or vol.unix
+        # Kept from the browser's day-long cache while its files can still change.
+        meta["young"] = REMOTE.is_young(vol.unix)
     # Not cached when a file was filed while it was built (import_file
     # dropped the grids before this one was done): the next call builds it
     # again from the whole volume.
@@ -1674,7 +1832,7 @@ def stack(site: str, key: str, at: Optional[float], fam: str) -> dict:
     """Every sweep of one moment, as radar_xsect.cross_section_stack wants it."""
     stamp = key.split(":", 1)[1] if key.startswith("L2BR:") else _newest_stamp(site, int(at) if at else None)
     if not stamp:
-        raise ValueError(f"No volume kept for {site}")
+        raise ValueError(REMOTE.quiet_note(site, at=at) if _remote(site) else f"No volume kept for {site}")
     vol = load(site, stamp)
     moment = _XS_MOMENT.get(fam, "DBZH")
     if moment == "DBZH" and not any("DBZH" in s.data for s in vol.sweeps):

@@ -1,0 +1,322 @@
+Date : 2026-09-25 19:59:30
+Directory : c:\Users\pablo\Documents\WeatherTS
+Total : 259 files,  71606 codes, 9812 comments, 6748 blanks, all 88166 lines
+
+Languages
++--------------------+------------+------------+------------+------------+------------+
+| language           | files      | code       | comment    | blank      | total      |
++--------------------+------------+------------+------------+------------+------------+
+| TypeScript         |        110 |     20,237 |      3,881 |      2,201 |     26,319 |
+| TypeScript JSX     |         75 |     16,120 |      1,534 |      1,402 |     19,056 |
+| Python             |         37 |     14,787 |      3,418 |      2,405 |     20,610 |
+| PostCSS            |          6 |     12,012 |        641 |        430 |     13,083 |
+| JSON               |          8 |      6,316 |          0 |          4 |      6,320 |
+| JavaScript         |         10 |      1,300 |        283 |        194 |      1,777 |
+| HTML               |          2 |        562 |         38 |         51 |        651 |
+| Markdown           |          3 |        169 |          0 |         53 |        222 |
+| YAML               |          1 |         40 |          9 |          1 |         50 |
+| JSON with Comments |          2 |         35 |          2 |          4 |         41 |
+| XML                |          4 |         15 |          0 |          2 |         17 |
+| pip requirements   |          1 |         13 |          6 |          1 |         20 |
++--------------------+------------+------------+------------+------------+------------+
+
+Directories
++----------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                                             | files      | code       | comment    | blank      | total      |
++----------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                                |        259 |     71,606 |      9,812 |      6,748 |     88,166 |
+| . (Files)                                                                        |         10 |      6,918 |         49 |         90 |      7,057 |
+| .claude                                                                          |          1 |         14 |          0 |          1 |         15 |
+| WeatherTS Landing Page                                                           |          4 |      1,235 |        151 |        143 |      1,529 |
+| backend                                                                          |         38 |     14,778 |      3,402 |      2,404 |     20,584 |
+| electron                                                                         |          3 |        505 |         89 |         59 |        653 |
+| public                                                                           |          7 |         12 |          0 |          2 |         14 |
+| public (Files)                                                                   |          2 |          7 |          0 |          1 |          8 |
+| public\data                                                                      |          5 |          5 |          0 |          1 |          6 |
+| scripts                                                                          |          6 |        356 |        128 |         71 |        555 |
+| src                                                                              |        190 |     47,788 |      5,993 |      3,978 |     57,759 |
+| src (Files)                                                                      |          4 |        197 |         55 |         20 |        272 |
+| src\assets                                                                       |          1 |          1 |          0 |          0 |          1 |
+| src\layers                                                                       |         29 |      6,471 |      1,175 |        566 |      8,212 |
+| src\layers (Files)                                                               |          9 |        872 |        248 |         95 |      1,215 |
+| src\layers\geo                                                                   |          2 |         70 |         14 |         15 |         99 |
+| src\layers\modules                                                               |         18 |      5,529 |        913 |        456 |      6,898 |
+| src\lib                                                                          |         41 |      8,477 |      1,571 |      1,033 |     11,081 |
+| src\map                                                                          |          7 |        948 |        245 |         89 |      1,282 |
+| src\settings                                                                     |          3 |        544 |         79 |         36 |        659 |
+| src\store                                                                        |         27 |      3,833 |        854 |        480 |      5,167 |
+| src\styles                                                                       |          5 |     11,476 |        592 |        377 |     12,445 |
+| src\types                                                                        |          1 |         30 |          2 |          1 |         33 |
+| src\ui                                                                           |         72 |     15,811 |      1,420 |      1,376 |     18,607 |
+| src\ui (Files)                                                                   |         46 |      8,130 |        969 |        767 |      9,866 |
+| src\ui\auth                                                                      |          4 |      1,415 |        107 |        101 |      1,623 |
+| src\ui\panels                                                                    |         16 |      4,976 |        241 |        387 |      5,604 |
+| src\ui\sounding                                                                  |          4 |        702 |         73 |         71 |        846 |
+| src\ui\station                                                                   |          2 |        588 |         30 |         50 |        668 |
++----------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++----------------------------------------------------------------------------------+--------------------+------------+------------+------------+------------+
+| filename                                                                         | language           | code       | comment    | blank      | total      |
++----------------------------------------------------------------------------------+--------------------+------------+------------+------------+------------+
+| c:\Users\pablo\Documents\WeatherTS\.claude\launch.json                           | JSON with Comments |         14 |          0 |          1 |         15 |
+| c:\Users\pablo\Documents\WeatherTS\README.md                                     | Markdown           |        133 |          0 |         39 |        172 |
+| c:\Users\pablo\Documents\WeatherTS\RELEASE_NOTES_1.1.9.md                        | Markdown           |          9 |          0 |          3 |         12 |
+| c:\Users\pablo\Documents\WeatherTS\WeatherTS Landing Page\favicon.svg            | XML                |          7 |          0 |          1 |          8 |
+| c:\Users\pablo\Documents\WeatherTS\WeatherTS Landing Page\index.html             | HTML               |        446 |         30 |         43 |        519 |
+| c:\Users\pablo\Documents\WeatherTS\WeatherTS Landing Page\main.js                | JavaScript         |        246 |         72 |         46 |        364 |
+| c:\Users\pablo\Documents\WeatherTS\WeatherTS Landing Page\styles.css             | PostCSS            |        536 |         49 |         53 |        638 |
+| c:\Users\pablo\Documents\WeatherTS\backend\README.md                             | Markdown           |         27 |          0 |         11 |         38 |
+| c:\Users\pablo\Documents\WeatherTS\backend\acars_core.py                         | Python             |        275 |         60 |         54 |        389 |
+| c:\Users\pablo\Documents\WeatherTS\backend\area_sounding.py                      | Python             |        282 |         59 |         41 |        382 |
+| c:\Users\pablo\Documents\WeatherTS\backend\atcf.py                               | Python             |        150 |         27 |         31 |        208 |
+| c:\Users\pablo\Documents\WeatherTS\backend\cpc_hazards.py                        | Python             |        153 |         22 |         27 |        202 |
+| c:\Users\pablo\Documents\WeatherTS\backend\fast_tls.py                           | Python             |         74 |         37 |         17 |        128 |
+| c:\Users\pablo\Documents\WeatherTS\backend\fronts_core.py                        | Python             |        347 |        107 |         57 |        511 |
+| c:\Users\pablo\Documents\WeatherTS\backend\fronts_model.py                       | Python             |        395 |         71 |         64 |        530 |
+| c:\Users\pablo\Documents\WeatherTS\backend\lsr_core.py                           | Python             |        290 |         65 |         38 |        393 |
+| c:\Users\pablo\Documents\WeatherTS\backend\main.py                               | Python             |        711 |        124 |        132 |        967 |
+| c:\Users\pablo\Documents\WeatherTS\backend\model_fields.py                       | Python             |         81 |         42 |         20 |        143 |
+| c:\Users\pablo\Documents\WeatherTS\backend\model_footprints.py                   | Python             |        433 |          9 |          3 |        445 |
+| c:\Users\pablo\Documents\WeatherTS\backend\model_sources.py                      | Python             |      1,143 |        196 |        177 |      1,516 |
+| c:\Users\pablo\Documents\WeatherTS\backend\mrms.py                               | Python             |        199 |         65 |         40 |        304 |
+| c:\Users\pablo\Documents\WeatherTS\backend\mrms_products.py                      | Python             |        343 |         74 |         37 |        454 |
+| c:\Users\pablo\Documents\WeatherTS\backend\nadocast_core.py                      | Python             |        179 |         17 |         33 |        229 |
+| c:\Users\pablo\Documents\WeatherTS\backend\nexrad_availability.py                | Python             |        140 |         37 |         21 |        198 |
+| c:\Users\pablo\Documents\WeatherTS\backend\nexrad_core.py                        | Python             |        747 |        233 |        139 |      1,119 |
+| c:\Users\pablo\Documents\WeatherTS\backend\nexrad_level2.py                      | Python             |        861 |        330 |        140 |      1,331 |
+| c:\Users\pablo\Documents\WeatherTS\backend\nexrad_storms.py                      | Python             |        228 |         64 |         38 |        330 |
+| c:\Users\pablo\Documents\WeatherTS\backend\nexrad_vwp.py                         | Python             |        154 |         32 |         23 |        209 |
+| c:\Users\pablo\Documents\WeatherTS\backend\obs_products.py                       | Python             |      1,676 |        302 |        196 |      2,174 |
+| c:\Users\pablo\Documents\WeatherTS\backend\observations.py                       | Python             |      2,079 |        653 |        405 |      3,137 |
+| c:\Users\pablo\Documents\WeatherTS\backend\pal_tables.py                         | Python             |        312 |         47 |         18 |        377 |
+| c:\Users\pablo\Documents\WeatherTS\backend\probe_openmeteo.py                    | Python             |         43 |          2 |          3 |         48 |
+| c:\Users\pablo\Documents\WeatherTS\backend\raob_core.py                          | Python             |        299 |         89 |         57 |        445 |
+| c:\Users\pablo\Documents\WeatherTS\backend\requirements.txt                      | pip requirements   |         13 |          6 |          1 |         20 |
+| c:\Users\pablo\Documents\WeatherTS\backend\sharppy_renderer.py                   | Python             |        573 |        108 |        123 |        804 |
+| c:\Users\pablo\Documents\WeatherTS\backend\sounding_core.py                      | Python             |        783 |        128 |        112 |      1,023 |
+| c:\Users\pablo\Documents\WeatherTS\backend\sounding_upload.py                    | Python             |         85 |         20 |         19 |        124 |
+| c:\Users\pablo\Documents\WeatherTS\backend\sounding_view.py                      | Python             |         39 |         10 |         10 |         59 |
+| c:\Users\pablo\Documents\WeatherTS\backend\spc_md.py                             | Python             |        230 |         89 |         56 |        375 |
+| c:\Users\pablo\Documents\WeatherTS\backend\stations.py                           | Python             |        303 |         51 |         50 |        404 |
+| c:\Users\pablo\Documents\WeatherTS\backend\storm_attributes.py                   | Python             |        282 |         86 |         58 |        426 |
+| c:\Users\pablo\Documents\WeatherTS\backend\surface_obs.py                        | Python             |        181 |         20 |         30 |        231 |
+| c:\Users\pablo\Documents\WeatherTS\backend\test_sharppy.py                       | Python             |         42 |          7 |         12 |         61 |
+| c:\Users\pablo\Documents\WeatherTS\backend\vwp_panel.py                          | Python             |        506 |         81 |         92 |        679 |
+| c:\Users\pablo\Documents\WeatherTS\backend\vwp_sounding.py                       | Python             |        120 |         32 |         19 |        171 |
+| c:\Users\pablo\Documents\WeatherTS\electron-builder.yml                          | YAML               |         40 |          9 |          1 |         50 |
+| c:\Users\pablo\Documents\WeatherTS\electron\main.js                              | JavaScript         |        362 |         57 |         43 |        462 |
+| c:\Users\pablo\Documents\WeatherTS\electron\preload.cjs                          | JavaScript         |         17 |         16 |          8 |         41 |
+| c:\Users\pablo\Documents\WeatherTS\electron\splash.js                            | JavaScript         |        126 |         16 |          8 |        150 |
+| c:\Users\pablo\Documents\WeatherTS\index.html                                    | HTML               |        116 |          8 |          8 |        132 |
+| c:\Users\pablo\Documents\WeatherTS\main.js                                       | JavaScript         |        242 |         16 |         31 |        289 |
+| c:\Users\pablo\Documents\WeatherTS\package-lock.json                             | JSON               |      6,259 |          0 |          1 |      6,260 |
+| c:\Users\pablo\Documents\WeatherTS\package.json                                  | JSON               |         42 |          0 |          1 |         43 |
+| c:\Users\pablo\Documents\WeatherTS\public\data\borders.geojson                   | JSON               |          1 |          0 |          0 |          1 |
+| c:\Users\pablo\Documents\WeatherTS\public\data\ne_110m_admin_0_countries.geojson | JSON               |          1 |          0 |          1 |          2 |
+| c:\Users\pablo\Documents\WeatherTS\public\data\nexrad-sites.json                 | JSON               |          1 |          0 |          0 |          1 |
+| c:\Users\pablo\Documents\WeatherTS\public\data\raob-stations.geojson             | JSON               |          1 |          0 |          0 |          1 |
+| c:\Users\pablo\Documents\WeatherTS\public\data\us-places.json                    | JSON               |          1 |          0 |          0 |          1 |
+| c:\Users\pablo\Documents\WeatherTS\public\tauri.svg                              | XML                |          6 |          0 |          1 |          7 |
+| c:\Users\pablo\Documents\WeatherTS\public\vite.svg                               | XML                |          1 |          0 |          0 |          1 |
+| c:\Users\pablo\Documents\WeatherTS\scripts\announce-release.mjs                  | JavaScript         |         93 |         22 |         15 |        130 |
+| c:\Users\pablo\Documents\WeatherTS\scripts\build-places.py                       | Python             |         49 |         22 |         13 |         84 |
+| c:\Users\pablo\Documents\WeatherTS\scripts\convert-icon.js                       | JavaScript         |         32 |          1 |          9 |         42 |
+| c:\Users\pablo\Documents\WeatherTS\scripts\dev-all.mjs                           | JavaScript         |        148 |         64 |         26 |        238 |
+| c:\Users\pablo\Documents\WeatherTS\scripts\landing.vite.config.mjs               | JavaScript         |          8 |         15 |          3 |         26 |
+| c:\Users\pablo\Documents\WeatherTS\scripts\sync-splash.mjs                       | JavaScript         |         26 |          4 |          5 |         35 |
+| c:\Users\pablo\Documents\WeatherTS\src\App.tsx                                   | TypeScript JSX     |         99 |         31 |          2 |        132 |
+| c:\Users\pablo\Documents\WeatherTS\src\ErrorBoundary.tsx                         | TypeScript JSX     |         25 |          0 |          6 |         31 |
+| c:\Users\pablo\Documents\WeatherTS\src\assets\react.svg                          | XML                |          1 |          0 |          0 |          1 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\clickPriority.ts                   | TypeScript         |         13 |         16 |          5 |         34 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\geo\graticule.ts                   | TypeScript         |         24 |          7 |          4 |         35 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\geo\terminator.ts                  | TypeScript         |         46 |          7 |         11 |         64 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\index.ts                           | TypeScript         |         33 |         31 |          2 |         66 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\manager.ts                         | TypeScript         |        105 |         50 |         10 |        165 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\modules\acarsLayer.ts              | TypeScript         |        241 |         23 |         22 |        286 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\modules\alertsLayer.ts             | TypeScript         |        293 |        100 |         28 |        421 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\modules\boundaries.ts              | TypeScript         |        146 |         23 |         12 |        181 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\modules\chasersLayer.ts            | TypeScript         |        372 |         77 |         36 |        485 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\modules\drawLayer.ts               | TypeScript         |        277 |         24 |         29 |        330 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\modules\frontsLayer.ts             | TypeScript         |        303 |         31 |         24 |        358 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\modules\graticule.ts               | TypeScript         |         42 |          1 |          4 |         47 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\modules\homesLayer.ts              | TypeScript         |        263 |         26 |         30 |        319 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\modules\lsrLayer.ts                | TypeScript         |        330 |         42 |         27 |        399 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\modules\mesoscaleLayer.ts          | TypeScript         |        173 |         79 |         22 |        274 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\modules\nexradLayer.ts             | TypeScript         |        222 |         39 |         20 |        281 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\modules\obsLayer.ts                | TypeScript         |      1,247 |        268 |         74 |      1,589 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\modules\obsPlaces.ts               | TypeScript         |        369 |         55 |         32 |        456 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\modules\outlooksLayer.ts           | TypeScript         |        394 |         35 |         30 |        459 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\modules\raobLayer.ts               | TypeScript         |        115 |         14 |         12 |        141 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\modules\surfaceObsLayer.ts         | TypeScript         |        549 |         56 |         32 |        637 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\modules\terminator.ts              | TypeScript         |         49 |          4 |          6 |         59 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\modules\vwpLayer.ts                | TypeScript         |        144 |         16 |         16 |        176 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\nexradGlLayer.ts                   | TypeScript         |        191 |         30 |         16 |        237 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\nexradRing.ts                      | TypeScript         |         62 |         10 |         10 |         82 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\nexradStorms.ts                    | TypeScript         |        284 |         56 |         25 |        365 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\radarHold.ts                       | TypeScript         |        132 |         20 |         15 |        167 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\registry.ts                        | TypeScript         |         15 |          4 |          5 |         24 |
+| c:\Users\pablo\Documents\WeatherTS\src\layers\types.ts                           | TypeScript         |         37 |         31 |          7 |         75 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\apiConfig.ts                          | TypeScript         |         16 |         10 |          7 |         33 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\auth.ts                               | TypeScript         |        446 |        172 |         74 |        692 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\chasers.ts                            | TypeScript         |        242 |        130 |         38 |        410 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\consent.ts                            | TypeScript         |        201 |         38 |          8 |        247 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\fronts.ts                             | TypeScript         |        211 |         49 |         31 |        291 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\fullscreen.ts                         | TypeScript         |          8 |          0 |          1 |          9 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\geolocate.ts                          | TypeScript         |        192 |         69 |         20 |        281 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\gifExport.ts                          | TypeScript         |        783 |        121 |        108 |      1,012 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\gifWorker.ts                          | TypeScript         |         19 |          8 |          4 |         31 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\hca.ts                                | TypeScript         |         54 |         16 |          5 |         75 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\loopTime.ts                           | TypeScript         |         12 |          3 |          3 |         18 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\lsr.ts                                | TypeScript         |        256 |         42 |         33 |        331 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\measure.ts                            | TypeScript         |        263 |         11 |         36 |        310 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\metar.ts                              | TypeScript         |        113 |         22 |         14 |        149 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\modelFields.ts                        | TypeScript         |         53 |         20 |         12 |         85 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\nexrad.ts                             | TypeScript         |        336 |         66 |         36 |        438 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\nwsAlerts.ts                          | TypeScript         |      1,171 |        121 |        126 |      1,418 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\observations.ts                       | TypeScript         |        392 |         77 |         43 |        512 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\outlooks.ts                           | TypeScript         |        611 |         95 |         58 |        764 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\pal.ts                                | TypeScript         |        184 |         47 |         25 |        256 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\patience.ts                           | TypeScript         |         27 |         12 |          5 |         44 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\photon.ts                             | TypeScript         |         39 |          1 |          5 |         45 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\radarMesh.ts                          | TypeScript         |        273 |         71 |         40 |        384 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\radarMeshPool.ts                      | TypeScript         |         72 |         10 |          8 |         90 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\radarMeshWorker.ts                    | TypeScript         |         23 |          7 |          4 |         34 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\radarUnits.ts                         | TypeScript         |         85 |         29 |         11 |        125 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\releaseNotes.ts                       | TypeScript         |         84 |         19 |          7 |        110 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\skewt.ts                              | TypeScript         |        303 |         83 |         46 |        432 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\soundingApi.ts                        | TypeScript         |        293 |          0 |         37 |        330 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\soundingStorage.ts                    | TypeScript         |        188 |          2 |         25 |        215 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\soundingSummary.ts                    | TypeScript         |        135 |          0 |         16 |        151 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\soundingTools.ts                      | TypeScript         |        146 |         18 |         11 |        175 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\soundingViewer.ts                     | TypeScript         |        190 |         21 |         21 |        232 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\stationPlot.ts                        | TypeScript         |        113 |         13 |         20 |        146 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\stations.ts                           | TypeScript         |        136 |         21 |         13 |        170 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\stormImpacts.ts                       | TypeScript         |         89 |         30 |         22 |        141 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\surfaceObs.ts                         | TypeScript         |         57 |          8 |          7 |         72 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\theme.ts                              | TypeScript         |         15 |          6 |          6 |         27 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\useDragOffset.ts                      | TypeScript         |        120 |         49 |         24 |        193 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\vwpKinematics.ts                      | TypeScript         |        184 |         50 |         18 |        252 |
+| c:\Users\pablo\Documents\WeatherTS\src\lib\weatherCatalog.ts                     | TypeScript         |        342 |          4 |          5 |        351 |
+| c:\Users\pablo\Documents\WeatherTS\src\main.tsx                                  | TypeScript JSX     |         73 |         23 |         11 |        107 |
+| c:\Users\pablo\Documents\WeatherTS\src\map\MapPane.tsx                           | TypeScript JSX     |        211 |        105 |         26 |        342 |
+| c:\Users\pablo\Documents\WeatherTS\src\map\MapView.tsx                           | TypeScript JSX     |         14 |          9 |          3 |         26 |
+| c:\Users\pablo\Documents\WeatherTS\src\map\basemapLabels.ts                      | TypeScript         |         15 |         10 |          4 |         29 |
+| c:\Users\pablo\Documents\WeatherTS\src\map\basemaps.ts                           | TypeScript         |        627 |         85 |         36 |        748 |
+| c:\Users\pablo\Documents\WeatherTS\src\map\mapInk.ts                             | TypeScript         |         29 |         15 |          5 |         49 |
+| c:\Users\pablo\Documents\WeatherTS\src\map\mapInstance.ts                        | TypeScript         |         46 |         15 |         13 |         74 |
+| c:\Users\pablo\Documents\WeatherTS\src\map\mapStyle.ts                           | TypeScript         |          6 |          6 |          2 |         14 |
+| c:\Users\pablo\Documents\WeatherTS\src\settings\mapStyle.ts                      | TypeScript         |        276 |         53 |         19 |        348 |
+| c:\Users\pablo\Documents\WeatherTS\src\settings\schema.ts                        | TypeScript         |        201 |         14 |         10 |        225 |
+| c:\Users\pablo\Documents\WeatherTS\src\settings\useSettingsStore.ts              | TypeScript         |         67 |         12 |          7 |         86 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useAcarsStore.ts                    | TypeScript         |         38 |          9 |          8 |         55 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useAccountGate.ts                   | TypeScript         |         29 |         19 |          9 |         57 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useAlertStore.ts                    | TypeScript         |         85 |         30 |         13 |        128 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useAppStore.ts                      | TypeScript         |        194 |         27 |         22 |        243 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useAuthStore.ts                     | TypeScript         |         95 |         17 |         17 |        129 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useCatalogStore.ts                  | TypeScript         |         53 |          8 |          7 |         68 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useChaserStore.ts                   | TypeScript         |         46 |         24 |          6 |         76 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useDrawStore.ts                     | TypeScript         |         95 |         16 |         13 |        124 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useFrontsStore.ts                   | TypeScript         |        334 |         50 |         43 |        427 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useGifStore.ts                      | TypeScript         |         82 |         22 |         12 |        116 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useLayoutStore.ts                   | TypeScript         |         44 |         17 |         10 |         71 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useLsrStore.ts                      | TypeScript         |        222 |         55 |         22 |        299 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useMesoscaleStore.ts                | TypeScript         |         37 |         12 |          5 |         54 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useModelStore.ts                    | TypeScript         |         73 |         22 |         11 |        106 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useNexradStore.ts                   | TypeScript         |        975 |        264 |         99 |      1,338 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useObsStore.ts                      | TypeScript         |        395 |         81 |         36 |        512 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useOnboardingStore.ts               | TypeScript         |         36 |          7 |          8 |         51 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useOutlookStore.ts                  | TypeScript         |         65 |          8 |          6 |         79 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\usePaletteStore.ts                  | TypeScript         |        108 |         15 |         17 |        140 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useSoundingViewStore.ts             | TypeScript         |         68 |         12 |         10 |         90 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useSoundingViewerStore.ts           | TypeScript         |        364 |         71 |         47 |        482 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useStationStore.ts                  | TypeScript         |         60 |         20 |         11 |         91 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useStormCellStore.ts                | TypeScript         |         20 |         14 |          4 |         38 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useSurfaceObsStore.ts               | TypeScript         |        123 |         10 |         15 |        148 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useThemeStore.ts                    | TypeScript         |         19 |          1 |          4 |         24 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useTimelineStore.ts                 | TypeScript         |         18 |          8 |          4 |         30 |
+| c:\Users\pablo\Documents\WeatherTS\src\store\useVwpStore.ts                      | TypeScript         |        155 |         15 |         21 |        191 |
+| c:\Users\pablo\Documents\WeatherTS\src\styles\app.css                            | PostCSS            |      7,870 |        353 |        203 |      8,426 |
+| c:\Users\pablo\Documents\WeatherTS\src\styles\auth.css                           | PostCSS            |        772 |         50 |         54 |        876 |
+| c:\Users\pablo\Documents\WeatherTS\src\styles\sounding.css                       | PostCSS            |        648 |         36 |         71 |        755 |
+| c:\Users\pablo\Documents\WeatherTS\src\styles\storms.css                         | PostCSS            |      2,100 |         92 |         41 |      2,233 |
+| c:\Users\pablo\Documents\WeatherTS\src\styles\theme.css                          | PostCSS            |         86 |         61 |          8 |        155 |
+| c:\Users\pablo\Documents\WeatherTS\src\types\gifenc.d.ts                         | TypeScript         |         30 |          2 |          1 |         33 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\AlertController.tsx                    | TypeScript JSX     |        251 |         58 |         23 |        332 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\AlertPanel.tsx                         | TypeScript JSX     |        592 |         30 |         48 |        670 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\AnimationModal.tsx                     | TypeScript JSX     |        367 |         17 |         28 |        412 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\BasemapPicker.tsx                      | TypeScript JSX     |         76 |          8 |          9 |         93 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\BrandMark.tsx                          | TypeScript JSX     |         12 |          1 |          1 |         14 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\ChaserController.tsx                   | TypeScript JSX     |        106 |         35 |         12 |        153 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\ChaserPopup.tsx                        | TypeScript JSX     |        130 |         22 |         16 |        168 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\DataPanel.tsx                          | TypeScript JSX     |         37 |          5 |          5 |         47 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\DayLoadOverlay.tsx                     | TypeScript JSX     |         39 |          4 |          9 |         52 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\Dock.tsx                               | TypeScript JSX     |        382 |         40 |         29 |        451 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\DrawTool.tsx                           | TypeScript JSX     |        479 |         29 |         41 |        549 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\FrontPopup.tsx                         | TypeScript JSX     |        112 |          5 |         13 |        130 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\LayerPower.tsx                         | TypeScript JSX     |         20 |          8 |          1 |         29 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\LoginGate.tsx                          | TypeScript JSX     |        122 |         32 |         12 |        166 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\LoopLoadCard.tsx                       | TypeScript JSX     |        100 |         12 |         12 |        124 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\LsrCard.tsx                            | TypeScript JSX     |        290 |         17 |         26 |        333 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\LsrShape.tsx                           | TypeScript JSX     |         29 |          5 |          2 |         36 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\MapTimeline.tsx                        | TypeScript JSX     |        571 |        141 |         39 |        751 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\MeasureTool.tsx                        | TypeScript JSX     |        161 |          6 |         17 |        184 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\MesoscaleList.tsx                      | TypeScript JSX     |         72 |         21 |         10 |        103 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\MesoscalePanel.tsx                     | TypeScript JSX     |         96 |          5 |         14 |        115 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\MesoscalePopup.tsx                     | TypeScript JSX     |         92 |         16 |         13 |        121 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\ObsColorBar.tsx                        | TypeScript JSX     |         53 |          9 |          8 |         70 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\ObsCompare.tsx                         | TypeScript JSX     |        547 |         68 |         49 |        664 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\ObsReadout.tsx                         | TypeScript JSX     |         42 |         10 |          7 |         59 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\OutlookControls.tsx                    | TypeScript JSX     |        134 |          9 |         14 |        157 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\OutlookLegend.tsx                      | TypeScript JSX     |         76 |          1 |         11 |         88 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\QuickStart.tsx                         | TypeScript JSX     |        266 |         10 |         23 |        299 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\RadarColorBar.tsx                      | TypeScript JSX     |         94 |         23 |         10 |        127 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\RadarHud.tsx                           | TypeScript JSX     |          7 |          3 |          3 |         13 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\RadarProductPanel.tsx                  | TypeScript JSX     |        130 |         22 |          8 |        160 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\RadarReadout.tsx                       | TypeScript JSX     |         39 |         18 |          7 |         64 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\RunStrip.tsx                           | TypeScript JSX     |        195 |         32 |         24 |        251 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\SearchBar.tsx                          | TypeScript JSX     |        125 |          2 |          9 |        136 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\Select.tsx                             | TypeScript JSX     |        226 |         33 |         19 |        278 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\StationPanel.tsx                       | TypeScript JSX     |        602 |         24 |         40 |        666 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\StatusBar.tsx                          | TypeScript JSX     |         79 |          6 |          7 |         92 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\StormCellPanel.tsx                     | TypeScript JSX     |        421 |         36 |         40 |        497 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\StormPopup.tsx                         | TypeScript JSX     |         66 |         24 |         10 |        100 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\UpdateBanner.tsx                       | TypeScript JSX     |        203 |         16 |         22 |        241 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\VwpPanel.tsx                           | TypeScript JSX     |        280 |         27 |         25 |        332 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\VwpSharpPanel.tsx                      | TypeScript JSX     |         93 |         13 |          7 |        113 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\WhatsNew.tsx                           | TypeScript JSX     |        159 |          9 |         19 |        187 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\ZoomControls.tsx                       | TypeScript JSX     |         44 |          3 |          3 |         50 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\auth\AccountPanel.tsx                  | TypeScript JSX     |        606 |         25 |         27 |        658 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\auth\AccountPrompts.tsx                | TypeScript JSX     |        183 |         32 |         18 |        233 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\auth\AuthScreen.tsx                    | TypeScript JSX     |        425 |         31 |         36 |        492 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\auth\ConsentPanel.tsx                  | TypeScript JSX     |        201 |         19 |         20 |        240 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\panels\AcarsView.tsx                   | TypeScript JSX     |        111 |         11 |         15 |        137 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\panels\ActiveLayers.tsx                | TypeScript JSX     |        158 |         29 |         18 |        205 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\panels\CatalogTabs.tsx                 | TypeScript JSX     |        164 |         13 |         13 |        190 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\panels\CatalogView.tsx                 | TypeScript JSX     |        144 |          9 |         13 |        166 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\panels\FrontsView.tsx                  | TypeScript JSX     |        318 |         22 |         28 |        368 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\panels\LayersContent.tsx               | TypeScript JSX     |        167 |         15 |         14 |        196 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\panels\LsrView.tsx                     | TypeScript JSX     |        512 |         18 |         33 |        563 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\panels\ModelsView.tsx                  | TypeScript JSX     |        132 |          3 |         13 |        148 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\panels\ObservationsView.tsx            | TypeScript JSX     |        465 |         24 |         30 |        519 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\panels\OutlooksView.tsx                | TypeScript JSX     |        286 |         12 |         19 |        317 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\panels\RadarView.tsx                   | TypeScript JSX     |        368 |         12 |         26 |        406 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\panels\SettingsContent.tsx             | TypeScript JSX     |        719 |         23 |         46 |        788 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\panels\SoundingPlotOptions.tsx         | TypeScript JSX     |        155 |         15 |          8 |        178 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\panels\SoundingToolTabs.tsx            | TypeScript JSX     |        303 |         12 |         21 |        336 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\panels\SoundingsContent.tsx            | TypeScript JSX     |        713 |         21 |         70 |        804 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\panels\SurfaceObsView.tsx              | TypeScript JSX     |        261 |          2 |         20 |        283 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\sounding\AreaBoxTool.tsx               | TypeScript JSX     |        128 |         30 |         22 |        180 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\sounding\AreaSoundingOverlay.tsx       | TypeScript JSX     |         99 |         17 |         15 |        131 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\sounding\MapContextMenu.tsx            | TypeScript JSX     |        139 |          3 |         12 |        154 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\sounding\SoundingViewer.tsx            | TypeScript JSX     |        336 |         23 |         22 |        381 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\station\Meteogram.tsx                  | TypeScript JSX     |        444 |         22 |         36 |        502 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\station\StationSearch.tsx              | TypeScript JSX     |        144 |          8 |         14 |        166 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\useObsSample.ts                        | TypeScript         |         59 |         19 |         11 |         89 |
+| c:\Users\pablo\Documents\WeatherTS\src\ui\useRadarSample.ts                      | TypeScript         |         54 |         35 |         11 |        100 |
+| c:\Users\pablo\Documents\WeatherTS\src\vite-env.d.ts                             | TypeScript         |          0 |          1 |          1 |          2 |
+| c:\Users\pablo\Documents\WeatherTS\tsconfig.json                                 | JSON with Comments |         21 |          2 |          3 |         26 |
+| c:\Users\pablo\Documents\WeatherTS\tsconfig.node.json                            | JSON               |         10 |          0 |          1 |         11 |
+| c:\Users\pablo\Documents\WeatherTS\vite.config.ts                                | TypeScript         |         46 |         14 |          2 |         62 |
+| Total                                                                            |                    |     71,606 |      9,812 |      6,748 |     88,166 |
++----------------------------------------------------------------------------------+--------------------+------------+------------+------------+------------+

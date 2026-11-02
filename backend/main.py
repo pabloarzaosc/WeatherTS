@@ -58,6 +58,8 @@ import acars_core
 import area_sounding
 import satellite
 import space_sdo
+import world_alerts
+import opera_radar
 import tropical
 import sat_net
 import glm
@@ -204,6 +206,7 @@ app.router.on_startup.append(_warm_satellite)
 # packaged backend offers none of them, whatever the store holds, unless
 # WEATHERTS_BR_RADARS=1. A dev run (not frozen) keeps them, for the CEMADEN demo.
 BR_RADARS_ON = os.environ.get("WEATHERTS_BR_RADARS") == "1" or not getattr(sys, "frozen", False)
+opera_radar.install()
 
 
 def _follow_radar_relay() -> None:
@@ -564,6 +567,7 @@ def nexrad_sites():
             out = out + brazil_radar.sites()
     except Exception:  # noqa: BLE001 - the NEXRAD list stands alone
         pass
+    out = out + opera_radar.sites()
     try:
         return {"sites": out}
     except Exception as exc:  # noqa: BLE001
@@ -635,7 +639,7 @@ def nexrad_meta():
         # Level II genuinely wins: CC, ZDR, SW, PHI, CFP). No more picking the
         # worse source of a product that's in both.
         # ...and the families only the Brazilian radars' volumes make.
-        "grids": nexrad_level2.merged_catalog(nexrad_core.product_catalog()) + (brazil_radar.extra_catalog() if BR_RADARS_ON else []),
+        "grids": nexrad_level2.merged_catalog(nexrad_core.product_catalog()) + brazil_radar.extra_catalog(),
         "palettes": nexrad_core.list_palettes(),
         "defaultProduct": nexrad_core.DEFAULT_PRODUCT,
     }
@@ -690,7 +694,7 @@ def nexrad_data(
             out = nexrad_level2.polar_data_l2(site, product.upper(), key or "")
         else:
             out = nexrad_core.polar_data(site, product, key or None)
-    except tdwr.NotOnTdwr as exc:
+    except (tdwr.NotOnTdwr, brazil_radar.NoData) as exc:
         # 400, not 422: the frame is fine, this radar just has no such moment.
         raise HTTPException(status_code=400, detail=str(exc))
     except nexrad_core.UndecodableScan as exc:
@@ -711,8 +715,9 @@ def nexrad_data(
         content=body,
         media_type="application/octet-stream",
         # a published scan never changes -- let the browser keep it; a tilt of
-        # the volume still being written that isn't scanned yet will
-        headers={"Cache-Control": "no-store" if out["meta"].get("pending")
+        # the volume still being written that isn't scanned yet will, and so
+        # will a young frame of a European radar, as its files land
+        headers={"Cache-Control": "no-store" if out["meta"].get("pending") or out["meta"].get("young")
                  else "public, max-age=86400"},
     )
 
@@ -923,8 +928,20 @@ def nexrad_scans(
     (``reps``: {slot: [unix of each scan]}, level2_live.reps_for)."""
     if brazil_radar.is_br(site):
         radar_relay_client.touch(site)
-        got = brazil_radar.scans(site.upper(), max(limit, 120) if minutes else limit, start or None)
-        return {"scans": _loop_window(got, minutes, start), "archiveStart": None}
+        try:
+            # The Whole day picker: that day's frames, or none (today's are not that day's).
+            if date and opera_radar.handles(site):
+                return {"scans": opera_radar.day_scans(site.upper(), date), "archiveStart": None}
+            got = brazil_radar.scans(site.upper(), max(limit, 120) if minutes else limit, start or None)
+            out = {"scans": _loop_window(got, minutes, start), "archiveStart": None}
+            # A European radar gone quiet says since when, for the viewer to say so.
+            if not got and not start and opera_radar.handles(site):
+                out["note"] = opera_radar.quiet_note(site.upper())
+            return out
+        except Exception as exc:  # noqa: BLE001
+            # An answer the browser can read (a bare 500 has no CORS header): it would
+            # take it for a lost connection and wait for a reconnect that never comes.
+            raise HTTPException(status_code=502, detail=str(exc))
     # An airport radar: Level III whatever the code asked for.
     if tdwr.is_tdwr(site):
         try:
@@ -1640,6 +1657,33 @@ def tropical_enso():
 def tropical_mjo():
     """The MJO every day since 1991, on RMM's axes, with its phase."""
     return _tropical(tropical.mjo)
+
+
+@app.get("/api/radar/mosaic/europe")
+def radar_mosaic_europe(hours: float = Query(3.0, gt=0, le=23)):
+    """The times of EUMETNET OPERA's composite, and the corners its pictures cover."""
+    try:
+        return {"times": opera_radar.mosaic_times(hours), "bounds": opera_radar.MOSAIC_BOUNDS}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/radar/mosaic/europe.png")
+def radar_mosaic_europe_png(t: int = Query(..., gt=0)):
+    try:
+        return Response(opera_radar.mosaic_png(t), media_type="image/png", headers={"Cache-Control": "max-age=86400"})
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/alerts/world/{source}")
+def alerts_world(source: str, since: float | None = Query(None)):
+    """The alerts of one source from outside the US (backend/world_alerts.py),
+    in force or ended since `since` (unix seconds)."""
+    try:
+        return world_alerts.alerts(source, since)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"No alert source {source}")
 
 
 @app.get("/api/space/sdo")

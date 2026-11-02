@@ -181,7 +181,12 @@ export function isUS(site: SiteLike): boolean {
   return site.country === "US";
 }
 
-const COUNTRY: Record<string, string> = { US: "United States", BR: "Brazil", KR: "South Korea", JP: "Japan" };
+const COUNTRY: Record<string, string> = {
+  US: "United States", BR: "Brazil", KR: "South Korea", JP: "Japan", BE: "Belgium", CH: "Switzerland", CZ: "Czechia",
+  DE: "Germany", DK: "Denmark", EE: "Estonia", ES: "Spain", FI: "Finland", FR: "France", HR: "Croatia", HU: "Hungary",
+  IE: "Ireland", IS: "Iceland", LT: "Lithuania", MT: "Malta", NL: "Netherlands", NO: "Norway", PL: "Poland", RO: "Romania",
+  SE: "Sweden", SK: "Slovakia",
+};
 export function countryName(code: string | null | undefined): string {
   return (code && COUNTRY[code]) || code || "—";
 }

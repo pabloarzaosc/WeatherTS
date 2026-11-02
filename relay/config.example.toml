@@ -1,0 +1,151 @@
+# WeatherTS radar relay -- configuration.
+#
+# Copy to config.toml. Everything secret can stay out of this file: each key of
+# [sources.cemaden] can come from RELAY_CEMADEN_<KEY> (RELAY_CEMADEN_PASSWORD,
+# RELAY_CEMADEN_HOST, RELAY_CEMADEN_ENABLED=1 ...), the bucket's keys from
+# RELAY_S3_KEY_ID / RELAY_S3_SECRET, and any value written "env:NAME" is read
+# from $NAME. See README.md.
+
+[relay]
+retention_hours = 36         # volumes older than this leave the store and the listing
+poll_seconds = 120           # how often each radar's source is listed
+concurrency = 3              # radars polled at the same time
+max_backoff_seconds = 1800   # a failing radar waits poll_seconds * 2^failures, at most this
+max_files_per_poll = 300     # downloads per radar per poll; the rest come next poll
+max_file_mb = 200            # anything larger is refused (a broken listing, not a volume)
+recheck_seconds = 20         # --once: a listing without modification times is read again this much later,
+                             # and a file is taken only if its size has not changed
+log_level = "INFO"
+
+[api]
+host = "0.0.0.0"
+port = 8080
+cors_origins = ["*"]
+# With the files in a public bucket (or behind a CDN), /v1/files answers 302 to
+# <public_base_url>/<key> instead of streaming the bytes through this process.
+# public_base_url = "https://radar-files.example.org"
+
+[storage]
+kind = "local"
+path = "./data"              # relative to this file
+
+# Any S3-compatible bucket instead (pip install boto3):
+# kind = "s3"
+# bucket = "weatherts-radar"
+# endpoint_url = "https://<ACCOUNT_ID>.r2.cloudflarestorage.com"   # Backblaze B2: https://s3.<region>.backblazeb2.com
+# region = "auto"
+# access_key_id = "env:RELAY_S3_KEY_ID"
+# secret_access_key = "env:RELAY_S3_SECRET"
+#
+# Serverless: with static_api the poller also writes the API's JSON answers
+# (health, v1/radars, v1/radars/<id>/volumes) into the bucket, so the public
+# bucket alone serves the contract (clients filter `since` themselves).
+# prefix = "v1/files/"
+# static_api = true
+
+
+# ---------------------------------------------------------------------------
+# CEMADEN -- switched off until CEMADEN grants automated access (an FTP account
+# or an HTTP URL). Fill in what they give, set enabled = true (or
+# RELAY_CEMADEN_ENABLED=1), and the nine radars below go live.
+#
+# The relay never sends a request to mapainterativo.cemaden.gov.br: the public
+# Interactive Map's downloads are behind a CAPTCHA, and the relay refuses that
+# host whatever this file says.
+# ---------------------------------------------------------------------------
+[sources.cemaden]
+type = "cemaden"
+enabled = false
+transport = "ftp"            # "ftp" | "http_index" | "local"
+
+# transport = "ftp"
+host = ""                    # the server CEMADEN names
+port = 21
+user = ""                    # or RELAY_CEMADEN_USER
+password = ""                # better: RELAY_CEMADEN_PASSWORD
+tls = false                  # true for FTPS (explicit TLS, data channel encrypted)
+passive = true
+path = "/{site}/"            # one folder per radar; by day: "/{site}/{date:%Y/%m/%d}/"
+# day_offset_hours = -3      # when the day folders follow Brasilia time
+
+# transport = "http_index" (an Apache/nginx listing):
+# url = "https://example.cemaden.gov.br/radar/{site}/{date:%Y%m%d}/"
+# format = "html"            # or "json" (nginx autoindex_format json)
+# token = ""                 # bearer token, or user/password for basic auth
+
+settle_seconds = 30          # leave a file alone until it is this old (never take one half-written);
+                             # a listing without modification times waits for the same size twice instead
+timeout = 60
+# The moments the app reads, in Rainbow's own .vol form. Left out by default:
+# the unfiltered duplicates (dBuZ, uPhiDP), and the .vol.h5 copies.
+moments = ["dBZ", "V", "W", "ZDR", "RhoHV", "KDP", "PhiDP"]
+formats = ["vol"]            # add "vol.h5" to keep the HDF5 copies too
+
+
+# ---------------------------------------------------------------------------
+# Demonstration: real CEMADEN volumes from the NASA GPM Validation Network
+# archive (one CfRadial file per GPM overpass, every elevation and moment,
+# published weeks later). To try the whole pipeline with it, uncomment this,
+# change a radar's source to "nasa" below, and run with a long retention:
+#   python -m relay --config config.toml --once --retention-hours 8760 --radar BR-MCZ
+# (config.nasa-demo.toml is the same, ready to run.)
+# ---------------------------------------------------------------------------
+# [sources.nasa]
+# type = "nasa_vn"
+# only_dates = ["2026-02-24"]  # leave out to take every overpass inside the retention
+#
+# [[radars]]
+# id = "BR-MCZ"
+# source = "nasa"              # site defaults to the NASA code: MC1
+# poll_seconds = 3600
+
+
+# ---------------------------------------------------------------------------
+# The radars. name/lat/lon default to the app's own values for these nine;
+# "site" is the {site} in the path or url template -- set it to the folder
+# names CEMADEN uses once their access is known.
+# ---------------------------------------------------------------------------
+[[radars]]
+id = "BR-ALM"
+source = "cemaden"
+site = "almenara"
+
+[[radars]]
+id = "BR-JAR"
+source = "cemaden"
+site = "jaraguari"
+
+[[radars]]
+id = "BR-MCZ"
+source = "cemaden"
+site = "maceio"
+
+[[radars]]
+id = "BR-NAT"
+source = "cemaden"
+site = "natal"
+
+[[radars]]
+id = "BR-PTL"
+source = "cemaden"
+site = "petrolina"
+
+[[radars]]
+id = "BR-SSA"
+source = "cemaden"
+site = "salvador"
+
+[[radars]]
+id = "BR-STE"
+source = "cemaden"
+site = "santa_teresa"
+
+[[radars]]
+id = "BR-SFR"
+source = "cemaden"
+site = "sao_francisco"
+
+[[radars]]
+id = "BR-TMA"
+source = "cemaden"
+site = "tres_marias"

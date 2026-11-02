@@ -1,0 +1,8 @@
+# WeatherTS radar relay (Python 3.11 or newer: the configuration is read with
+# the standard library's tomllib). The versions it was tested with.
+fastapi==0.139.0
+uvicorn==0.51.0
+requests==2.34.2
+
+# Optional, only for [storage] kind = "s3" (Cloudflare R2, Backblaze B2, AWS S3):
+#   pip install -r requirements-s3.txt

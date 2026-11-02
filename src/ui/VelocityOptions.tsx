@@ -87,7 +87,7 @@ export function VelocityOptions() {
     set("radar.stormMotionKt", Math.round(k));
     set("radar.stormMotionMode", "manual");
   };
-  const l2Srv = grids.find((f) => f.id === "L2S" && !f.unavailable);
+  const l2Srv = grids.find((f) => f.id === "L2S" && !f.unavailable && !f.checking);
   const level3Srm = kind === "srv" && !isLevel2Srv(product);
 
   return (

@@ -17,3 +17,5 @@ eccodes
 xarray
 h5netcdf
 h5py
+# Level III radar files and the wind and storm calculations.
+MetPy==1.7.1

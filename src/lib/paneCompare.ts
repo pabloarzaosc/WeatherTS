@@ -14,9 +14,9 @@ import { useCompareStore } from "../store/useCompareStore";
  */
 
 /** What the right half can show: the product picker's own list (each moment
- *  once, on its best source for this radar and time). */
+ *  once, on its best source for this radar and time, once the radar has it). */
 export function compareFamilies(): ProductFamily[] {
-  return useNexradStore.getState().grids.filter((f) => f.tilts.length);
+  return useNexradStore.getState().grids.filter((f) => f.tilts.length && !f.checking);
 }
 
 export function familyById(id: string | null | undefined): ProductFamily | undefined {

@@ -326,7 +326,8 @@ const STATES = new Set(
 /** The states an alert covers: from its zone ids (OKC109, TXZ025), else from
  *  the area text ("Tulsa, OK; Creek, OK" or "Dyer [TN]"). Marine zones
  *  (GMZ, PZZ ...) are no state. */
-export function alertStates(a: Pick<NwsAlert, "affectedZones" | "areaDesc">): string[] {
+export function alertStates(a: Pick<NwsAlert, "affectedZones" | "areaDesc" | "regions">): string[] {
+  if (a.regions) return a.regions;
   const out = new Set<string>();
   for (const url of a.affectedZones ?? []) {
     const id = url.slice(url.lastIndexOf("/") + 1).toUpperCase();

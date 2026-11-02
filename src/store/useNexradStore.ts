@@ -1,3 +1,4 @@
+import { isBrazilSite, isEuropeSite } from "../lib/brazilRadar";
 import { create } from "zustand";
 
 import {
@@ -789,10 +790,12 @@ function scheduleSiteReloads(reload: () => Promise<void>): void {
 /**
  * Each radar's last known tilts, kept across restarts. A radar's VCP rarely
  * changes between visits, so the buttons show the moment it is picked and the
- * check that follows only corrects them if it did.
+ * check that follows only corrects them if it did. The same goes for its list of
+ * products, which is why a week: a radar seen before opens on its own list, not
+ * on a wait.
  */
 const AVAIL_KEY = "weatherts.radar.availability.v1";
-const AVAIL_KEEP_MS = 24 * 3600_000;
+const AVAIL_KEEP_MS = 7 * 24 * 3600_000;
 const AVAIL_MAX_SITES = 60;
 const knownAvailability = new Map<string, SiteAvailability>(
   (() => {
@@ -821,6 +824,21 @@ function rememberAvailability(site: string, avail: SiteAvailability): void {
   }
 }
 
+/** How long the product list waits on a radar's answer. It can queue behind that
+ *  radar's downloads for seconds, but one that never comes must not leave nothing
+ *  to pick. */
+const AVAILABILITY_WAIT_MS = 20_000;
+
+/** No answer: unknown is not "none". What is known stays, and what was waiting
+ *  on the answer is listed as the catalogue has it. */
+function stopWaiting(): void {
+  const { grids, availabilityState } = useNexradStore.getState();
+  useNexradStore.setState({
+    availabilityState: availabilityState === "ready" ? "ready" : "failed",
+    ...(grids.some((f) => f.checking) ? { grids: grids.map((f) => (f.checking ? { ...f, checking: false } : f)) } : {}),
+  });
+}
+
 /**
  * Check what the selected radar is flying and put it into the product list.
  * A tilt the radar does not have moves to the nearest one it does, on every
@@ -835,6 +853,9 @@ function checkAvailability(site: string): void {
   const current = () => store.getState().site === site && archiveAnchor(store.getState()) === at;
   const fresh = store.getState().availabilityState !== "ready";
   if (fresh) store.setState({ availabilityState: "loading" });
+  const waiting = window.setTimeout(() => {
+    if (current()) stopWaiting();
+  }, AVAILABILITY_WAIT_MS);
   // Nothing known about this radar: its Level III tilts first, in about a
   // second, and only then Level II's. Asked for together, Level II's -- a
   // search of the chunk bucket, several seconds -- slowed the Level III answer
@@ -842,7 +863,9 @@ function checkAvailability(site: string): void {
   const first = fresh
     ? fetchSiteAvailability(site, true, at)
         .then((quick) => {
-          if (current()) applyAvailability(quick);
+          // A second check overlapping this one has answered already: the
+          // partial answer must not take back what the whole one listed.
+          if (current() && store.getState().availabilityState !== "ready") applyAvailability(quick);
         })
         .catch(() => undefined)
     : Promise.resolve();
@@ -851,19 +874,20 @@ function checkAvailability(site: string): void {
     .then((avail) => {
       if (at === null) rememberAvailability(site, avail);
       if (!current()) return;
-      // Unchanged since what is on screen: nothing to redo.
+      // Unchanged since what is on screen: nothing to redo. Not so after a
+      // partial answer, even an identical one (a radar with no Level II yet):
+      // products are still waiting on this one to say so.
       const shown = store.getState().availability;
-      if (shown && JSON.stringify(shown.families) === JSON.stringify(avail.families)) {
+      if (shown && !shown.level2Pending && !shown.provisional && JSON.stringify(shown.families) === JSON.stringify(avail.families)) {
         store.setState({ availability: avail, availabilityState: "ready" });
         return;
       }
       applyAvailability(avail);
     })
     .catch(() => {
-      if (!current()) return;
-      // Unknown is not "none": keep what is known, or the catalogue's list.
-      if (store.getState().availabilityState !== "ready") store.setState({ availabilityState: "failed" });
-    });
+      if (current()) stopWaiting();
+    })
+    .finally(() => window.clearTimeout(waiting));
 }
 
 /** What a TDWR forced each pane off (CC, CREF, ... do not exist at one), to go
@@ -1016,7 +1040,7 @@ function reloadOnReconnect(): void {
 }
 
 function wantsSails(site: string, product: string, archiveTime: number | null): boolean {
-  return product.startsWith("L2") && !site.startsWith("BR-") && archiveTime === null;
+  return product.startsWith("L2") && !isBrazilSite(site) && archiveTime === null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1101,7 +1125,7 @@ export function cachedScan(site: string, product: string, key: string): PolarSca
 
 function composeNow(base: NexradScan[]): NexradScan[] {
   const s = useNexradStore.getState();
-  const l2 = !!s.site && !s.site.startsWith("BR-") && s.product.startsWith("L2");
+  const l2 = !!s.site && !isBrazilSite(s.site) && s.product.startsWith("L2");
   const gone = removedNow(s.site, s.product);
   // Added radars' scans join the composed loop (archive-l2).
   const out = gone.size
@@ -1188,6 +1212,22 @@ export function dropPendingScans(): void {
   if (waiting) void s.showIndex(s.index);
 }
 
+/** A European frame's files keep landing for a while after it opens (meta.young,
+ *  backend/opera_radar.py), so a copy read early can lack the newest sweeps: a new
+ *  frame is the moment to read those copies again. */
+function dropYoungScans(): void {
+  for (const [id, scan] of [...scanCache]) {
+    if (!scan.meta.young) continue;
+    scanCache.delete(id);
+    setFrameState(id, "idle");
+    for (const [key, mesh] of [...meshCache]) {
+      if (!key.startsWith(`${id}|`)) continue;
+      meshCacheBytes -= meshBytes(mesh);
+      meshCache.delete(key);
+    }
+  }
+}
+
 /** Check for a new volume now (the live status saw one complete). */
 let pollNow: (() => Promise<void>) | null = null;
 export function pollNexradNow(): Promise<void> {
@@ -1271,7 +1311,9 @@ export const useNexradStore = create<NexradState>((set, get) => ({
             sites: offeredSites(sites),
             products: meta.products,
             catalog: meta.catalog,
-            grids: withAvailability(grids, get().availability),
+            // A check that failed before the catalogue came in has nothing to
+            // wait for: the catalogue's list stands, as it does after one.
+            grids: get().availabilityState === "failed" ? grids : withAvailability(grids, get().availability),
             baseGrids: grids,
             palettes: meta.palettes,
             palTables: pals.palettes,
@@ -1319,8 +1361,9 @@ export const useNexradStore = create<NexradState>((set, get) => ({
       if (siteGate && !siteGate(site)) return;
       const candidate = get().sites.find((s) => s.id === site);
       // Gone quiet NOW (no scan since yesterday): nothing live to show. A past
-      // moment is another matter -- the archive has that radar's old scans.
-      if (candidate?.online === false && archiveAnchor(get()) === null) return;
+      // moment is another matter -- the archive has that radar's old scans. A
+      // European radar opens all the same and says since when it has been quiet.
+      if (candidate?.online === false && archiveAnchor(get()) === null && !isEuropeSite(site)) return;
     }
     // A different site shares nothing with the cached meshes; free them so the
     // budget isn't spent holding geometry for a radar no longer on screen.
@@ -1348,15 +1391,16 @@ export const useNexradStore = create<NexradState>((set, get) => ({
       // What this radar was flying last time, if it has been seen: its buttons
       // show now, and the check below corrects them if the VCP changed.
       const remembered = archiveAnchor(get()) === null ? (knownAvailability.get(site) ?? null) : null;
-      // An airport radar's list is known before anything is asked: no NEXRAD code
-      // (and no Level II) is ever requested of it.
+      // What an airport radar can have is known before anything is asked: no
+      // NEXRAD code (and no Level II) is ever requested of it. Its own list is
+      // not: that waits for the check below.
       const known = remembered ?? (isTdwrId(site) ? tdwrAvailability(get().baseGrids) : null);
       let moved = applyAvailability(known);
       // Off an airport radar onto a NEXRAD nothing is known about: back to the
       // catalogue's codes now, the check below corrects the tilts.
       if (!known && (isTdwrCode(get().product) || Object.values(get().paneRadar).some((p) => isTdwrCode(p.product)))) {
         moved = applyAvailability(catalogueAvailability(get().baseGrids));
-        useNexradStore.setState({ availability: null, grids: get().baseGrids, availabilityState: "idle" });
+        applyAvailability(null);
       }
       // A low cut is the one tilt most radars do not have: with nothing known,
       // leave it rather than fetch a Level II volume that may not exist.
@@ -1551,7 +1595,7 @@ export const useNexradStore = create<NexradState>((set, get) => ({
     try {
       // Before Level III's archive (March 2022) only Level II has the day:
       // what the radar flew then decides the codes (REF -> L2B0) first.
-      if (!get().product.startsWith("L2") && archiveDate < LEVEL3_FIRST_DAY && !site.startsWith("BR-")) {
+      if (!get().product.startsWith("L2") && archiveDate < LEVEL3_FIRST_DAY && !isBrazilSite(site)) {
         const avail = await fetchSiteAvailability(site, false, archiveAnchor(get())).catch(() => null);
         if (mine !== dayToken) return;
         if (avail && applyAvailability(avail)) return; // the move loads the day again
@@ -1781,8 +1825,10 @@ export const useNexradStore = create<NexradState>((set, get) => ({
     if (!site) return;
     // Another moment, other tilts: what the radar flew then, or back to what it
     // flies now. A tilt it did not have moves, and moving loads the scan.
+    // Nothing remembered for that moment: the same radar's list stands until the
+    // check below answers, rather than emptying on every jump through the archive.
     const known = archiveTime === null ? (knownAvailability.get(site) ?? null) : null;
-    const moved = applyAvailability(known ?? (isTdwrId(site) ? tdwrAvailability(get().baseGrids) : null));
+    const moved = known ? applyAvailability(known) : false;
     if (!moved) void get().refresh();
     checkAvailability(site);
   },
@@ -2232,7 +2278,8 @@ export const useNexradStore = create<NexradState>((set, get) => ({
         // its products read as unavailable until then, and the next check was
         // five minutes away. Its first volume -- and any new one, whose tilts
         // can differ -- asks again now.
-        if (!current || site.startsWith("BR-")) checkAvailability(site);
+        if (!current || isBrazilSite(site)) checkAvailability(site);
+        dropYoungScans();
         if (wasAtLatest) void get().showIndex(next.length - 1);
         // A new volume also means new storm attributes.
         void get().loadStorms();

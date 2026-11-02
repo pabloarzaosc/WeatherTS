@@ -557,7 +557,7 @@ def kdp_stack(st_phi: dict) -> dict:
 # Volumes: the scan on screen, a neighbour's, the lightning
 # ---------------------------------------------------------------------------
 def _is_br(site: str) -> bool:
-    return (site or "").upper().startswith("BR-")
+    return (site or "").upper().startswith(("BR-", "EU-"))
 
 
 def _key_unix(key: str) -> Optional[int]:
@@ -740,7 +740,7 @@ def resolve(site: str, at: Optional[float], key: str, fam: str, rid: str = "",
         stamp = key.split(":", 1)[1] if key.startswith("L2BR:") else brazil_radar._newest_stamp(
             sid, int(at) if at else None)
         if not stamp:
-            raise ValueError(f"No volume kept for {sid}")
+            raise ValueError(brazil_radar.REMOTE.quiet_note(sid, at=at) if brazil_radar._remote(sid) else f"No volume kept for {sid}")
         vkey = f"L2BR:{stamp}"
         known = brazil_radar.RADARS.get(sid) or {}
         return {"key": vkey, "unix": brazil_radar._stamp_unix(stamp), "lat": known.get("lat"),

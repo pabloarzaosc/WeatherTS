@@ -227,7 +227,8 @@ def metar_history(icao: str, hours: float) -> list[dict]:
     hours = max(1.0, min(float(hours), 360.0))
 
     def make() -> list[dict]:
-        rows = _json(f"{AWC}/api/data/metar", ids=icao, hours=hours, format="json")
+        # A whole number: "hours=24.0" is a 400 from the AWC, so no airport had a history.
+        rows = _json(f"{AWC}/api/data/metar", ids=icao, hours=math.ceil(hours), format="json")
         out = []
         for r in rows if isinstance(rows, list) else []:
             clouds = [{"cover": c.get("cover"), "base": _num(c.get("base"))} for c in r.get("clouds") or []

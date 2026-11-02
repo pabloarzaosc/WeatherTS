@@ -47,6 +47,8 @@ export interface PolarScan {
     siteAmslM?: number;
     feedhornM?: number;
     sweepUnix?: number;
+    /** A European frame whose files can still change (backend/opera_radar.py). */
+    young?: boolean;
     /** The gate code meaning "range folded" (its lut entry is NaN). */
     rfCode?: number;
     derivedFrom?: string;

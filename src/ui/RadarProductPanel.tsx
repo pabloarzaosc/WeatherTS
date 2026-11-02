@@ -183,7 +183,11 @@ export function RadarProductPanel() {
       /* private window: the fold just is not remembered */
     }
   };
-  // Keep the picked product in view: a key press can pick one below the fold.
+  // Only what this radar is known to have (see below); the product on screen
+  // stays listed.
+  const shown = grids.filter((f) => (!f.unavailable && !f.checking) || f.id === family);
+  // Keep the picked product in view: a key press can pick one below the fold,
+  // and a list still filling can push it there.
   // The list is held as state (a callback ref), not a ref object: it unmounts
   // whenever the product list is reloaded, and a fresh one must scroll too.
   const [body, setBody] = useState<HTMLDivElement | null>(null);
@@ -197,14 +201,12 @@ export function RadarProductPanel() {
     const bottom = desc ? Math.min(desc.getBoundingClientRect().bottom, r.top + b.height - 16) : r.bottom;
     if (r.top < b.top) body.scrollTop -= b.top - r.top + 8;
     else if (bottom > b.bottom) body.scrollTop += bottom - b.bottom + 6;
-  }, [body, family, tilt, derivedOpen]);
+  }, [body, family, tilt, derivedOpen, shown.length]);
 
   if (!site) return null;
   if (!grids.length) return null;
 
   const current = grids.find((f) => f.id === family)?.label ?? family;
-  // Only what this radar has (see below); the product on screen stays listed.
-  const shown = grids.filter((f) => !f.unavailable || f.id === family);
   const mainList = shown.filter((f) => f.group !== "derived");
   const derivedList = shown.filter((f) => f.group === "derived");
   const picked = grids.find((f) => f.id === family);
@@ -260,9 +262,16 @@ export function RadarProductPanel() {
         <div className="rpp__body" ref={setBody}>
           {/* Only what this radar has: a NEXRAD site lists no Unfiltered
               Reflectivity, a Brazilian volume no Level III products. Greyed-out
-              rows for what it lacks made the list read as broken. The product
-              on screen stays listed while the store moves off it. */}
+              rows for what it lacks made the list read as broken, and so did a
+              whole catalogue whose rows then vanished: a product appears once
+              the radar is known to publish it. The product on screen stays
+              listed while the store moves off it. */}
           {mainList.map(item)}
+          {grids.some((f) => f.checking) && (
+            <div className="rpp__reading" aria-live="polite">
+              Reading {siteName}'s products…
+            </div>
+          )}
           {/* Products computed here from the Level II volume
               (backend/radar_derived.py). Folded, only the one on screen stays. */}
           {derivedList.length > 0 && (

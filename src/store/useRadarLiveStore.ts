@@ -1,3 +1,4 @@
+import { isBrazilSite } from "../lib/brazilRadar";
 import { create } from "zustand";
 
 import { fetchLiveStatus, setComposeLive, type LiveStatus } from "../lib/radarFrames";
@@ -27,7 +28,7 @@ const POLL_MS = 8_000;
 /** The radar to follow, or null when nothing live in Level II is on screen. */
 function wanted(): string | null {
   const s = useNexradStore.getState();
-  if (!s.site || s.site.startsWith("BR-") || s.archiveTime !== null || s.archiveDate || !s.autoUpdate) return null;
+  if (!s.site || isBrazilSite(s.site) || s.archiveTime !== null || s.archiveDate || !s.autoUpdate) return null;
   if (!s.product.startsWith("L2")) return null;
   if (!useAppStore.getState().layers["nexrad"]?.visible) return null;
   if (typeof document !== "undefined" && document.hidden) return null;

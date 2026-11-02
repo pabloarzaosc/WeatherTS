@@ -10,6 +10,7 @@ import { hazardOf } from "./alertTiers";
 export type AlertGroupId =
   | "warning"
   | "watch"
+  | "alert"
   | "advisory"
   | "statement"
   | "outlook"
@@ -20,6 +21,7 @@ export type AlertGroupId =
 export const ALERT_GROUPS: { id: AlertGroupId; label: string }[] = [
   { id: "warning", label: "Warnings" },
   { id: "watch", label: "Watches" },
+  { id: "alert", label: "Alerts" },
   { id: "advisory", label: "Advisories" },
   { id: "statement", label: "Statements" },
   { id: "outlook", label: "Outlooks" },
@@ -37,6 +39,8 @@ export function alertGroup(a: Pick<NwsAlert, "event">): AlertGroupId {
   if (/outlook/i.test(ev)) return "outlook";
   if (/forecast/i.test(ev)) return "forecast";
   const k = alertKind(ev);
+  // Brazil's colour notices: a watch in all but name.
+  if (k === "watch" && / alert$/i.test(ev)) return "alert";
   return k === "other" ? "advisory" : k;
 }
 
@@ -148,6 +152,7 @@ export function alertTags(a: NwsAlert): AlertTag[] {
   let t = TAGS.get(a);
   if (t) return t;
   t = [];
+  if (a.level) t.push({ key: "lvl", text: a.level, hot: a.severity === "Extreme" });
   const p = a.parameters;
   const tor = param(p, "tornadoDetection");
   if (tor) t.push({ key: "tor", text: `Tornado ${tor.toLowerCase()}`, hot: /observed/i.test(tor) });

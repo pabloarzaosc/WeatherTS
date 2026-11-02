@@ -3,106 +3,6 @@
    ============================================================ */
 
 /* -----------------------------------------------------------
-   Email list — powered by MailerLite (embedded form endpoint).
-
-   The site stays 100% static: the browser POSTs the email straight
-   to MailerLite's public form endpoint. No backend, no server, no
-   secret key. MailerLite stores every signup, and the one message
-   goes out as a campaign from its dashboard to everyone on the form.
-
-   The values below come straight from the MailerLite embed code
-   (form action: .../jsonp/{ACCOUNT}/forms/{FORM_ID}/subscribe).
-
-   CORS: the endpoint returns `access-control-allow-origin: *` and
-   accepts a urlencoded POST (a CORS-safelisted "simple" request, no
-   preflight), so a normal fetch can read the JSON response —
-   {"success":true} on success.
-
-   Until the IDs below are filled in, the form falls back to opening
-   the visitor's email client (mailto) so it's never dead.
-   ----------------------------------------------------------- */
-
-const MAILERLITE_ACCOUNT = "2512895";            // MailerLite account ID
-const MAILERLITE_FORM_ID = "193117441524499680"; // MailerLite embedded form ID
-const WAITLIST_MAILTO    = "contact@weatherts.tech"; // fallback, used only if the IDs above are blank
-
-const MAILERLITE_ENDPOINT = MAILERLITE_ACCOUNT && MAILERLITE_FORM_ID
-  ? `https://assets.mailerlite.com/jsonp/${MAILERLITE_ACCOUNT}/forms/${MAILERLITE_FORM_ID}/subscribe`
-  : "";
-
-const form = document.getElementById("waitlist");
-const input = document.getElementById("email");
-const msg = document.getElementById("waitlist-msg");
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const JOINED = "You're on the list. The one email comes when WeatherTS leaves beta.";
-
-function setMsg(text, kind) {
-  msg.textContent = text;
-  msg.classList.remove("is-ok", "is-err");
-  if (kind) msg.classList.add(kind);
-}
-
-if (form) {
-  // if the visitor already joined, show the confirmed state
-  try {
-    if (localStorage.getItem("weatherts_waitlist") === "1") {
-      form.querySelector(".btn").textContent = "You're on the list";
-      setMsg(JOINED, "is-ok");
-    }
-  } catch (_) { /* localStorage unavailable — carry on */ }
-
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const email = input.value.trim();
-
-    if (!EMAIL_RE.test(email)) {
-      input.setAttribute("aria-invalid", "true");
-      setMsg("Check the email — something looks off.", "is-err");
-      input.focus();
-      return;
-    }
-    input.removeAttribute("aria-invalid");
-
-    const btn = form.querySelector(".btn");
-    const done = () => {
-      try { localStorage.setItem("weatherts_waitlist", "1"); } catch (_) {}
-      btn.textContent = "You're on the list";
-      input.value = "";
-    };
-
-    if (MAILERLITE_ENDPOINT) {
-      setMsg("Sending…", null);
-      btn.disabled = true;
-      try {
-        // urlencoded, matching the native MailerLite form's default enctype,
-        // so this stays a simple request (no preflight) with a readable reply.
-        const data = new URLSearchParams();
-        data.append("fields[email]", email);
-        data.append("ml-submit", "1");
-        data.append("anticsrf", "true");
-        const res = await fetch(MAILERLITE_ENDPOINT, { method: "POST", body: data });
-        const out = await res.json().catch(() => ({}));
-        if (!res.ok || out.success === false) throw new Error("subscribe failed");
-        done();
-        setMsg(JOINED, "is-ok");
-      } catch (_) {
-        setMsg("Something went wrong on my end. Try again in a bit?", "is-err");
-      } finally {
-        btn.disabled = false;
-      }
-    } else {
-      // no-backend fallback: open the email client pre-filled
-      const subject = encodeURIComponent("Email list — WeatherTS");
-      const body = encodeURIComponent("I'd like the email when WeatherTS leaves beta.\n\nMy email: " + email);
-      window.location.href = `mailto:${WAITLIST_MAILTO}?subject=${subject}&body=${body}`;
-      done();
-      setMsg("Opened your email client with the signup ready — just hit send.", "is-ok");
-    }
-  });
-}
-
-/* -----------------------------------------------------------
    Download — always whatever the newest release is.
 
    No version is written down anywhere on this page. The links start
@@ -274,16 +174,16 @@ const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").mat
 
 (function reveal() {
   const targets = document.querySelectorAll(
-    "main .head, main .lede, main .group, main .feat, main .faq__item, main .person, main .people__label," +
-    " main .facts--dl, main .waitlist, main .handle, main .invite, main .center > .btn, main .center > .note, #credits .narrow > .note",
+    "main .head, main .lede, main .group, main .feat, main .flow, main .cov, main .faq__item, main .person, main .people__label," +
+    " main .facts--dl, main .handle, main .invite, main .center > .btn, main .center > .note, #credits .narrow > .note",
   );
-  document.querySelectorAll(".group__list").forEach((list) => {
+  document.querySelectorAll(".group__list, .flow__steps").forEach((list) => {
     [...list.children].forEach((li, i) => li.style.setProperty("--i", String(i)));
   });
   if (!("IntersectionObserver" in window) || REDUCED_MOTION) return;
 
   targets.forEach((el) => {
-    const siblings = [...el.parentElement.children].filter((c) => c.matches(".group, .faq__item, .person"));
+    const siblings = [...el.parentElement.children].filter((c) => c.matches(".group, .flow, .faq__item, .person"));
     const i = siblings.indexOf(el);
     el.style.setProperty("--d", `${Math.min(Math.max(i, 0) * 80, 400)}ms`);
     el.classList.add("reveal");

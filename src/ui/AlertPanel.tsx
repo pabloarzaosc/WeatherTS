@@ -302,6 +302,14 @@ function AlertDetail({
         {a.senderName && (
           <p className="al-sender">
             {a.senderName} <OfficeLink wfo={alertWfo(a)} />
+            {a.web && (
+              <>
+                {" "}
+                <a href={a.web} target="_blank" rel="noreferrer">
+                  Official page
+                </a>
+              </>
+            )}
           </p>
         )}
       </section>
@@ -547,7 +555,7 @@ function AlertList({
       <div className="alert-list__head">
         <div>
           <span className="alert-list__title">
-            NWS Alerts{timeFilter !== null && <span className="alert-list__astag"> at {fmtZ(timeFilter)}</span>}
+            Alerts{timeFilter !== null && <span className="alert-list__astag"> at {fmtZ(timeFilter)}</span>}
           </span>
           <span className="alert-list__count">
             {status === "loading"

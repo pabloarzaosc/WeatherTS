@@ -10,7 +10,8 @@ import { useNexradStore } from "../../store/useNexradStore";
 import { LoopLength } from "../LoopLength";
 import { FramesButton } from "../FramesPanel";
 import { getMap } from "../../map/mapInstance";
-import { isBrazilSite } from "../../lib/brazilRadar";
+import { isBrazilSite, isEuropeSite } from "../../lib/brazilRadar";
+import { countryName } from "../../lib/radarSites";
 import { useObsStore } from "../../store/useObsStore";
 import { useProductInfoStore } from "../../store/useProductInfoStore";
 import { VelocityOptions } from "../VelocityOptions";
@@ -172,7 +173,10 @@ export function RadarView() {
 
   const usSites = sites.filter((s) => s.country === "US" && s.type !== "TDWR");
   const tdwrSites = sites.filter((s) => s.type === "TDWR");
-  const brVolumes = sites.filter((s) => isBrazilSite(s.id));
+  const brVolumes = sites.filter((s) => isBrazilSite(s.id) && !isEuropeSite(s.id));
+  const euSites = sites
+    .filter((s) => isEuropeSite(s.id))
+    .sort((a, b) => countryName(a.country).localeCompare(countryName(b.country)) || a.name.localeCompare(b.name));
   const otherSites = sites.filter((s) => s.country !== "US" && !isBrazilSite(s.id));
   // radar-sites: favourites first, and each radar's live standing as its hint
   useRadarSitesStore((s) => s.feed);
@@ -258,6 +262,14 @@ export function RadarView() {
               hint: siteHint(s.id) ?? (s.online === false ? "offline" : undefined),
               disabled: siteIsDown(s.id) || (s.online === false && !inArchive),
               tone: siteIsDown(s.id) || s.online === false ? ("warn" as const) : undefined,
+            })),
+            ...(euSites.length ? [{ value: "__eu", label: "Europe", disabled: true }] : []),
+            // Not disabled when quiet: it opens and says since when (backend/opera_radar.py).
+            ...euSites.map((s) => ({
+              value: s.id,
+              label: `${countryName(s.country)}: ${s.name.split(" · ")[0]} (${s.icao})`,
+              hint: s.online === false ? "offline" : undefined,
+              tone: s.online === false ? ("warn" as const) : undefined,
             })),
             ...(otherSites.length ? [{ value: "__other", label: "Other", disabled: true }] : []),
             ...otherSites.map((s) => ({

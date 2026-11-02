@@ -95,6 +95,11 @@ def _br_files(site: str, stamp: str) -> list[Path]:
 
     if not brazil_radar._ID_RE.fullmatch(site):
         raise FileError(f"Unknown radar {site}")
+    if brazil_radar._remote(site):
+        files = brazil_radar.REMOTE.frame_paths(site, stamp)
+        if not files:
+            raise LookupError(f"No files of {site} at {stamp} are left in the bucket.")
+        return files
     vdir = brazil_radar.STORE / site / stamp
     if not vdir.is_dir():
         raise LookupError(f"No volume {stamp} kept for {site}.")
@@ -115,6 +120,17 @@ def describe(site: str, key: str) -> dict:
         return hit
 
     if m := _BR_KEY.fullmatch(key):
+        if site.startswith("EU-"):
+            # A European frame's files may not be here yet: the names say enough
+            # for the details row, the download fetches them. Not kept, as a young
+            # frame's files still change.
+            import brazil_radar  # noqa: PLC0415
+
+            names = brazil_radar.REMOTE.parts(site, m.group(1))
+            if not names:
+                raise LookupError(f"No files of {site} at {m.group(1)} are left in the bucket.")
+            return {"name": _safe(names[0]) if len(names) == 1 else f"{site}_{m.group(1)}.zip", "bytes": None,
+                    "files": len(names), "level": "Volume", "source": "EUMETNET OPERA Open Radar Data", "partial": False}
         files = _br_files(site, m.group(1))
         size = sum(p.stat().st_size for p in files)
         name = _safe(files[0].name) if len(files) == 1 else f"{site}_{m.group(1)}.zip"

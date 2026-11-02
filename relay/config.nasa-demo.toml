@@ -1,0 +1,33 @@
+# WeatherTS radar relay -- demonstration with real CEMADEN volumes.
+#
+# The NASA GPM Validation Network republishes CEMADEN's radar volumes around
+# each GPM overpass (CfRadial, gzipped: every elevation, every moment). This
+# configuration serves Maceio's from 24 February 2026 through the same
+# pipeline and API the live CEMADEN feed will use:
+#
+#   python -m relay --config config.nasa-demo.toml --once
+#   python -m relay --config config.nasa-demo.toml --api-only
+#
+# The retention is a year here, so a February volume is not pruned; the live
+# relay keeps 36 hours.
+
+[relay]
+retention_hours = 8760
+poll_seconds = 3600
+concurrency = 2
+
+[api]
+host = "127.0.0.1"
+port = 8090
+
+[storage]
+kind = "local"
+path = "./data-nasa-demo"
+
+[sources.nasa]
+type = "nasa_vn"
+only_dates = ["2026-02-24"]   # leave out to take every overpass inside the retention
+
+[[radars]]
+id = "BR-MCZ"
+source = "nasa"               # NASA's code for Maceio: MC1

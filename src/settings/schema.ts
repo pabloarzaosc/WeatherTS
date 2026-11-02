@@ -13,6 +13,7 @@
 import { PLAY_SPEEDS, speedLabel } from "../lib/playSpeeds";
 import { ALERT_SOUNDS, ALERT_TIERS, HAZARD_GROUPS, NWS_EVENTS, defaultTypeSound, eventSlug, hazardOf } from "../lib/alertTiers";
 import { defaultEventColor } from "../lib/nwsAlerts";
+import { WORLD_SOURCES, worldSourceKey } from "../lib/worldAlerts";
 
 const HAZARD_LABEL = new Map(HAZARD_GROUPS.map((g) => [g.id, g.label]));
 
@@ -235,6 +236,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     label: "Alerts",
     description: "Drawing, filters, flashing and sounds. Each alert type has its own page below.",
     items: [
+      { key: "alerts.source.us", label: "United States: NWS", type: "toggle", default: true, group: "Sources" },
+      ...WORLD_SOURCES.map((s): SettingDef => ({ key: worldSourceKey(s.id), label: s.label, type: "toggle", default: true, group: "Sources", hint: s.hint })),
       pct("alerts.warningFill", "Warning fill", 0.1, 0.6, "Shading inside warning polygons.", "Drawing"),
       pct("alerts.areaFill", "Watch and advisory fill", 0.14, 0.6, "Watches and advisories have no outline by default, so this is their whole shape.", "Drawing"),
       { key: "alerts.lineWidth", label: "Outline width", type: "slider", default: 1, min: 0, max: 4, step: 0.05, unit: "×", group: "Drawing" },

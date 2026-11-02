@@ -31,6 +31,8 @@ a = Analysis(
         collect_data_files('sharppy')
         + collect_data_files('sutils')
         + [(os.path.join(PAL_SRC, '*.pal'), 'palettes')]
+        + [(os.path.join(SPECPATH, 'data', 'emma_regions.json.gz'), 'data')]
+        + [(os.path.join(SPECPATH, 'data', 'opera_radars.json'), 'data')]
     ),
     hiddenimports=[
         *sharppy_imports,

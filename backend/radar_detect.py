@@ -1565,6 +1565,10 @@ def brazil_tilts(site: str, stamp: str) -> tuple[list[Tilt], dict, Optional[dict
             t.pol = sw
         if t.pol is None and t.vel is None and "REF" in data:
             t.pol = sw
+        # A European frame can have a tilt's velocity and reflectivity in separate
+        # sweeps, in either order: the reflectivity counts whichever came first.
+        elif t.pol is None and "REF" in data and "VEL" not in data and br._remote(site):
+            t.pol = sw
     env = None
     try:
         env = br.environment(vol.lat, vol.lon, vol.unix)
@@ -1712,7 +1716,7 @@ def _resolve(site: str, key: str, at: Optional[float]) -> tuple[str, Any, bool]:
     if br.is_br(site):
         stamp = key.split(":", 1)[1] if key.startswith("L2BR:") else br._newest_stamp(site.upper(), int(at) if at else None)
         if not stamp:
-            raise ValueError(f"No volume kept for {site}")
+            raise ValueError(br.REMOTE.quiet_note(site.upper(), at=at) if br._remote(site) else f"No volume kept for {site}")
         return f"L2BR:{stamp}", stamp, True
     import radar_xsect
     k = key if key.startswith(("L2:", "L2A:")) else ""

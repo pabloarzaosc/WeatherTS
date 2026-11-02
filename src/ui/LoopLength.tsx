@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-import { isBrazilSite } from "../lib/brazilRadar";
+import { isBrazilSite, isEuropeSite } from "../lib/brazilRadar";
 import { framesRev, meanFrameBytes, subscribeFrames } from "../lib/radarFrameStatus";
 import { wireOptions } from "../lib/radarOptions";
 import { LOOP_MINUTES, useNexradStore } from "../store/useNexradStore";
@@ -73,7 +73,7 @@ export function LoopLength() {
   return (
     <label className="sfcobs__field">
       <span className="sfcobs__label">
-        Loop length{isBrazilSite(site) ? " — the archive volumes" : l2 ? " — Level II volumes" : ""}
+        Loop length{isEuropeSite(site) ? " — volumes" : isBrazilSite(site) ? " — the archive volumes" : l2 ? " — Level II volumes" : ""}
       </span>
       <Select
         value={String(minutes)}

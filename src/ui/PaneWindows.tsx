@@ -72,7 +72,9 @@ export function PaneMenuItems({ id, onDone, itemClass }: { id: string; onDone: (
   const site = useNexradStore((s) => s.site);
   const count = useAppStore((s) => s.paneCount);
   const radarOn = useAppStore((s) => !!s.layers.nexrad?.visible);
-  const canCompare = !view && radarOn && !!site && !!host && !host.empty;
+  // Nothing to compare with until the radar has said what it publishes.
+  const listed = useNexradStore((s) => s.grids.some((f) => !f.checking && !f.unavailable));
+  const canCompare = !view && radarOn && !!site && !!host && !host.empty && listed;
   const act = (fn: () => void) => () => {
     fn();
     onDone();
@@ -85,7 +87,7 @@ export function PaneMenuItems({ id, onDone, itemClass }: { id: string; onDone: (
           className={itemClass}
           disabled={!canCompare}
           onClick={act(() => startCompare(id))}
-          title={canCompare ? "Split this pane between two products with a divider" : "Show a radar product in this pane first"}
+          title={canCompare ? "Split this pane between two products with a divider" : site && !listed ? "Reading this radar's products…" : "Show a radar product in this pane first"}
         >
           <Columns2 size={15} />
           Compare two products

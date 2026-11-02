@@ -52,7 +52,7 @@ export function keyForFamily(id: string): string | null {
   return PRODUCT_KEYS.find((k) => k.ids.includes(id))?.key ?? null;
 }
 
-const usable = (f: ProductFamily | undefined): f is ProductFamily => !!f && !f.unavailable && f.tilts.length > 0;
+const usable = (f: ProductFamily | undefined): f is ProductFamily => !!f && !f.unavailable && !f.checking && f.tilts.length > 0;
 
 /** The family a product key stands for at the radar on screen, or null. */
 export function familyForKey(grids: ProductFamily[], key: string): ProductFamily | null {

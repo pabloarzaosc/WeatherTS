@@ -23,7 +23,7 @@
 
 <title>WeatherTS — radar, satellite and models on one map</title>
 
-<meta name="description" content="A free desktop weather workstation. NEXRAD Level II and III with each radar's real tilts, ten satellites sharp at every zoom, 40 forecast models and analyses, SHARPpy soundings, station plots, NWS alerts and SPC outlooks on one map and one timeline." />
+<meta name="description" content="A free weather workstation for Windows: NEXRAD radar with storm tracks and cross-sections, ten satellites, GOES lightning, 41 models and analyses, a mesoanalysis archive back to 2005, soundings, tropical cyclones and alerts on one timeline." />
 <meta name="color-scheme" content="light dark" />
 <meta name="theme-color" content="#e3eaf3" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#202020" media="(prefers-color-scheme: dark)" />
@@ -31,7 +31,7 @@
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="WeatherTS" />
 <meta property="og:title" content="WeatherTS — radar, satellite and models on one map" />
-<meta property="og:description" content="A free desktop weather workstation: NEXRAD radar, ten satellites, 40 forecast models and analyses, soundings, stations, alerts and outlooks on one timeline." />
+<meta property="og:description" content="A free weather workstation for Windows: NEXRAD radar with storm tracks and cross-sections, ten satellites, GOES lightning, 41 forecast models and analyses, a mesoanalysis archive back to 2005, soundings, tropical cyclones, rivers, space weather, alerts and outlooks on one timeline." />
 <meta property="og:image" content="https://weatherts.tech/og-image.png" />
 <meta property="og:image:alt" content="WeatherTS: radar, satellite, models and soundings on one map. A free weather workstation for Windows." />
 <meta property="og:image:width" content="1200" />
@@ -39,7 +39,7 @@
 <meta property="og:url" content="https://weatherts.tech/" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="WeatherTS — radar, satellite and models on one map" />
-<meta name="twitter:description" content="A free desktop weather workstation: NEXRAD radar, satellite loops, forecast models, soundings, alerts and outlooks on one timeline." />
+<meta name="twitter:description" content="A free weather workstation for Windows: NEXRAD radar, satellite loops, GOES lightning, forecast models, a mesoanalysis archive back to 2005, soundings, tropical cyclones, space weather, alerts and outlooks on one timeline." />
 <meta name="twitter:image" content="https://weatherts.tech/og-image.png" />
 <meta name="twitter:site" content="@WeatherTS_ofc" />
 
@@ -49,7 +49,8 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 
 <!-- What the page is about, for search engines: one app, free, for Windows,
-     and the accounts that are also it. -->
+     what is in it, and the accounts that are also it. The feature list names
+     only what the released app has. -->
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -66,7 +67,7 @@
       "@id": "https://weatherts.tech/#app",
       "name": "WeatherTS",
       "alternateName": "Weather TS",
-      "description": "A free desktop weather workstation for Windows: NEXRAD Level II and III radar, ten weather satellites, 40 forecast models and analyses, SHARPpy soundings, surface station plots, NWS alerts and SPC outlooks on one map and one timeline.",
+      "description": "A free weather workstation for Windows: NEXRAD Level II and III radar with storm tracks, normalized rotation and cross-sections, ten weather satellites, GOES lightning, 41 forecast models and analyses, a mesoanalysis archive back to 2005, SHARPpy soundings, tropical cyclones, river gauges, space weather, surface station plots, NWS alerts and SPC outlooks on one map and one timeline.",
       "applicationCategory": "UtilitiesApplication",
       "applicationSubCategory": "Weather",
       "operatingSystem": "Windows 10, Windows 11",
@@ -75,6 +76,24 @@
       "image": "https://weatherts.tech/og-image.png",
       "isAccessibleForFree": true,
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "featureList": [
+        "NEXRAD Level II and Level III radar with each radar's real tilts",
+        "Dual-pol products and split screen up to six panes",
+        "Storm cell tracks and reports with hail size, TVS markers, and normalized rotation (NROT)",
+        "Vertical cross-sections through the Level II volume",
+        "GOES-East and GOES-West lightning (GLM)",
+        "Ten weather satellites: GOES, Himawari, Meteosat, NOAA-20/21 and Metop",
+        "41 forecast models, analyses and MRMS sources with over 300 products",
+        "Mesoanalysis archive: SPC severe parameters for any hour since January 2005",
+        "SHARPpy soundings from radiosondes, models and aircraft",
+        "Tropical cyclones worldwide, with storm history back to 1842",
+        "SPC, WPC, CPC and NHC outlooks with past issuances",
+        "NWS alerts, storm reports and mesoscale discussions",
+        "Surface station plots worldwide and a page for each station",
+        "River gauges and hydrographs for the US and Brazil",
+        "Space weather from NOAA SWPC and NASA SDO",
+        "PNG, GIF and MP4 export"
+      ],
       "author": { "@type": "Person", "name": "Pablo Arzão", "url": "https://github.com/pabloarzaosc" },
       "sameAs": [
         "https://github.com/pabloarzaosc/WeatherTS",
@@ -101,6 +120,9 @@
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></symbol>
   <symbol id="i-map" viewBox="0 0 24 24"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" x2="9" y1="3" y2="18"/><line x1="15" x2="15" y1="6" y2="21"/></symbol>
+  <symbol id="i-hurricane" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="4.6"/><path d="M16.32 10.43L16.12 9.65L15.85 8.85L15.46 8.03L14.92 7.22L14.22 6.45L13.34 5.77L12.3 5.21L11.1 4.81L9.77 4.6L8.34 4.64L6.86 4.94L5.36 5.52L3.91 6.41L2.57 7.6"/><path d="M7.68 13.57L7.88 14.35L8.15 15.15L8.54 15.97L9.08 16.78L9.78 17.55L10.66 18.23L11.7 18.79L12.9 19.19L14.23 19.4L15.66 19.36L17.14 19.06L18.64 18.48L20.09 17.59L21.43 16.4"/></symbol>
+  <symbol id="i-waves" viewBox="0 0 24 24"><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></symbol>
   <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
   <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
@@ -112,13 +134,18 @@
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-thermo" viewBox="0 0 24 24"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></symbol>
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
-  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol>
   <symbol id="i-grid" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 12h18"/><path d="M12 3v18"/></symbol>
   <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
   <symbol id="i-tornado" viewBox="0 0 24 24"><path d="M21 4H3"/><path d="M18 8H6"/><path d="M19 12H9"/><path d="M16 16h-6"/><path d="M11 20H9"/></symbol>
+  <symbol id="i-columns" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 3v18"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+  <symbol id="i-slice" viewBox="0 0 24 24"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 11.207a.5.5 0 0 1 .146-.353l2-2a.5.5 0 0 1 .708 0l3.292 3.292a.5.5 0 0 0 .708 0l4.292-4.292a.5.5 0 0 1 .854.353V16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></symbol>
   <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
   <symbol id="i-pause" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></symbol>
   <symbol id="i-expand" viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
   <symbol id="i-github" viewBox="0 0 16 16"><path class="fill" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.34c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.18-.89-1.18-.73-.5.05-.49.05-.49.81.06 1.23.83 1.23.83.72 1.23 1.88.87 2.34.67.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.83-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.22 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.52.56.83 1.28.83 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></symbol>
   <symbol id="i-xlogo" viewBox="0 0 24 24"><path class="fill" d="M18.24 2.25h3.31l-7.23 8.26 8.5 11.24h-6.65l-5.21-6.82-5.97 6.82H1.68l7.73-8.84L1.25 2.25h6.83l4.71 6.23 5.45-6.23Zm-1.16 17.52h1.83L7.08 4.13H5.12l11.96 15.64Z"/></symbol>
@@ -183,9 +210,11 @@
         </h1>
 
         <p class="hero__sub">
-          WeatherTS is a free desktop weather workstation. NEXRAD radar with the tilts each site is really flying,
-          ten satellites sharp at every zoom, forecast models from the HRRR to the ECMWF, SHARPpy
-          soundings, station plots, NWS alerts and SPC outlooks, all on one timeline.
+          WeatherTS is a free weather workstation for Windows. NEXRAD radar with the tilts each site is
+          really flying, storm tracks and cross-sections, ten satellites sharp at every zoom, GOES
+          lightning, forecast models from the HRRR to the ECMWF, a mesoanalysis archive back to 2005,
+          SHARPpy soundings, tropical cyclones, rivers, space weather, station plots, NWS alerts and
+          SPC outlooks, all on one timeline.
         </p>
 
         <div class="actions">
@@ -193,20 +222,18 @@
             <svg class="ic"><use href="#i-download"/></svg>
             Download for Windows
           </a>
-          <a class="btn" href="https://github.com/pabloarzaosc/WeatherTS" target="_blank" rel="noopener">
-            <svg class="ic ic--fill"><use href="#i-github"/></svg>
-            View on GitHub
-          </a>
         </div>
         <p class="note" id="dl-meta">Always the newest build · Windows 10 and 11, 64-bit</p>
       </div>
     </div>
 
+    <!-- Counted from the released app: the NEXRAD sites it lists, the
+         satellite menu, the Models panel's sources and their products. -->
     <div class="wrap">
       <dl class="facts">
         <div class="facts__cell"><dt>NEXRAD radars</dt><dd data-count="150" data-suffix="+">150+</dd></div>
         <div class="facts__cell"><dt>Satellites</dt><dd data-count="10">10</dd></div>
-        <div class="facts__cell"><dt>Models and analyses</dt><dd data-count="40">40</dd></div>
+        <div class="facts__cell"><dt>Models and analyses</dt><dd data-count="41">41</dd></div>
         <div class="facts__cell"><dt>Model products</dt><dd data-count="300" data-suffix="+">300+</dd></div>
       </dl>
     </div>
@@ -215,19 +242,20 @@
   <main>
 
     <!-- ─────────────  WHAT WORKS TODAY  ─────────────
-         Only what the app ships, taken from the layer registry, the catalog
-         and the release notes. Coverage is stated per feature, not claimed
-         for the whole page. Every picture and loop is a capture of the app
-         itself with real data, and its caption says which data and when. -->
+         Only what the released app ships, taken from the code of the release
+         and its notes. Coverage is stated per feature, not claimed for the
+         whole page. Every picture and loop is a capture of the app itself
+         with real data, and its caption says which data and when. -->
     <section class="section" id="today">
       <div class="wrap">
         <div class="head">
           <p class="head__label">What works today</p>
-          <h2 class="head__title">Everything below is in the app you download.</h2>
+          <h2 class="head__title">Everything below is in the app.</h2>
           <p class="head__sub">
             Every loop and picture here was captured from the app, with real data; the line under
-            each one says what it shows and when. Satellite, stations and the global models cover
-            the world, radar is the NEXRAD network, and most alerts and outlooks are US products.
+            each one says what it shows. Satellite, stations, soundings, tropical cyclones and the
+            global models cover the world, lightning covers the Americas, radar is the NEXRAD
+            network, and most alerts and outlooks are US products.
           </p>
         </div>
       </div>
@@ -262,17 +290,170 @@
               <header class="feat__head">
                 <svg class="ic"><use href="#i-radar"/></svg>
                 <h3>Radar</h3>
+                <span class="tag">NEXRAD + TDWR</span>
+              </header>
+              <p class="feat__lede">Level II and Level III from the whole NEXRAD network and the FAA's airport radars, with the tilts each radar is really flying, a 3D view of the whole storm and the radar's own detections.</p>
+              <ul class="group__list">
+                <li>Super-resolution Level II and Level III from every NEXRAD radar, including the sites in Puerto Rico, Alaska, Hawaii, Guam and South Korea.</li>
+                <li>Each radar's real tilts, checked when you pick it and every five minutes after: cuts below 0.5° and upper tilts up to 19.5° where the radar flies them. The product menu lists only what each radar has.</li>
+                <li>45 TDWR airport radars beside the NEXRADs: reflectivity, velocity, long-range reflectivity, VIL and echo tops, with loops and the archive.</li>
+                <li>A 3D view of the volume: draw a box over a storm and orbit it, in sunlit cloud with rain shafts and GOES lightning or in the product's colours, filled in above the top tilt from the neighbouring radar, with a cut plane through it.</li>
+                <li>Detections from Level II: mesocyclones followed up through the tilts with their base and top, tornado vortex signatures and debris signatures.</li>
+                <li>Reflectivity, velocity, storm-relative velocity, normalized rotation, the dual-pol products, echo tops, VIL, and one-hour and storm-total precipitation; from every tilt of Level II, composite reflectivity, echo tops, VIL, VIL density, rotational velocity and a tornado debris score.</li>
+                <li>Level II velocity unfolded by default, with two methods to choose from, and one storm motion for the whole app.</li>
+                <li>Loops from 30 minutes to 8 hours, with scans that fill in tilt by tilt as the radar flies them.</li>
+                <li>Level II for any day back to the 1990s, Level III since March 2022, a second radar in the same loop, and 80 notable events one click away.</li>
+                <li>Press and hold on the map, or right-click and choose Radar here, to switch to the nearest radar.</li>
+                <li>VAD wind profiles as a full-screen time-height display with barbs, and their hodograph.</li>
+                <li>Hold Shift for the value, Nyquist, beam height and width; over a couplet, delta-V, azimuthal shear, Vrot and the EF odds.</li>
+                <li>A gate filter, flashing cores, a maximum value trail and a scan line with sounds.</li>
+                <li>The value under the pointer, smoothing that follows the echo's outline, and units per product: kt, mph, m/s or km/h for velocity, kft or km for tops, inches or mm for rain.</li>
+                <li>Colour tables edited right on the map, Winter tables, and GRLevelX <code>.pal</code> files imported by the folder, sorted by product.</li>
+                <li>Each radar's label shows its state, and a radar that is down says why, in its office's words.</li>
+              </ul>
+            </div>
+          </article>
+
+          <!-- Storm tracks and rotation -->
+          <article class="feat" id="feat-storms">
+            <figure class="shot">
+              <div class="shot__bar">
+                <div class="shot__tabs" role="tablist" aria-label="Storm track demos">
+                  <button class="shot__tab" type="button" role="tab" aria-selected="true">Tracks and rotation</button>
+                </div>
+                <div class="shot__tools">
+                  <button class="shot__btn shot__zoom" type="button" aria-label="View full size"><svg class="ic"><use href="#i-expand"/></svg></button>
+                </div>
+              </div>
+              <div class="shot__stage">
+                <img class="shot__item" src="media/storm-tracks-dark.webp" data-dark="media/storm-tracks-dark.webp" data-light="media/storm-tracks-light.webp" width="1440" height="900" loading="lazy" decoding="async"
+                  alt="Two radar panes in WeatherTS: reflectivity and normalized rotation of the Matador, Texas supercell, with the NWS storm tracks and their forecast cones"
+                  data-cap="KLBB 0.5° reflectivity beside normalized rotation, with the NWS storm tracks and their forecast cones: the Matador, Texas supercell, 22 June 2023, 01:13 UTC." />
+              </div>
+              <figcaption class="shot__cap">KLBB 0.5° reflectivity beside normalized rotation, with the NWS storm tracks and their forecast cones: the Matador, Texas supercell, 22 June 2023, 01:13 UTC.</figcaption>
+            </figure>
+            <div class="feat__text">
+              <header class="feat__head">
+                <svg class="ic"><use href="#i-route"/></svg>
+                <h3>Storm tracks and rotation</h3>
                 <span class="tag">NEXRAD</span>
               </header>
-              <p class="feat__lede">Level II and Level III from the whole NEXRAD network, with the tilts each radar is really flying.</p>
+              <p class="feat__lede">The radar's storm cells with their forecasts, and a rotation product that reads the same near the radar and far from it.</p>
               <ul class="group__list">
-                <li>Super-resolution Level II and Level III, including the sites in Puerto Rico, Hawaii, Alaska, Guam, Korea and the Azores.</li>
-                <li>Each radar's real tilts, checked when you pick it: low cuts below 0.5° and upper tilts up to 19.5° where the radar flies them.</li>
-                <li>Dual-pol: correlation coefficient, differential reflectivity, specific differential phase and hydrometeor classification, plus spectrum width, differential phase and clutter filter power from Level II.</li>
-                <li>Storm tracks with forecast positions, hail size, rotation and TVS markers, and the towns in each path.</li>
-                <li>Loops and archive playback: Level III back to March 2022, Level II for any date.</li>
-                <li>Press and hold on the map to switch to the nearest radar.</li>
-                <li>Echo tops, VIL, precipitation totals, VAD wind profiles with a hodograph, and the value under the pointer.</li>
+                <li>Each cell's track so far and its forecast positions at 15, 30, 45 and 60 minutes, with time ticks across the path.</li>
+                <li>Tornado vortex signatures marked with an inverted triangle; mesocyclones named in the cell's report.</li>
+                <li>A report for each cell: motion, range, hail probability and maximum size, top and base, maximum reflectivity and its height, VIL, and the trend of each across recent scans.</li>
+                <li>The towns in its path with their distance and arrival time, and the warnings over it.</li>
+                <li>Normalized rotation (NROT): the shear across 5 radials by 5 gates, divided by the shear that counts as significant at that range. 1 is significant, 2.5 extreme; positive is cyclonic.</li>
+                <li>NROT is made from the super-resolution velocity the NWS has already dealiased, so velocity folds do not read as rotation. At 0.5°, 0.9° and 1.3°, with loops and archive playback.</li>
+                <li>Checked on Rolling Fork (KDGX, 25 March 2023): the scan's strongest NROT, 4.3, sits 2 km from the tornado's reported position.</li>
+              </ul>
+            </div>
+          </article>
+
+          <!-- Dual-pol and split panes -->
+          <article class="feat" id="feat-dualpol">
+            <figure class="shot">
+              <div class="shot__bar">
+                <div class="shot__tabs" role="tablist" aria-label="Dual-pol demos">
+                  <button class="shot__tab" type="button" role="tab" aria-selected="true">Two panes</button>
+                </div>
+                <div class="shot__tools">
+                  <button class="shot__btn shot__zoom" type="button" aria-label="View full size"><svg class="ic"><use href="#i-expand"/></svg></button>
+                </div>
+              </div>
+              <div class="shot__stage">
+                <img class="shot__item" src="media/radar-dualpol-dark.webp" data-dark="media/radar-dualpol-dark.webp" data-light="media/radar-dualpol-light.webp" width="1440" height="900" loading="lazy" decoding="async"
+                  alt="WeatherTS split into two radar panes: reflectivity beside correlation coefficient of the Greenfield, Iowa tornadic supercell, with a drop in correlation where the tornado lofts debris"
+                  data-cap="KDMX 0.5° reflectivity beside Level II correlation coefficient on one camera: the Greenfield, Iowa tornado's debris signature, 21 May 2024, 20:31 UTC." />
+              </div>
+              <figcaption class="shot__cap">KDMX 0.5° reflectivity beside Level II correlation coefficient on one camera: the Greenfield, Iowa tornado's debris signature, 21 May 2024, 20:31 UTC.</figcaption>
+            </figure>
+            <div class="feat__text">
+              <header class="feat__head">
+                <svg class="ic"><use href="#i-columns"/></svg>
+                <h3>Dual-pol, side by side</h3>
+                <span class="tag">NEXRAD</span>
+              </header>
+              <p class="feat__lede">Split the screen into two, four or six panes on one camera and one timeline, each with its own product.</p>
+              <ul class="group__list">
+                <li>Correlation coefficient, differential reflectivity, specific differential phase and hydrometeor classification, at every tilt the radar flies.</li>
+                <li>Spectrum width, differential phase and clutter filter power from Level II.</li>
+                <li>The hydrometeor classification legend names each class, from biological and wet snow to graupel and small, large and giant hail.</li>
+                <li>Pan, zoom or play one pane and the others follow. Two panes sit side by side, four tile 2×2 and six 3×2.</li>
+                <li>NWS alerts on every pane, and drawings too.</li>
+              </ul>
+            </div>
+          </article>
+
+          <!-- Cross-section -->
+          <article class="feat" id="feat-xsect">
+            <figure class="shot">
+              <div class="shot__bar">
+                <div class="shot__tabs" role="tablist" aria-label="Cross-section demos">
+                  <button class="shot__tab" type="button" role="tab" aria-selected="true">Full screen</button>
+                </div>
+                <div class="shot__tools">
+                  <button class="shot__btn shot__zoom" type="button" aria-label="View full size"><svg class="ic"><use href="#i-expand"/></svg></button>
+                </div>
+              </div>
+              <div class="shot__stage">
+                <img class="shot__item" src="media/xsect-dark.webp" data-dark="media/xsect-dark.webp" data-light="media/xsect-light.webp" width="1440" height="900" loading="lazy" decoding="async"
+                  alt="A full-screen cross-section of the Rolling Fork supercell in WeatherTS: Level II reflectivity from all 13 tilts, with the beams' centre lines drawn over it"
+                  data-cap="KDGX Level II super-resolution reflectivity from all 13 tilts, along a 50-mile line through the Rolling Fork, Mississippi supercell, 25 March 2023, 01:06 UTC." />
+              </div>
+              <figcaption class="shot__cap">KDGX Level II super-resolution reflectivity from all 13 tilts, along a 50-mile line through the Rolling Fork, Mississippi supercell, 25 March 2023, 01:06 UTC.</figcaption>
+            </figure>
+            <div class="feat__text">
+              <header class="feat__head">
+                <svg class="ic"><use href="#i-slice"/></svg>
+                <h3>Radar cross-sections</h3>
+                <span class="tag">Level II</span>
+              </header>
+              <p class="feat__lede">A vertical slice through every tilt of the radar's volume, along any line you draw.</p>
+              <ul class="group__list">
+                <li>Cross section, at the foot of the radar product panel: click two points on the map, then drag either end and the slice follows.</li>
+                <li>Reflectivity, velocity, storm-relative velocity, correlation coefficient, differential reflectivity, spectrum width or differential phase.</li>
+                <li>Opens full screen, with the centre line of each beam drawn over the slice and heights in kft or km.</li>
+                <li>The pointer reads the value and its height, and a dot on the map marks the same spot.</li>
+                <li>Sampled with the standard 4/3-earth beam geometry. The volume is read once, so moving the line after that is almost instant.</li>
+                <li>The timeline steps it through the scans, like the map.</li>
+              </ul>
+            </div>
+          </article>
+
+          <!-- Lightning -->
+          <article class="feat" id="feat-lightning">
+            <figure class="shot">
+              <div class="shot__bar">
+                <div class="shot__tabs" role="tablist" aria-label="Lightning demos">
+                  <button class="shot__tab" type="button" role="tab" aria-selected="true">Flashes</button>
+                </div>
+                <div class="shot__tools">
+                  <button class="shot__btn shot__zoom" type="button" aria-label="View full size"><svg class="ic"><use href="#i-expand"/></svg></button>
+                </div>
+              </div>
+              <div class="shot__stage">
+                <img class="shot__item" src="media/lightning-dark.webp" data-dark="media/lightning-dark.webp" data-light="media/lightning-light.webp" width="1440" height="900" loading="lazy" decoding="async"
+                  alt="GOES lightning flashes in WeatherTS, coloured by age, over radar reflectivity of storms across North Dakota, with the Lightning panel open"
+                  data-cap="GOES-East lightning mapper flashes, coloured by age, over KBIS 0.5° reflectivity: storms across North Dakota, the 15 minutes to 03:00 UTC, 21 June 2025." />
+              </div>
+              <figcaption class="shot__cap">GOES-East lightning mapper flashes, coloured by age, over KBIS 0.5° reflectivity: storms across North Dakota, the 15 minutes to 03:00 UTC, 21 June 2025.</figcaption>
+            </figure>
+            <div class="feat__text">
+              <header class="feat__head">
+                <svg class="ic"><use href="#i-zap"/></svg>
+                <h3>Lightning</h3>
+                <span class="tag">GOES GLM</span>
+              </header>
+              <p class="feat__lede">Every flash the GOES-East and GOES-West lightning mappers see, over the Americas and the oceans either side.</p>
+              <ul class="group__list">
+                <li>In-cloud and cloud-to-ground flashes alike, seen from orbit by the Geostationary Lightning Mappers.</li>
+                <li>Coloured by age: white for the last minute, then yellow, orange and red, to magenta for the oldest.</li>
+                <li>A window of 5, 10, 15, 30 or 60 minutes, from GOES-East, GOES-West or both: East east of 106°W, West the rest.</li>
+                <li>The panel counts the flashes in the window and in the last minute, and gives the newest one's time.</li>
+                <li>Live, from the files each satellite writes every 20 seconds; only flashes NOAA rates as good quality are drawn.</li>
+                <li>It follows the timeline: playing the radar shows the lightning of each scan's minutes, read ahead of the loop.</li>
               </ul>
             </div>
           </article>
@@ -305,10 +486,11 @@
               <p class="feat__lede">Ten satellites, every region each one covers, sharp at every zoom.</p>
               <ul class="group__list">
                 <li>GOES-East and GOES-West, NOAA-20 and NOAA-21, Himawari-9, Meteosat-12, Meteosat-9, Meteosat-11 (rapid scan), Metop-B and Metop-C.</li>
-                <li>CONUS, the 1-minute mesoscale sectors, the full disk and the regions cut from it, from South America to Australia and Europe, each with its own product list.</li>
+                <li>CONUS, the 1-minute mesoscale sectors, the full disks and the regions cut from them: South and Central America, the Pacific, Japan, Australia, Southeast Asia, Europe, Africa, India, the Middle East and more, each with its own product list.</li>
                 <li>All 16 GOES bands, 28 RGB composites and 28 Level 2 products, from cloud top height and fire detection to CAPE and precipitable water, each with its colour legend.</li>
                 <li>A quick picture first, then the sharp one in its place. Loops play as soon as each frame's quick picture is in, and sharpen while they play.</li>
-                <li>On the timeline like radar and models, with its own playback speed.</li>
+                <li>Loops of 6 to 288 frames on the timeline, like radar and models, with their own playback speed.</li>
+                <li>GOES straight from NOAA's data on Google Cloud, with AWS as the fallback; Himawari from AWS; CIRA's SLIDER, EUMETSAT and NASA GIBS.</li>
               </ul>
             </div>
           </article>
@@ -344,17 +526,101 @@
               <header class="feat__head">
                 <svg class="ic"><use href="#i-eye"/></svg>
                 <h3>Models</h3>
-                <span class="tag">40 sources</span>
+                <span class="tag">41 sources</span>
               </header>
               <p class="feat__lede">Forecast models, analyses and the MRMS mosaic, all in one Models panel.</p>
               <ul class="group__list">
-                <li>HRRR, RRFS, NAM, HREF, RAP, GFS, ECMWF, AIFS, ICON, GEM, NBM and NDFD, and the GEFS, ECMWF and AIFS ensembles.</li>
+                <li>Convection-allowing: the HRRR and RRFS, each also sub-hourly, the NAM Nest, the HRW ARW and FV3 runs, and the HREF and REFS ensembles.</li>
+                <li>Regional and global: the RAP, NAM, NDFD, GFS, AI GFS, ECMWF, ECMWF AIFS, ICON and GEM.</li>
+                <li>Ensembles: the GEFS, AI GEFS, HGEFS, ECMWF ENS, AIFS ENS and the NBM.</li>
                 <li>Over 300 products: temperature and wind, CAPE and shear, updraft helicity and hail, simulated reflectivity and infrared, precipitation type, rain and snow totals.</li>
-                <li>A run picker that opens on the newest long run, and a strip of the runs that forecast the moment on screen.</li>
+                <li>A run picker that opens on the newest long run, a strip of the runs that forecast the moment on screen, and one even pace through the whole run when it plays.</li>
                 <li>Compare models: a grid of up to nine maps, each with its own model and product.</li>
-                <li>The hurricane models HAFS, HWRF and HMON, and every model's track from the NHC's ATCF decks.</li>
-                <li>MRMS: 2-minute radar mosaic products, rainfall and flash flooding.</li>
-                <li>HRRR, RAP and RTMA analyses every hour, and RTMA Rapid Update every 15 minutes.</li>
+                <li>The hurricane models HAFS-A, HAFS-B, HWRF and HMON, and every model's track from the NHC's ATCF decks.</li>
+                <li>MRMS: the 2-minute radar mosaic products, rainfall (QPE) and flash flooding.</li>
+                <li>Analyses up to a week back: the HRRR, RAP and RTMA every hour, the RTMA Rapid Update every 15 minutes, and the GFS, NAM and NAM Nest every six hours.</li>
+              </ul>
+            </div>
+          </article>
+
+          <!-- Mesoanalysis archive -->
+          <article class="feat" id="feat-archive">
+            <figure class="shot">
+              <div class="shot__bar">
+                <div class="shot__tabs" role="tablist" aria-label="Mesoanalysis archive demos">
+                  <button class="shot__tab" type="button" role="tab" aria-selected="true">A historic day</button>
+                </div>
+                <div class="shot__tools">
+                  <button class="shot__btn shot__zoom" type="button" aria-label="View full size"><svg class="ic"><use href="#i-expand"/></svg></button>
+                </div>
+              </div>
+              <div class="shot__stage">
+                <img class="shot__item" src="media/archive-meso-dark.webp" data-dark="media/archive-meso-dark.webp" data-light="media/archive-meso-light.webp" width="1440" height="900" loading="lazy" decoding="async"
+                  alt="The mesoanalysis archive in WeatherTS: effective-layer STP over Oklahoma at 20Z on 20 May 2013, the hour of the Moore tornado, with the notable days listed beside the map"
+                  data-cap="Effective-layer STP from the RAP archive, 20 May 2013, 20Z, the hour of the Moore, Oklahoma tornado: 6.7 at Oklahoma City and Shawnee." />
+              </div>
+              <figcaption class="shot__cap">Effective-layer STP from the RAP archive, 20 May 2013, 20Z, the hour of the Moore, Oklahoma tornado: 6.7 at Oklahoma City and Shawnee.</figcaption>
+            </figure>
+            <div class="feat__text">
+              <header class="feat__head">
+                <svg class="ic"><use href="#i-history"/></svg>
+                <h3>Mesoanalysis archive</h3>
+                <span class="tag">Since 2005</span>
+              </header>
+              <p class="feat__lede">SPC's severe-weather parameters for any hour since January 2005, worked out the same way for every year.</p>
+              <ul class="group__list">
+                <li>NOAA's own analyses: the RAP's every hour, and the RUC's before May 2012, read from NOAA's archives on AWS and at NCEI.</li>
+                <li>Surface-based, mixed-layer and most-unstable CAPE and CIN, LCL, LFC and EL, Bunkers storm motion, 0–1 and 0–3 km helicity, and 0–1 and 0–6 km shear.</li>
+                <li>The effective inflow layer with its helicity and bulk shear, and SPC's effective-layer STP (with CIN) and SCP.</li>
+                <li>94 products in the surface, upper-air and severe groups, with contours, wind barbs, places and values, the value under the pointer, loops and the compare views.</li>
+                <li>Checked against the RAP's own fields where it has them: MLCAPE and MUCAPE agree at 0.99, helicity and shear at 0.97.</li>
+                <li>29 notable days one click away, from Greensburg in 2007 to 2025: the April 27, 2011 Super Outbreak, Joplin, Moore, El Reno, the 2012 and 2020 derechos, Rolling Fork, Greenfield and more.</li>
+                <li>A day plays as its convective day, 12Z to 11Z. On the notable days since March 2022, one button opens the radar that saw the storm at the same moment.</li>
+                <li>An hour takes a few seconds the first time and opens at once after that; up to 4 GB of hours stay on disk.</li>
+              </ul>
+            </div>
+          </article>
+
+          <!-- Tropical -->
+          <article class="feat" id="feat-tropical">
+            <figure class="shot">
+              <div class="shot__bar">
+                <div class="shot__tabs" role="tablist" aria-label="Tropical demos">
+                  <button class="shot__tab" type="button" role="tab" aria-selected="true">Storm page</button>
+                  <button class="shot__tab" type="button" role="tab" aria-selected="false">On the map</button>
+                  <button class="shot__tab" type="button" role="tab" aria-selected="false">From the record</button>
+                </div>
+                <div class="shot__tools">
+                  <button class="shot__btn shot__zoom" type="button" aria-label="View full size"><svg class="ic"><use href="#i-expand"/></svg></button>
+                </div>
+              </div>
+              <div class="shot__stage">
+                <img class="shot__item" src="media/tropical.webp" data-dark="media/tropical.webp" data-light="media/tropical-light.webp" width="1440" height="900" loading="lazy" decoding="async"
+                  alt="Hurricane Rachel's page in WeatherTS: the best track, NHC's forecast and the intensity models on one chart, the track guidance and the advisory"
+                  data-cap="Hurricane Rachel's page in the Tropical dashboard: best track, NHC's forecast and the intensity models, 6 October 2026, 18Z advisory." />
+                <img class="shot__item" src="media/tropical-card.webp" data-dark="media/tropical-card.webp" data-light="media/tropical-card-light.webp" width="1440" height="900" loading="lazy" decoding="async" hidden
+                  alt="Hurricane Rachel on the map in WeatherTS with its card open, over GOES-West's one-minute picture of the storm"
+                  data-cap="Rachel's card on the map, and the picture Show on Satellite picked for it: GOES-West's 1-minute mesoscale sector in GeoColor, 6 October 2026, 18:31 UTC." />
+                <img class="shot__item" src="media/tropical-history.webp" data-dark="media/tropical-history.webp" data-light="media/tropical-history-light.webp" width="1440" height="900" loading="lazy" decoding="async" hidden
+                  alt="Hurricane Katrina of 2005 in WeatherTS: its intensity and pressure day by day, and the storms of its season"
+                  data-cap="Katrina 2005 from the IBTrACS record: 150 kt and 902 mb at its peak, with every storm of its season." />
+              </div>
+              <figcaption class="shot__cap">Hurricane Rachel's page in the Tropical dashboard: best track, NHC's forecast and the intensity models, 6 October 2026, 18Z advisory.</figcaption>
+            </figure>
+            <div class="feat__text">
+              <header class="feat__head">
+                <svg class="ic"><use href="#i-hurricane"/></svg>
+                <h3>Tropical</h3>
+                <span class="tag">Worldwide</span>
+              </header>
+              <p class="feat__lede">Every tropical cyclone on Earth, with its forecasts, models, satellite and history, in a ten-tab dashboard and on the map.</p>
+              <ul class="group__list">
+                <li>NHC and CPHC cones, forecast tracks and coastal watches and warnings, JTWC forecast tracks, the track so far by category and the wind radii.</li>
+                <li>Click a storm for its card: Show on Satellite puts the best picture of it right now on the map, a 1-minute GOES or Himawari sector when one is on it; Show Spaghetti Models draws the models.</li>
+                <li>A storm page for each one: intensity, pressure and the 24-hour change against the models, the guidance, NHC's graphics and every advisory.</li>
+                <li>Wind speed probabilities, formation areas with their chances, and Hurricane Hunter flights live and back to 1989.</li>
+                <li>Any storm since 1842 in any basin, searchable by name; seasons ranked by ACE against the 1991-2020 normal, and the record books.</li>
+                <li>Sea surface temperature on any day since June 2002, ENSO back to 1870 and the MJO with its phase diagram.</li>
               </ul>
             </div>
           </article>
@@ -385,7 +651,7 @@
               </header>
               <p class="feat__lede">SPC, WPC, CPC and NHC outlooks in one panel, in their official colours.</p>
               <ul class="group__list">
-                <li>SPC Days 1 to 8: categorical, tornado, wind, hail and significant severe, with conditional intensity.</li>
+                <li>SPC Days 1 to 8: categorical, tornado, wind, hail and significant severe, with conditional intensity drawn as a hatch over the probability.</li>
                 <li>SPC fire weather, and WPC excessive rainfall and winter storm severity.</li>
                 <li>CPC 6–10 and 8–14 day, monthly and seasonal outlooks, drought and hazards, and NHC tropical formation.</li>
                 <li>Past issuances by date and time, the one before drawn as an outline, the forecast discussion, and the risk at any point you click.</li>
@@ -424,10 +690,48 @@
               </header>
               <p class="feat__lede">Airports, synoptic stations and mesonets as station plots, with a page for each station.</p>
               <ul class="group__list">
-                <li>METAR airports everywhere, WMO SYNOP stations worldwide, and the US mesonets and personal stations from MADIS.</li>
+                <li>Every METAR airport in the Aviation Weather Center's file, WMO SYNOP stations worldwide, and the US mesonets and personal stations from MADIS.</li>
                 <li>Brazil's INMET automatic stations, with your own INMET token.</li>
+                <li>Plots follow the timeline: at a past frame each station shows the report it had made by then, back about 15 days for airports and 5 for mesonets.</li>
+                <li>The last hour's rain and the present weather on each plot, where a station plot puts them.</li>
                 <li>A station page with current conditions, meteograms, charts of temperature, wind, pressure, humidity, visibility and rain, and the raw reports.</li>
                 <li>Stations that are not airports show rain, cloud and maximum and minimum temperature instead of flight categories.</li>
+              </ul>
+            </div>
+          </article>
+
+          <!-- Flooding -->
+          <article class="feat" id="feat-flooding">
+            <figure class="shot">
+              <div class="shot__bar">
+                <div class="shot__tabs" role="tablist" aria-label="Flooding demos">
+                  <button class="shot__tab" type="button" role="tab" aria-selected="true">Hydrograph</button>
+                </div>
+                <div class="shot__tools">
+                  <button class="shot__btn shot__zoom" type="button" aria-label="View full size"><svg class="ic"><use href="#i-expand"/></svg></button>
+                </div>
+              </div>
+              <div class="shot__stage">
+                <img class="shot__item" src="media/flooding.webp" data-dark="media/flooding.webp" data-light="media/flooding-light.webp" width="1440" height="900" loading="lazy" decoding="async"
+                  alt="The hydrograph of the Wapsipinicon River near DeWitt, Iowa, in WeatherTS: stage and flow against the flood categories, the NWS forecast and the rain"
+                  data-cap="The Wapsipinicon River near DeWitt, Iowa, in moderate flood on 6 October 2026, with the NWS forecast cresting in major flood." />
+              </div>
+              <figcaption class="shot__cap">The Wapsipinicon River near DeWitt, Iowa, in moderate flood on 6 October 2026, with the NWS forecast cresting in major flood.</figcaption>
+            </figure>
+            <div class="feat__text">
+              <header class="feat__head">
+                <svg class="ic"><use href="#i-waves"/></svg>
+                <h3>Flooding</h3>
+                <span class="tag">US and Brazil</span>
+              </header>
+              <p class="feat__lede">River gauges in the US and Brazil, each with a full hydrograph.</p>
+              <ul class="group__list">
+                <li>Every NWS river gauge, coloured by the flood category its stage is in now, with a ring on the ones forecast to reach a worse one.</li>
+                <li>In Brazil, the Geological Survey's flood alert stations (SGB) with their attention, alert and flood levels, and ANA's telemetry stations with level, flow and rain.</li>
+                <li>A full-screen hydrograph for each gauge: stage against the flood levels and the NWS forecast, flow against the normal for the date, and the rain measured and forecast for the next 7 days.</li>
+                <li>The gauges up and down the river a click away, the highest crests, what floods at which stage, and the chance of flooding over the next three months.</li>
+                <li>A search over every gauge by river, town or code, and a list of everything in flood or forecast to be, worst first.</li>
+                <li>NWS flood warnings, watches and advisories by kind, and the National Water Model's high flows, rapid onset flooding and inundation on the map.</li>
               </ul>
             </div>
           </article>
@@ -458,9 +762,10 @@
               </header>
               <p class="feat__lede">SHARPpy soundings from radiosondes, model forecasts and aircraft.</p>
               <ul class="group__list">
-                <li>Observed radiosondes, model point forecasts anywhere on the map, and ACARS aircraft profiles.</li>
-                <li>The full SPC sounding display: skew-T, hodograph, indices, storm motion, SARS analogues and STP.</li>
-                <li>Analysis, risk, comparison and trend views, and your own soundings by upload.</li>
+                <li>Observed radiosondes, ACARS aircraft profiles, and a model forecast sounding for any point: right-click the map and choose Sounding.</li>
+                <li>Area sounding: the model profile averaged over a box you drag, instead of one grid cell.</li>
+                <li>The full SPC sounding display: skew-T, hodograph, indices, storm motion, SARS analogues and STP. Its hodograph and Bunkers motions match the SPC's.</li>
+                <li>Analyze, Risk, Compare and Trends views, the radar's VAD wind profile, and your own soundings by upload.</li>
               </ul>
             </div>
           </article>
@@ -493,7 +798,49 @@
               <ul class="group__list">
                 <li>Full VTEC decoding: the hazard, what to expect, the impacts and when each alert expires.</li>
                 <li>Alerts follow the timeline: play a loop and the map shows the ones in force at each frame.</li>
+                <li>Intensity tiers (Observed, PDS, Emergency, Considerable, Destructive) with their own colours, six alert sounds, new warnings that flash, and storm motion arrows.</li>
+                <li>Settings for every type of alert, filters by state and by forecast office, and each office's page with its latest discussion.</li>
+                <li>A Now panel with what is happening across the US, biggest first, and local weather for any US spot.</li>
                 <li>Local storm reports, SPC mesoscale discussions and WPC precipitation discussions.</li>
+              </ul>
+            </div>
+          </article>
+
+          <!-- Space Weather -->
+          <article class="feat" id="feat-space">
+            <figure class="shot">
+              <div class="shot__bar">
+                <div class="shot__tabs" role="tablist" aria-label="Space weather demos">
+                  <button class="shot__tab" type="button" role="tab" aria-selected="true">Overview</button>
+                  <button class="shot__tab" type="button" role="tab" aria-selected="false">Aurora</button>
+                </div>
+                <div class="shot__tools">
+                  <button class="shot__btn shot__zoom" type="button" aria-label="View full size"><svg class="ic"><use href="#i-expand"/></svg></button>
+                </div>
+              </div>
+              <div class="shot__stage">
+                <img class="shot__item" src="media/space.webp" data-dark="media/space.webp" data-light="media/space-light.webp" width="1440" height="900" loading="lazy" decoding="async"
+                  alt="The Space Weather dashboard in WeatherTS: NOAA's scales, a day of X-rays, solar wind and protons, and a week of Kp"
+                  data-cap="The Space Weather overview on 6 October 2026: NOAA's scales, the last 24 hours of X-rays, solar wind and protons, and a week of Kp with SWPC's forecast." />
+                <img class="shot__item" src="media/space-aurora.webp" data-dark="media/space-aurora.webp" data-light="media/space-aurora-light.webp" width="1440" height="900" loading="lazy" decoding="async" hidden
+                  alt="The aurora forecast for both hemispheres in WeatherTS, with the hemispheric power under it"
+                  data-cap="OVATION's aurora forecast for both hemispheres, 6 October 2026, 23:10 UTC." />
+              </div>
+              <figcaption class="shot__cap">The Space Weather overview on 6 October 2026: NOAA's scales, the last 24 hours of X-rays, solar wind and protons, and a week of Kp with SWPC's forecast.</figcaption>
+            </figure>
+            <div class="feat__text">
+              <header class="feat__head">
+                <svg class="ic"><use href="#i-sun"/></svg>
+                <h3>Space Weather</h3>
+                <span class="tag">NOAA SWPC</span>
+              </header>
+              <p class="feat__lede">From the Sun to the aurora, from NOAA's Space Weather Prediction Center and NASA, in an eleven-tab dashboard.</p>
+              <ul class="group__list">
+                <li>NOAA's R, S and G scales and the key numbers on top of every tab.</li>
+                <li>Solar wind, X-rays and flares, protons and electrons, Kp and Dst, the field at geostationary orbit, CMEs and the WSA-Enlil model, and the solar cycle.</li>
+                <li>SDO and SUVI images and loops of the Sun, with its active regions.</li>
+                <li>Charts you can zoom and pan, and that move the image loops to the time under the pointer.</li>
+                <li>The aurora forecast, radio absorption, ionospheric TEC and the geoelectric field on the map.</li>
               </ul>
             </div>
           </article>
@@ -523,17 +870,244 @@
               </header>
               <p class="feat__lede">One map and one timeline, and the tools around them.</p>
               <ul class="group__list">
-                <li>Split screen into 1, 2, 4 or 6 panes on one camera and one timeline.</li>
-                <li>Export the view as PNG, or a loop of radar, satellite or models as GIF or MP4, with the WeatherTS name on every frame.</li>
+                <li>Split screen into 1 to 6 panes with dividers you drag. Drag a product between panes, compare two products inside one pane, give a pane its own camera or scrubber, or float it as a window.</li>
+                <li>Export the view as PNG, or a loop as GIF or MP4, of one pane or of all of them together, with a caption on each.</li>
+                <li>Copy a link to the moment on screen, a keyboard shortcut for everything (press ?), a minimal view and a broadcast mode for streams.</li>
+                <li>Draw on the map with a pen, lines, arrows, circles, rectangles and text, in any colour; drawings stay pinned to the ground, show on every pane and go into exports.</li>
                 <li>Eleven basemaps across vector, chart, imagery and terrain, and a globe projection.</li>
-                <li>Distance, area and radius measurements, and drawing on the map.</li>
-                <li>Settings for every part of the app, and light, dark and automatic themes.</li>
+                <li>Distance, area and radius measurements, and a place search.</li>
+                <li>Playback from 1x to 80x, with the time each product's frame stays on screen set in Settings.</li>
+                <li>One searchable Settings for every part of the app, and light, dark and automatic themes.</li>
+                <li>The workspace comes back as you left it: layers, the map, the radar and its options, and the dashboards that were open.</li>
                 <li>No account needed. Sign in to share your position with other chasers, see theirs and pin your home.</li>
                 <li>Updates install themselves on the next launch.</li>
               </ul>
             </div>
           </article>
 
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────  IN PRACTICE  ─────────────
+         Worked examples: how the parts above are used together. Every step
+         is something the released app does, named the way the app names it. -->
+    <section class="section section--band" id="examples">
+      <div class="wrap">
+        <div class="head">
+          <p class="head__label">In practice</p>
+          <h2 class="head__title">How the pieces work together.</h2>
+          <p class="head__sub">
+            Six ways a day goes in WeatherTS. Every step below is in the app today, named the way the
+            app names it.
+          </p>
+        </div>
+
+        <div class="flows">
+          <article class="flow">
+            <header class="flow__head">
+              <svg class="ic"><use href="#i-tornado"/></svg>
+              <h3>Before storms fire</h3>
+              <span class="tag">US</span>
+            </header>
+            <ol class="flow__steps">
+              <li>Open SPC's Day 1 outlook in the Outlooks panel, read the discussion, and click your target for its tornado, wind and hail risk.</li>
+              <li>Put the HRRR analysis on the map and walk back through MLCAPE, helicity and STP hour by hour on the timeline.</li>
+              <li>Open Compare models for the HRRR, NAM Nest and RRFS at the same forecast hour, side by side.</li>
+              <li>Right-click the target and choose Sounding for SHARPpy's full display, or Area sounding for the mean over a box you drag.</li>
+              <li>Turn on station plots for the dew points and winds coming in, and open the nearest airport's page.</li>
+            </ol>
+          </article>
+
+          <article class="flow">
+            <header class="flow__head">
+              <svg class="ic"><use href="#i-radar"/></svg>
+              <h3>When a storm goes up</h3>
+              <span class="tag">Radar</span>
+            </header>
+            <ol class="flow__steps">
+              <li>Press and hold near the storm to switch to the nearest radar.</li>
+              <li>Split into four panes on one camera: reflectivity, storm-relative velocity, NROT and correlation coefficient.</li>
+              <li>Open the cell's report: hail size, top and VIL with their trend, the towns in its path with arrival times, and the warnings over it.</li>
+              <li>Switch on Lightning: the GLM flashes of each scan's minutes play with the loop.</li>
+              <li>Draw a cross-section through the core, then export the loop as GIF or MP4.</li>
+            </ol>
+          </article>
+
+          <article class="flow">
+            <header class="flow__head">
+              <svg class="ic"><use href="#i-history"/></svg>
+              <h3>Back to a historic day</h3>
+              <span class="tag">Archive</span>
+            </header>
+            <ol class="flow__steps">
+              <li>In the Models panel, pick Mesoanalysis archive 13 km on the Archive shelf, then Rolling Fork, 25 March 2023, from the notable days.</li>
+              <li>The map flies to the Mississippi Delta and opens on 01Z on effective STP, worked out from that hour's own analysis; SCP and helicity are a click away.</li>
+              <li>Radar from KDGX at this hour opens the radar's archive at the same moment; the analysis follows the radar on the timeline.</li>
+              <li>Switch the radar to NROT and step through the couplet scan by scan.</li>
+              <li>In the Outlooks panel, pick the SPC outlook issued that day from the archive.</li>
+            </ol>
+          </article>
+
+          <article class="flow">
+            <header class="flow__head">
+              <svg class="ic"><use href="#i-hurricane"/></svg>
+              <h3>A hurricane heading for land</h3>
+              <span class="tag">Tropical</span>
+            </header>
+            <ol class="flow__steps">
+              <li>Click the storm for its card. Show on Satellite puts the fastest scan over it on the map, a 1-minute sector when one is on it.</li>
+              <li>Show Spaghetti Models draws the track models over the NHC cone; switch on the wind speed probabilities beside them.</li>
+              <li>Open its storm page: the intensity against the models, the guidance table and every advisory.</li>
+              <li>Follow the Hurricane Hunters live, coloured by flight-level wind, SFMR wind or pressure.</li>
+              <li>Put the sea surface temperature under its path, and see where the season's ACE stands against the 1991-2020 normal.</li>
+            </ol>
+          </article>
+
+          <article class="flow">
+            <header class="flow__head">
+              <svg class="ic"><use href="#i-waves"/></svg>
+              <h3>Rivers after heavy rain</h3>
+              <span class="tag">US and Brazil</span>
+            </header>
+            <ol class="flow__steps">
+              <li>Put MRMS rainfall (QPE) on the map to see where the rain fell.</li>
+              <li>Switch on Flooding: every gauge is coloured by its flood category, with a ring on the ones forecast to get worse.</li>
+              <li>Open a gauge's hydrograph: stage against the flood levels and the NWS forecast, flow against the normal for the date, and the rain.</li>
+              <li>Step to the next gauge up or down the river.</li>
+              <li>In Brazil, SGB's alert stations against their own attention, alert and flood levels, and ANA's telemetry beside them.</li>
+            </ol>
+          </article>
+
+          <article class="flow">
+            <header class="flow__head">
+              <svg class="ic"><use href="#i-sun"/></svg>
+              <h3>A night with aurora in the forecast</h3>
+              <span class="tag">Space</span>
+            </header>
+            <ol class="flow__steps">
+              <li>Open the Space Weather dashboard: NOAA's G scale and Kp sit on top of every tab.</li>
+              <li>Watch the solar wind and its magnetic field arrive in the Solar wind tab.</li>
+              <li>Check the CME and the WSA-Enlil run that forecast it.</li>
+              <li>Read the aurora forecast for tonight and tomorrow night, and the hemispheric power.</li>
+              <li>Put the OVATION aurora forecast on the map, over the satellite's picture of the clouds.</li>
+            </ol>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────  COVERAGE  ─────────────
+         One line per kind of data: where it reaches, how far back the app
+         goes, and who publishes it. Taken from the released app's sources. -->
+    <section class="section" id="coverage">
+      <div class="wrap">
+        <div class="head">
+          <p class="head__label">Coverage and sources</p>
+          <h2 class="head__title">Where each kind of data reaches, and where it comes from.</h2>
+          <p class="head__sub">
+            WeatherTS reads public data straight from the agencies that publish it. This is what each
+            part covers in the released app.
+          </p>
+        </div>
+
+        <div class="cov">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Data</th>
+                <th scope="col">Where</th>
+                <th scope="col">How far back</th>
+                <th scope="col">From</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">NEXRAD and TDWR radar</th>
+                <td data-h="Where">The US, Puerto Rico, Alaska, Hawaii, Guam and South Korea</td>
+                <td data-h="How far back">Level II to the 1990s, Level III since March 2022</td>
+                <td data-h="From">NOAA's NEXRAD data on AWS, the NWS</td>
+              </tr>
+              <tr>
+                <th scope="row">Satellite</th>
+                <td data-h="Where">The world, from 10 satellites</td>
+                <td data-h="How far back">Loops of 6 to 288 frames</td>
+                <td data-h="From">NOAA GOES on Google Cloud and AWS, Himawari on AWS, CIRA SLIDER, EUMETSAT, NASA GIBS</td>
+              </tr>
+              <tr>
+                <th scope="row">Lightning</th>
+                <td data-h="Where">The Americas and the oceans either side</td>
+                <td data-h="How far back">Live, and along the timeline</td>
+                <td data-h="From">The GOES-East and GOES-West lightning mappers (GLM)</td>
+              </tr>
+              <tr>
+                <th scope="row">Forecast models</th>
+                <td data-h="Where">The world, North America or the CONUS, by model</td>
+                <td data-h="How far back">The newest run and the runs before it</td>
+                <td data-h="From">NOAA NCEP, ECMWF, DWD, Environment Canada, the NHC</td>
+              </tr>
+              <tr>
+                <th scope="row">Analyses</th>
+                <td data-h="Where">North America and the CONUS; the GFS analysis is global</td>
+                <td data-h="How far back">Up to 7 days</td>
+                <td data-h="From">NOAA NCEP</td>
+              </tr>
+              <tr>
+                <th scope="row">MRMS</th>
+                <td data-h="Where">The CONUS</td>
+                <td data-h="How far back">The radar mosaic: the last day, every 2 minutes</td>
+                <td data-h="From">NOAA NSSL, on AWS</td>
+              </tr>
+              <tr>
+                <th scope="row">Mesoanalysis archive</th>
+                <td data-h="Where">North America</td>
+                <td data-h="How far back">Any hour since January 2005</td>
+                <td data-h="From">NOAA's RAP and RUC analyses, on AWS and at NCEI</td>
+              </tr>
+              <tr>
+                <th scope="row">Surface stations</th>
+                <td data-h="Where">The world</td>
+                <td data-h="How far back">About 15 days for airports, 5 for mesonets</td>
+                <td data-h="From">Aviation Weather Center, OGIMET, MADIS, INMET, Iowa Environmental Mesonet</td>
+              </tr>
+              <tr>
+                <th scope="row">Soundings</th>
+                <td data-h="Where">The world</td>
+                <td data-h="How far back">Recent radiosondes and model runs</td>
+                <td data-h="From">Iowa Environmental Mesonet, University of Wyoming, Open-Meteo, MADIS aircraft</td>
+              </tr>
+              <tr>
+                <th scope="row">Alerts and reports</th>
+                <td data-h="Where">The US</td>
+                <td data-h="How far back">In force, and following the timeline</td>
+                <td data-h="From">The NWS, SPC, WPC, Iowa Environmental Mesonet</td>
+              </tr>
+              <tr>
+                <th scope="row">Outlooks</th>
+                <td data-h="Where">The US</td>
+                <td data-h="How far back">Past issuances by date and time</td>
+                <td data-h="From">SPC, WPC, CPC, NHC, NadoCast</td>
+              </tr>
+              <tr>
+                <th scope="row">Tropical cyclones</th>
+                <td data-h="Where">Every basin</td>
+                <td data-h="How far back">Any storm since 1842; recon flights since 1989</td>
+                <td data-h="From">NHC, CPHC, JTWC, IBTrACS, NOAA STAR, CPC</td>
+              </tr>
+              <tr>
+                <th scope="row">Rivers</th>
+                <td data-h="Where">The US and Brazil</td>
+                <td data-h="How far back">Recent stage and flow, with forecasts</td>
+                <td data-h="From">The NWS, USGS, the National Water Model, Brazil's SGB and ANA</td>
+              </tr>
+              <tr>
+                <th scope="row">Space weather</th>
+                <td data-h="Where">From the Sun to the aurora</td>
+                <td data-h="How far back">Live, with the solar cycle</td>
+                <td data-h="From">NOAA SWPC, NASA SDO</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -552,33 +1126,40 @@
     </section>
 
     <!-- ─────────────  IN DEVELOPMENT  ─────────────
-         Two columns. Something moves to "What works today" only when it ships,
-         and something removed from the app comes off this page too. -->
+         Two groups. "Being built" is under way; "Planned" is not started.
+         Something moves to "What works today" only when it ships, and nothing
+         sits in two groups. -->
     <section class="section" id="next">
       <div class="wrap">
         <div class="head">
           <p class="head__label">In development</p>
           <h2 class="head__title">What is being built, and what comes after.</h2>
+          <p class="head__sub">
+            None of this is in the released app yet. The first group is under way; the second is planned.
+          </p>
         </div>
 
         <div class="road">
           <section class="group group--wip">
             <header class="group__head"><h3>Being built</h3></header>
             <ul class="group__list">
+              <li>Your own radar files: Level II, Level III, DORADE, CfRadial, ODIM, IRIS/SIGMET and UF, from files, zips, folders or links.</li>
+              <li>Level 2 polling servers, for radars outside the US.</li>
+              <li>Settings, colour tables and layouts synced through your account.</li>
               <li>Surface fronts, back in the catalog.</li>
-              <li>A total lightning layer.</li>
             </ul>
           </section>
+
           <section class="group group--later">
             <header class="group__head"><h3>Planned</h3></header>
             <ul class="group__list">
-              <li>Radar beyond the NEXRAD network.</li>
+              <li>Radar from more networks beyond NEXRAD and TDWR, in Brazil and elsewhere, where access allows.</li>
               <li>Warnings from other countries, through CAP.</li>
-              <li>Cross sections.</li>
-              <li>Aviation and marine products.</li>
-              <li>Share links that reopen your exact view.</li>
+              <li>Marine products.</li>
               <li>Notifications on thresholds you set.</li>
               <li>A data API.</li>
+              <li>macOS and Linux versions.</li>
+              <li>A version for phones.</li>
             </ul>
           </section>
         </div>
@@ -609,6 +1190,7 @@
         <p class="note">
           <a id="dl-notes" href="https://github.com/pabloarzaosc/WeatherTS/releases/latest" target="_blank" rel="noopener">What changed in this release ↗</a>
         </p>
+        <p class="note">Free, with no ads and nothing locked. <a href="#support">How WeatherTS is kept going</a></p>
       </div>
     </section>
 
@@ -659,6 +1241,31 @@
       </div>
     </section>
 
+    <!-- ─────────────  SUPPORT  ─────────────
+         How the project is paid for: only by donations. Nothing in the app is
+         locked behind them, and the section says so. -->
+    <section class="section" id="support">
+      <div class="wrap narrow center">
+        <p class="head__label">Support</p>
+        <h2 class="head__title">Free for everyone, kept going by the community.</h2>
+        <p class="lede">WeatherTS has no ads, no subscriptions and no paid features, and it never will. It has no income of its own: it runs on free services, careful optimization and donations from the people who use it. Sponsoring does not unlock anything in the app. It keeps it free for everyone.</p>
+
+        <p class="facts__label">What donations pay for</p>
+        <dl class="facts facts--dl facts--after-label">
+          <div class="facts__cell"><dt>Domain</dt><dd>weatherts.tech, each year</dd></div>
+          <div class="facts__cell"><dt>Installer</dt><dd>Code signing, so SmartScreen stops warning</dd></div>
+          <div class="facts__cell"><dt>Accounts</dt><dd>Sign-in and live chaser sharing</dd></div>
+          <div class="facts__cell"><dt>Development</dt><dd>New features and data</dd></div>
+        </dl>
+
+        <a class="btn btn--fill btn--lg" href="https://github.com/sponsors/pabloarzaosc" target="_blank" rel="noopener">
+          <svg class="ic"><use href="#i-heart"/></svg>
+          Sponsor on GitHub
+        </a>
+        <p class="note">Monthly or one-time, any amount you choose.</p>
+      </div>
+    </section>
+
     <!-- ─────────────  FAQ  ───────────── -->
     <section class="section" id="faq">
       <div class="wrap narrow">
@@ -669,31 +1276,69 @@
         <div class="faq">
           <details class="faq__item">
             <summary>Is it really free?</summary>
-            <p>Yes. There is no paid tier, no locked feature and no usage limit.</p>
+            <p>Yes. There is no paid tier, no locked feature, no ads and no usage limit. Donations keep it going, and they unlock nothing.</p>
+          </details>
+          <details class="faq__item">
+            <summary>What do I need to run it?</summary>
+            <p>Windows 10 or 11, 64-bit, an internet connection, and graphics that support WebGL 2, which draws the map. Split screen and the Compare models grid draw several maps at once, so they ask more of the graphics chip. The Download section above shows the installer's size for the current release.</p>
+          </details>
+          <details class="faq__item">
+            <summary>Is there a version for Mac, Linux or phones?</summary>
+            <p>Not yet. WeatherTS runs on Windows only for now. macOS and Linux versions and a version for phones are planned.</p>
+          </details>
+          <details class="faq__item">
+            <summary>Why might Windows warn me about the installer?</summary>
+            <p>The installer is not code-signed yet, so Windows SmartScreen can show "Windows protected your PC" the first time. Choose More info, then Run anyway. Signing the installer is one of the things <a href="#support">sponsorship</a> is for.</p>
           </details>
           <details class="faq__item">
             <summary>Do I need an account?</summary>
-            <p>No. The app opens without one. Signing in is only for sharing your position with other chasers, seeing theirs, and pinning your home.</p>
+            <p>No. The app opens straight onto the map, and everything that comes from a public feed works without one. An account, with email and password or with Google, is only for sharing your position with other chasers, seeing theirs, and pinning your home.</p>
+          </details>
+          <details class="faq__item">
+            <summary>What does WeatherTS know about me?</summary>
+            <p>Without an account, nothing: the app has no analytics, crash reporting, advertising or tracker. It reads public data straight from the agencies that publish it, and each of them sees your IP address, as any website does. With an account it keeps your email, display name and photo, and a home pin only if you set one, rounded to about a kilometre before it is stored. Your live position goes to other signed-in users only while you have sharing switched on, and it is never recorded. The full notice is shown before an account is created.</p>
           </details>
           <details class="faq__item">
             <summary>Does it work outside the US?</summary>
-            <p>In part. Satellite, station plots and the global models (GFS, ECMWF, AIFS, ICON, GEM and their ensembles) cover the world, and Brazil's INMET stations come in with your own token. Radar is the NEXRAD network: the US and its sites in Puerto Rico, Hawaii, Alaska, Guam, Korea and the Azores. Alerts, storm reports, outlooks, MRMS and the HRRR, RAP and RTMA are US and North American products.</p>
+            <p>In large part. Satellite, station plots, soundings, tropical cyclones, space weather and the global models (GFS, ECMWF, AIFS, ICON, GEM and their ensembles, and the GFS analysis) cover the world, and lightning covers the Americas and the oceans either side. In Brazil, the rivers come from SGB and ANA, and INMET's stations come in with your own token. Radar is the NEXRAD network: the US, Puerto Rico, Alaska, Hawaii, Guam and South Korea. Alerts, storm reports, outlooks, MRMS, the HRRR, RAP, NAM and RTMA, and the mesoanalysis archive are US and North American products. Brazilian radar volumes come in the next release, and opening radar files from other networks is being built.</p>
           </details>
           <details class="faq__item">
-            <summary>How do updates work?</summary>
-            <p>Installed copies check for a new release when they start and install it on the next launch. You only download the installer once.</p>
+            <summary>Can I open my own radar files?</summary>
+            <p>Not yet. It is being built: Level II, Level III, DORADE, CfRadial, ODIM, IRIS/SIGMET and UF files, from zips, folders or links, and Level 2 polling servers for radars outside the US. Until then, radar is the NEXRAD and TDWR networks, live and from the archive.</p>
           </details>
           <details class="faq__item">
-            <summary>Where do I report a bug or ask for a feature?</summary>
-            <p>On the <a href="https://discord.gg/fSbaW7jKW5" target="_blank" rel="noopener">WeatherTS Discord</a>, or by email at <a href="mailto:contact@weatherts.tech">contact@weatherts.tech</a>. Every release is announced on the Discord and on <a href="https://x.com/WeatherTS_ofc" target="_blank" rel="noopener">X</a> as well.</p>
+            <summary>How much data does it download?</summary>
+            <p>Only what you open. Loops fetch the frames you play, satellite fetches the area on screen, and a forecast model fetches the hours you look at. The heaviest parts are a Level II cross-section, which reads the whole radar volume, and the mesoanalysis archive, which reads an hour whole the first time. What you have seen is kept on disk so it reopens quickly, in your temporary folder: up to 1.5 GB of satellite and lightning files, 3 GB of model fields and 4 GB of archive hours.</p>
+          </details>
+          <details class="faq__item">
+            <summary>Does it work offline?</summary>
+            <p>No. Every product is read from its public source when you open it, so new data needs a connection. What you have already looked at is kept on disk for a while and reopens without downloading again.</p>
           </details>
           <details class="faq__item">
             <summary>Where does the data come from?</summary>
-            <p>Public sources: NOAA and the NWS (NEXRAD, MRMS, the NCEP models, SPC, WPC, CPC and the NHC), NOAA's GOES data on Google Cloud and AWS, CIRA's SLIDER, Himawari on AWS, EUMETSAT, NASA GIBS, ECMWF, DWD, Environment Canada, the Aviation Weather Center, MADIS, OGIMET, INMET, Open-Meteo, the Iowa Environmental Mesonet and NadoCast.</p>
+            <p>Public sources, read straight from the agencies that publish them. <a href="#coverage">Coverage and sources</a> lists them by kind of data; in short:</p>
+            <ul>
+              <li><b>Radar:</b> NOAA's NEXRAD Level II and Level III data on AWS, and the NWS.</li>
+              <li><b>Satellite and lightning:</b> NOAA's GOES data on Google Cloud and AWS, Himawari on AWS, CIRA's SLIDER, EUMETSAT and NASA GIBS.</li>
+              <li><b>Models and analyses:</b> NOAA NCEP, ECMWF, DWD, Environment Canada, the NHC's ATCF decks, MRMS from NOAA NSSL, and the RAP and RUC archives on AWS and at NCEI.</li>
+              <li><b>Observations and soundings:</b> the Aviation Weather Center, MADIS, OGIMET, INMET, the Iowa Environmental Mesonet, the University of Wyoming and Open-Meteo.</li>
+              <li><b>Alerts and outlooks:</b> the NWS, SPC, WPC, CPC, the NHC and NadoCast.</li>
+              <li><b>Tropics:</b> the NHC, CPHC and JTWC, ATCF and HURDAT2, IBTrACS, the Hurricane Hunters' archive, NOAA STAR, Coral Reef Watch and CPC.</li>
+              <li><b>Rivers:</b> the NWS, USGS, the National Water Model, and Brazil's SGB and ANA.</li>
+              <li><b>Space weather:</b> NOAA's SWPC and NASA's SDO.</li>
+            </ul>
+          </details>
+          <details class="faq__item">
+            <summary>How do updates work?</summary>
+            <p>Installed copies check for a new release when they start and install it on the next launch. You only download the installer once. What changed in each release is in the app and on GitHub.</p>
+          </details>
+          <details class="faq__item">
+            <summary>Where do I report a bug or ask for a feature?</summary>
+            <p>On the <a href="https://discord.gg/fSbaW7jKW5" target="_blank" rel="noopener">WeatherTS Discord</a>, or by email at <a href="mailto:contact@weatherts.tech">contact@weatherts.tech</a>. Say which version you have, what you had on the map, and what happened; a screenshot helps. Every release is announced on the Discord and on <a href="https://x.com/WeatherTS_ofc" target="_blank" rel="noopener">X</a> as well.</p>
           </details>
           <details class="faq__item">
             <summary>Can I see the code?</summary>
-            <p>Yes. It is on <a href="https://github.com/pabloarzaosc/WeatherTS" target="_blank" rel="noopener">GitHub</a>, with every release.</p>
+            <p>The <a href="https://github.com/pabloarzaosc/WeatherTS" target="_blank" rel="noopener">GitHub repository</a> holds every release, the README and the MIT license. The source itself is not published there yet.</p>
           </details>
           <details class="faq__item">
             <summary>Will there be an API?</summary>
@@ -706,6 +1351,7 @@
         </div>
       </div>
     </section>
+
 
     <!-- ─────────────  CREDITS  ───────────── -->
     <section class="section section--band" id="credits">
@@ -762,23 +1408,6 @@
       </div>
     </section>
 
-    <!-- ─────────────  WAITLIST  ───────────── -->
-    <section class="section" id="lista">
-      <div class="wrap narrow center">
-        <p class="head__label">When it leaves beta</p>
-        <h2 class="head__title">One email, when WeatherTS leaves beta.</h2>
-        <p class="lede">Leave your address and you will get that one message, and nothing else.</p>
-
-        <form class="waitlist" id="waitlist" novalidate>
-          <div class="waitlist__field">
-            <label class="visually-hidden" for="email">Your email</label>
-            <input type="email" id="email" name="email" inputmode="email" autocomplete="email" placeholder="you@example.com" required />
-            <button class="btn btn--fill" type="submit">Join the list</button>
-          </div>
-          <p class="waitlist__msg" id="waitlist-msg" role="status" aria-live="polite"></p>
-        </form>
-      </div>
-    </section>
 
   </main>
 
@@ -796,6 +1425,8 @@
       <nav class="footer__col" aria-label="Page">
         <p class="footer__h">Page</p>
         <a href="#today">What works today</a>
+        <a href="#examples">In practice</a>
+        <a href="#coverage">Coverage and sources</a>
         <a href="#next">In development</a>
         <a href="#download">Download</a>
         <a href="#faq">Questions</a>
@@ -806,11 +1437,11 @@
         <a href="https://discord.gg/fSbaW7jKW5" target="_blank" rel="noopener">Discord</a>
         <a href="https://x.com/WeatherTS_ofc" target="_blank" rel="noopener">X</a>
         <a href="https://github.com/pabloarzaosc/WeatherTS/releases" target="_blank" rel="noopener">Releases</a>
-        <a href="#lista">Email list</a>
+        <a href="https://github.com/sponsors/pabloarzaosc" target="_blank" rel="noopener">Sponsor</a>
       </nav>
       <div class="footer__col">
         <p class="footer__h">Data</p>
-        <span class="footer__note">NOAA · NWS · NHC · CIRA SLIDER · EUMETSAT · NASA GIBS · ECMWF · DWD · ECCC · AWC · MADIS · OGIMET · INMET · IEM · NadoCast</span>
+        <span class="footer__note">NOAA · NWS · SPC · NHC · NSSL · CIRA SLIDER · EUMETSAT · JMA · NASA · ECMWF · DWD · ECCC · AWC · MADIS · OGIMET · INMET · IEM · USGS · SGB · ANA · NadoCast</span>
       </div>
     </div>
     <div class="wrap footer__base">

@@ -235,3 +235,7 @@ const ready = SERVICES.map(async (svc) => {
 
 await Promise.all(ready);
 if (!stopping) log(`all three up in ${((Date.now() - t0) / 1000).toFixed(1)}s -- Ctrl+C stops everything`);
+// rodar-web.cmd asks for this: nothing to open before the app can answer.
+if (!stopping && WIN && process.argv.includes("--open")) {
+  spawn("cmd", ["/c", "start", "", "http://localhost:1420/"], { stdio: "ignore", windowsHide: true });
+}

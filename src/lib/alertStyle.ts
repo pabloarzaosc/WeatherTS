@@ -40,7 +40,8 @@ const tiers = new WeakMap<NwsAlert, TierDef | null>();
 export function tierOf(a: NwsAlert): TierDef | null {
   let t = tiers.get(a);
   if (t === undefined) {
-    t = alertTier(a);
+    // The tiers read the NWS's own tags and wording; other sources have their own levels.
+    t = a.source ? null : alertTier(a);
     tiers.set(a, t);
   }
   return t;
@@ -85,11 +86,12 @@ export function tierSound(t: TierDef): AlertSoundId {
 /** The colour an alert is drawn and listed in: its tier's, else its type's. */
 export function alertDrawColor(a: NwsAlert): string {
   const t = tierOf(a);
-  return t ? tierColor(t) : eventColor(a.event);
+  return t ? tierColor(t) : a.color ?? eventColor(a.event);
 }
 
 /** The sound an alert plays: its tier's, else its type's. */
 export function alertSound(a: NwsAlert): AlertSoundId {
+  if (a.source) return alertKind(a.event) === "warning" ? (a.severity === "Extreme" ? "alarm" : "double") : "none";
   const t = tierOf(a);
   return t ? tierSound(t) : typeSetting<string>(a.event, "sound") as AlertSoundId;
 }
@@ -205,7 +207,7 @@ export function alertMotionData(features: AlertFeature[]): GeoJSON.FeatureCollec
     const t = tierOf(a);
     const props = {
       id: a.id,
-      color: t ? tierColor(t) : eventColor(a.event),
+      color: t ? tierColor(t) : a.color ?? eventColor(a.event),
       startUnix: start,
       endUnix: end,
       catTornado: cat.tornado,

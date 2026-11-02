@@ -354,6 +354,9 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 }
 .facts--dl { margin: 30px 0 16px; text-align: left; }
 .facts--dl dd { font-size: 15px; }
+/* A line naming what a row of figures is, set just above it. */
+.facts__label { margin: 30px 0 0; font-family: var(--mono); font-size: 12.5px; color: var(--text-faint); }
+.facts--after-label { margin-top: 10px; }
 
 /* ─────────────  sections  ───────────── */
 .section { padding: 84px 0; }
@@ -411,9 +414,28 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 
 .road { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 .road .group { margin: 0; }
-/* Not on yet: an outline where the lit lamp would be. */
+/* The next release spans the row above the other two. */
+.road__wide { grid-column: 1 / -1; }
+/* Built, not shipped: a half-lit lamp. Under way: an outline where the lit
+   lamp would be. Planned: a dashed outline. */
+.group--next .group__list li::before { background: var(--accent-soft); border: 1.5px solid var(--accent); }
 .group--wip .group__list li::before { background: transparent; border: 1.5px solid var(--accent); }
 .group--later .group__list li::before { background: transparent; border: 1.5px dashed var(--border-strong); }
+/* A long list split in two columns, read down the first, then the second. */
+.group__list--cols { columns: 2; column-gap: 0; }
+.group__list--cols li { break-inside: avoid; }
+.group__list--cols li + li { border-top: 0; }
+/* A small heading between the lists of one group. */
+.group__sub {
+  margin: 0;
+  padding: 12px 16px 2px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+.group__sub + .group__list { padding-top: 2px; }
+.group__list + .group__sub { border-top: 1px solid var(--border); }
 
 /* ─────────────  what works today: each feature with its demo  ─────────────
    The demo sits in a frame drawn like one of the app's panels: a strip of
@@ -440,6 +462,14 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 .feat .group__list { padding: 0; border-top: 1px solid var(--border); }
 .feat .group__list li { padding-left: 22px; padding-right: 0; }
 .feat .group__list li::before { left: 2px; }
+.feat code {
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 0.9em;
+  color: var(--text);
+}
 
 .shot {
   margin: 0;
@@ -570,6 +600,86 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
   object-fit: contain;
 }
 
+/* ─────────────  in practice: worked examples  ─────────────
+   Each one a panel like the catalog's, its steps numbered in small keylined
+   squares, the way the app labels a pane. */
+.flows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.flow {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color var(--t) var(--ease);
+}
+.flow:hover { border-color: var(--border-strong); }
+.flow__head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.flow__head .ic { color: var(--accent); transition: transform 0.35s var(--ease-out); }
+.flow:hover .flow__head .ic { transform: rotate(-12deg) scale(1.12); }
+.flow__head h3 { font-size: 15.5px; font-weight: 700; }
+.flow__steps { list-style: none; margin: 0; padding: 6px 0; counter-reset: step; }
+.flow__steps li {
+  position: relative;
+  padding: 8px 16px 8px 46px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  counter-increment: step;
+}
+.flow__steps li + li { border-top: 1px solid rgba(var(--wash-rgb), 0.06); }
+.flow__steps li::before {
+  content: counter(step);
+  position: absolute;
+  left: 14px;
+  top: 9px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--accent-text);
+}
+
+/* ─────────────  coverage: one keylined table  ─────────────
+   On a phone each row becomes a small block, its column names written in. */
+.cov {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  overflow: hidden;
+}
+.cov table { width: 100%; border-collapse: collapse; }
+.cov th, .cov td {
+  padding: 10px 14px;
+  text-align: left;
+  vertical-align: top;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.cov thead th {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.cov tbody tr + tr { border-top: 1px solid var(--border); }
+.cov tbody th { width: 17%; font-weight: 700; color: var(--text); }
+.cov tbody td { color: var(--text-dim); }
+.cov tbody td:nth-of-type(2) { font-family: var(--mono); font-size: 12.5px; color: var(--text); width: 22%; }
+.cov tbody td:nth-of-type(1) { width: 26%; }
+.cov tbody tr:hover { background: rgba(var(--wash-rgb), 0.03); }
+
 /* ─────────────  faq  ───────────── */
 .head--left { margin-bottom: 18px; }
 .faq { display: grid; gap: 8px; }
@@ -602,6 +712,16 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 .faq__item[open] > summary::after { transform: rotate(-135deg); margin-top: 4px; }
 .faq__item > p { margin: 0; padding: 0 16px 14px; color: var(--text-dim); font-size: 15px; max-width: 62ch; }
 .faq__item a { color: var(--accent-text); }
+.faq__item > p + ul { margin-top: -6px; }
+.faq__item > ul {
+  margin: 0;
+  padding: 0 16px 14px 34px;
+  max-width: calc(62ch + 50px);
+  color: var(--text-dim);
+  font-size: 15px;
+}
+.faq__item > ul li { margin: 4px 0; }
+.faq__item > ul b { color: var(--text); font-weight: 600; }
 
 /* ─────────────  credits  ───────────── */
 .handle {
@@ -698,32 +818,6 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 /* An icon-only link in the bar: the X mark is its own name. */
 .topbar__x { padding: 0 10px; }
 
-/* ─────────────  waitlist  ───────────── */
-.waitlist { max-width: 480px; margin: 0 auto; }
-.waitlist__field { display: flex; flex-wrap: wrap; gap: 8px; }
-.waitlist input[type="email"] {
-  flex: 1 1 220px;
-  min-width: 0;
-  height: 40px;
-  padding: 0 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--panel);
-  color: var(--text);
-  font: inherit;
-  font-size: 15px;
-}
-.waitlist input::placeholder { color: var(--text-faint); }
-.waitlist input:focus { outline: none; border-color: var(--accent); }
-.waitlist input[aria-invalid="true"] { border-color: var(--danger); }
-.waitlist__msg {
-  min-height: 1.3em;
-  margin: 12px 0 0;
-  font-family: var(--mono);  font-size: 13px; color: var(--text-dim);
-}
-.waitlist__msg.is-ok { color: var(--accent-text); }
-.waitlist__msg.is-err { color: var(--danger); }
-
 /* ─────────────  footer  ───────────── */
 .footer { padding: 44px 0 26px; background: var(--panel); border-top: 1px solid var(--border); }
 .footer__grid {
@@ -766,7 +860,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 
 /* Narrower: the sections drop to a second row that scrolls sideways, so
    every name stays written out. */
-@media (max-width: 900px) {
+@media (max-width: 1040px) {
   :root { --bar-h: 96px; }
   .topbar__inner { flex-wrap: wrap; height: auto; gap: 4px 10px; padding: 8px 18px 0; }
   .topbar__nav {
@@ -790,6 +884,25 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
   .section { padding: 60px 0; }
   .facts { grid-template-columns: repeat(2, 1fr); }
   .road { grid-template-columns: 1fr; }
+  .group__list--cols { columns: 1; }
+  .group__list--cols li + li { border-top: 1px solid rgba(var(--wash-rgb), 0.06); }
+  .flows { grid-template-columns: minmax(0, 1fr); }
+  /* The table as blocks: the data's name on top, each column's name over
+     its value. */
+  .cov thead { display: none; }
+  .cov table, .cov tbody, .cov tr, .cov th, .cov td { display: block; width: auto; }
+  .cov tbody th, .cov tbody td:nth-of-type(1), .cov tbody td:nth-of-type(2) { width: auto; }
+  .cov tbody tr { padding: 10px 0 8px; }
+  .cov tbody th { padding: 0 14px 4px; font-size: 15px; }
+  .cov tbody td { padding: 3px 14px; }
+  .cov tbody td::before {
+    content: attr(data-h);
+    display: block;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-faint);
+  }
   .tour { gap: 48px; }
   .feat__head h3 { font-size: 20px; }
   .shot__tab { padding: 0 8px; font-size: 12.5px; }
@@ -802,7 +915,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
    short of room: on a phone, to share the first row with the name, and on a
    small laptop, where the sections still sit on the same row. The words stay
    for screen readers. */
-@media (max-width: 520px), (min-width: 901px) and (max-width: 1180px) {
+@media (max-width: 520px), (min-width: 1041px) and (max-width: 1180px) {
   .topbar__end .topbar__link { padding: 0 9px; }
   .topbar__end .topbar__link span {
     position: absolute; width: 1px; height: 1px; margin: -1px;
@@ -862,6 +975,8 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 /* A group's lamps switch on one after another as it comes into view. */
 .group__list li { transition: opacity 0.5s var(--ease-out), transform 0.5s var(--ease-out); transition-delay: calc(var(--i, 0) * 60ms + 200ms); }
 .group__list li::before { transition: background-color 0.25s var(--ease), box-shadow 0.25s var(--ease), transform 0.35s var(--ease-out); transition-delay: calc(var(--i, 0) * 60ms + 380ms); }
+.flow__steps li { transition: opacity 0.5s var(--ease-out), transform 0.5s var(--ease-out); transition-delay: calc(var(--i, 0) * 60ms + 200ms); }
+.js .flow.reveal:not(.is-in) .flow__steps li { opacity: 0; transform: translateX(-8px); }
 .js .group.reveal:not(.is-in) .group__list li,
 .js .feat.reveal:not(.is-in) .group__list li { opacity: 0; transform: translateX(-8px); }
 .js .group.reveal:not(.is-in) .group__list li::before,
@@ -889,5 +1004,5 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
-  .js .reveal, .js .group.reveal .group__list li, .js .feat.reveal .group__list li { opacity: 1; transform: none; }
+  .js .reveal, .js .group.reveal .group__list li, .js .feat.reveal .group__list li, .js .flow.reveal .flow__steps li { opacity: 1; transform: none; }
 }

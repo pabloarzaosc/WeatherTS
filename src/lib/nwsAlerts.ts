@@ -27,6 +27,16 @@ export interface NwsAlert {
   response: string;
   parameters: AlertParameters;
   affectedZones: string[];
+  /** Set on an alert from outside the NWS (lib/worldAlerts): which source. */
+  source?: string;
+  country?: string;
+  /** The colour its issuer gives it (INMET's yellow, orange, red), and in words. */
+  color?: string;
+  level?: string;
+  /** State or province codes, where the source says. */
+  regions?: string[];
+  /** The issuer's own page for it. */
+  web?: string | null;
 }
 
 export interface AlertFeature {
@@ -898,7 +908,17 @@ export function alertCategoryFlags(a: NwsAlert): {
  */
 export type AlertKind = "warning" | "watch" | "advisory" | "statement" | "other";
 
+const EVENT_KINDS = new Map<string, AlertKind>();
+
+/** A source outside the NWS says what its events are: Brazil's "Storm Alert" is
+ *  a watch in all but name, which nothing in its name can tell. */
+export function registerEventKind(event: string, kind: AlertKind): void {
+  EVENT_KINDS.set(event.trim().toLowerCase(), kind);
+}
+
 export function alertKind(event: string): AlertKind {
+  const told = EVENT_KINDS.get(event.trim().toLowerCase());
+  if (told) return told;
   if (/warning/i.test(event)) return "warning";
   if (/watch/i.test(event)) return "watch";
   if (/advisory/i.test(event)) return "advisory";
@@ -925,7 +945,7 @@ export function alertsToFeatureCollection(features: AlertFeature[]): GeoJSON.Fea
               id: a.id,
               severity: a.severity,
               event: a.event,
-              color: eventColor(a.event),
+              color: a.color ?? eventColor(a.event),
               priority: alertPriority(a),
               startUnix,
               endUnix,

@@ -1,3 +1,4 @@
+import { isBrazilSite } from "../lib/brazilRadar";
 import { create } from "zustand";
 
 import { alertInForceAt, fetchActiveAlerts, fetchAlertsAt, fetchArchivedWarnings, ISSUE_LOOKBACK_S, NWS_ARCHIVE_S } from "../lib/nwsAlerts";
@@ -73,7 +74,7 @@ let timer: number | null = null;
 function siteMap(): Map<string, SiteSpot> {
   const m = new Map<string, SiteSpot>();
   for (const s of useNexradStore.getState().sites) {
-    if (s.online === false || String(s.id).startsWith("BR") || s.type === "TDWR" || !Number.isFinite(s.lat)) continue;
+    if (s.online === false || isBrazilSite(s.id) || s.type === "TDWR" || !Number.isFinite(s.lat)) continue;
     m.set(s.icao, { id: s.id, icao: s.icao, name: s.name, lat: s.lat, lon: s.lon });
   }
   return m;
@@ -213,7 +214,7 @@ export async function openNowItem(item: NowItem): Promise<string> {
   if (item.lat == null || item.lon == null) return "No place to open";
 
   const near = nearestRadar(item.lat, item.lon);
-  if (!near || near.km > RADAR_KM || String(near.site.id).startsWith("BR")) return "No radar covers this spot";
+  if (!near || near.km > RADAR_KM || isBrazilSite(near.site.id)) return "No radar covers this spot";
 
   // A past loop is not what "now" means: back to live first.
   let nx = useNexradStore.getState();

@@ -1,0 +1,6 @@
+# The live configuration may hold CEMADEN's credentials: never committed.
+config.toml
+# Stored radar files.
+data/
+data-*/
+__pycache__/
