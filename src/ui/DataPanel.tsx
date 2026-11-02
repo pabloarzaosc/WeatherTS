@@ -4,11 +4,13 @@ import { useAppStore, type DataView } from "../store/useAppStore";
 import { CatalogView } from "./panels/CatalogView";
 import { LayersContent } from "./panels/LayersContent";
 import { SettingsContent } from "./panels/SettingsContent";
+import { NowView } from "./panels/NowView";
 
 const TITLES: Record<DataView, string> = {
   catalog: "Catalog",
   layers: "Layers",
   settings: "Settings",
+  now: "Now",
 };
 
 /** The drawer that slides out of the tool dock. Stays mounted (so it can slide
@@ -39,6 +41,7 @@ export function DataPanel() {
           {dataView === "catalog" && <CatalogView />}
           {dataView === "layers" && <LayersContent />}
           {dataView === "settings" && <SettingsContent />}
+          {dataView === "now" && <NowView />}
         </div>
       </div>
     </aside>

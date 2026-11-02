@@ -355,7 +355,7 @@ export const lsrLayer: LayerModule = {
     if (!useLsrStore.getState().data) void useLsrStore.getState().load();
   },
 
-  removeFrom(map) {
+  removeFrom(map, styleSwap) {
     const st = state.get(map);
     if (st) {
       for (const id of [ICONS, LABELS]) {
@@ -372,7 +372,7 @@ export const lsrLayer: LayerModule = {
     unregisterMarkerLayers([ICONS, LABELS]);
     for (const id of [LABELS, ICONS, HL_RING, NEW_RING]) if (map.getLayer(id)) map.removeLayer(id);
     for (const id of [SRC, HL_SRC]) if (map.getSource(id)) map.removeSource(id);
-    useLsrStore.getState().select(null);
+    if (!styleSwap) useLsrStore.getState().select(null);
   },
 
   setOpacity(map, o) {

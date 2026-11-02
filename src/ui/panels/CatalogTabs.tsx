@@ -4,6 +4,7 @@ import { Star, Trash2, Save, Layers as LayersIcon, RotateCcw } from "lucide-reac
 import { useAppStore } from "../../store/useAppStore";
 import { useCatalogStore } from "../../store/useCatalogStore";
 import { getLayerModules } from "../../layers/registry";
+import { layerAllowed, useFeatureStore } from "../../store/useFeatureStore";
 import { LAYER_CATEGORIES } from "../../layers/types";
 
 function fmtWhen(ms: number): string {
@@ -169,7 +170,9 @@ export function MineTab() {
 
 /** Every registered layer, grouped, with nothing curated away. */
 export function AdvancedTab() {
-  const modules = getLayerModules();
+  // Settings > Features (ux-shell): a switched-off feature's layers are not listed.
+  const featuresOff = useFeatureStore((s) => s.off);
+  const modules = getLayerModules().filter((m) => layerAllowed(m.id, m.category, featuresOff));
   return (
     <div className="catrows">
       {LAYER_CATEGORIES.map((cat) => {

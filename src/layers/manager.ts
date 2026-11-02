@@ -16,14 +16,39 @@ export class LayerManager {
   /** Modules whose addTo() is still under way: already subscribed to their
    *  stores, but not yet in `added`. */
   private adding = new Set<string>();
+  /** Style swaps so far: an add that spans one was drawing on the old style. */
+  private swaps = 0;
   private destroyed = false;
   private running = false;
   private next: LayerRuntimeState | null = null;
+  private readonly map: MapLibreMap;
 
-  constructor(private readonly map: MapLibreMap) {}
+  constructor(map: MapLibreMap) {
+    this.map = map;
+  }
 
-  /** Forget on-map state after setStyle() wipes custom layers. */
-  reset(): void {
+  /**
+   * After setStyle(): the custom layers are gone, so every module is added
+   * again -- and has to come off first. setStyle takes the layers only; each
+   * module's store listeners, map listeners, timers and DOM markers stay. Just
+   * forgetting the modules doubled all of those on every basemap or theme
+   * change, and destroy() could only reach the newest set: closing a pane left
+   * the older ones firing on a removed map, throwing inside the store's
+   * setState, which aborted the listeners after them and the caller -- the
+   * radar gone until a reload.
+   *
+   * `state` is what is wanted now: a module that was switched off during the
+   * swap comes off for good, the others keep what they share (see removeFrom).
+   */
+  reset(state: LayerRuntimeState): void {
+    this.swaps += 1;
+    for (const id of this.added) {
+      try {
+        getLayerModule(id)?.removeFrom(this.map, !!state.layers[id]?.visible);
+      } catch (err) {
+        console.error(`[layers] ${id} failed to detach`, err);
+      }
+    }
     this.added.clear();
   }
 
@@ -87,6 +112,7 @@ export class LayerManager {
       // registry off the map, which reads as "my layer just does not appear".
       try {
         if (ls.visible && !isAdded) {
+          const swaps = this.swaps;
           this.adding.add(module.id);
           try {
             await module.addTo(this.map);
@@ -96,6 +122,13 @@ export class LayerManager {
           // The map went while this was being added; destroy() has already
           // taken the module back off.
           if (this.destroyed) return;
+          // The style was replaced while this was being added: part of it went
+          // with the old style. Off again; the reconcile the swap asked for
+          // (MapPane calls sync right after reset) adds it whole.
+          if (swaps !== this.swaps) {
+            module.removeFrom(this.map, !!(this.next ?? state).layers[module.id]?.visible);
+            continue;
+          }
           module.setOpacity(this.map, ls.opacity);
           this.added.add(module.id);
         } else if (!ls.visible && (isAdded || stranded)) {

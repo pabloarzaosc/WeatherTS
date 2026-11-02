@@ -13,6 +13,8 @@ import {
   Zap,
   Waves,
   Sun,
+  History,
+  Plane,
 } from "lucide-react";
 
 import { useAppStore } from "../../store/useAppStore";
@@ -27,11 +29,16 @@ import { LightningView } from "./LightningView";
 import { FloodView } from "./FloodView";
 import { SpaceView } from "./SpaceView";
 import { TropicalView } from "./TropicalView";
+import { ArchiveView } from "./ArchiveView";
+import { AviationView } from "./AviationView";
 import { HurricaneIcon } from "../tropical/HurricaneIcon";
 import { useOutlookStore } from "../../store/useOutlookStore";
 import { AdvancedTab, FavoritesTab, MineTab } from "./CatalogTabs";
 import { ActiveLayers } from "./ActiveLayers";
 import { SoundingsContent } from "./SoundingsContent";
+import { usePaneStore } from "../../store/usePaneStore";
+import { useFeatureStore } from "../../store/useFeatureStore";
+import { CATALOG_FEATURE } from "../../lib/features";
 
 const CAT_TABS: { id: CatalogTab; label: string }[] = [
   { id: "default", label: "Default" },
@@ -42,7 +49,7 @@ const CAT_TABS: { id: CatalogTab; label: string }[] = [
 
 const ALERT_LAYER_ID = "nws-alerts";
 
-type Panel = "surface" | "radar" | "satellite" | "lsr" | "pressure" | "sounding" | "observations" | "outlooks" | "lightning" | "flooding" | "space" | "tropical";
+type Panel = "surface" | "radar" | "satellite" | "lsr" | "pressure" | "sounding" | "observations" | "outlooks" | "lightning" | "flooding" | "space" | "tropical" | "archive" | "aviation";
 
 // Quick-launch grid à la pro workstation. Alerts toggles its layer directly;
 // the rest open their panel below the grid. (The top toolbar's outlook picker
@@ -69,6 +76,8 @@ const CATEGORIES: {
   { id: "flooding", label: "Flooding", icon: <Waves size={15} />, ready: true, panel: "flooding" },
   { id: "tropical", label: "Tropical", icon: <HurricaneIcon size={15} />, ready: true, panel: "tropical" },
   { id: "space", label: "Space", icon: <Sun size={15} />, ready: true, panel: "space" },
+  { id: "aviation", label: "Aviation", icon: <Plane size={15} />, ready: true, panel: "aviation" },
+  { id: "archive", label: "Archive", icon: <History size={15} />, ready: true, panel: "archive" },
 ];
 
 /** The Catalog tab — a quick category launcher. Clicking a category with an
@@ -78,6 +87,9 @@ export function CatalogView() {
   const setCatalogTab = useAppStore((s) => s.setCatalogTab);
   const layers = useAppStore((s) => s.layers);
   const toggleLayer = useAppStore((s) => s.toggleLayer);
+  // Settings > Features (ux-shell): switched-off panels leave the grid.
+  const featuresOff = useFeatureStore((s) => s.off);
+  const shown = CATEGORIES.filter((c) => !CATALOG_FEATURE[c.id] || !featuresOff.includes(CATALOG_FEATURE[c.id]));
 
   // Which category's inline panel is open.
   const [openPanel, setOpenPanel] = useState<Panel | null>(null);
@@ -86,6 +98,12 @@ export function CatalogView() {
   useEffect(() => {
     if (panelRequest > 0) setOpenPanel("outlooks");
   }, [panelRequest]);
+  // A pane's mosaic / outlook / storm chip (panes-layout): its panel. Also on
+  // mount, when the chip is what opened the catalog a moment ago.
+  const paneAsk = usePaneStore((s) => s.panelRequest);
+  useEffect(() => {
+    if (paneAsk && Date.now() - paneAsk.at < 3000) setOpenPanel(paneAsk.panel as Panel);
+  }, [paneAsk]);
 
   return (
     <div className="catalog">
@@ -111,7 +129,7 @@ export function CatalogView() {
       ) : (
         <>
           <div className="catgrid">
-            {CATEGORIES.map((c) => {
+            {shown.map((c) => {
               const active = c.panel
                 ? openPanel === c.panel
                 : c.layerId
@@ -159,6 +177,16 @@ export function CatalogView() {
           {openPanel === "observations" && (
             <div className="catalog__panel">
               <ObservationsView />
+            </div>
+          )}
+          {openPanel === "aviation" && (
+            <div className="catalog__panel">
+              <AviationView />
+            </div>
+          )}
+          {openPanel === "archive" && (
+            <div className="catalog__panel">
+              <ArchiveView />
             </div>
           )}
           {openPanel === "satellite" && (

@@ -1,0 +1,143 @@
+/* The 3D view's colour bar + opacity-curve editor, and the cut controls
+   (src/ui/Radar3DExtras.tsx). Hairlines and theme tokens, like the panel. */
+
+.r3d-cbar {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  width: min(320px, calc(100% - 20px));
+  padding: 6px 8px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-solid);
+  color: var(--text-dim);
+  font-size: 10.5px;
+  z-index: 2;
+}
+.r3d-cbar.is-editing { width: min(380px, calc(100% - 20px)); }
+
+.r3d-cbar__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: var(--text-faint);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.r3d-cbar__head span { overflow: hidden; text-overflow: ellipsis; }
+.r3d-cbar__head button,
+.r3d-cbar__tools button,
+.r3d-cut__head button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.r3d-cbar__head button:hover,
+.r3d-cbar__tools button:hover,
+.r3d-cut__head button:hover { color: var(--text); border-color: var(--border-strong); }
+.r3d-cbar__head button.is-on { color: var(--accent); border-color: var(--accent); }
+.r3d-cbar__tools button:disabled { opacity: 0.5; cursor: default; }
+
+.r3d-cbar__plot {
+  display: block;
+  width: 100%;
+  touch-action: none;
+}
+.r3d-cbar__bed { fill: var(--panel-2); stroke: none; }
+.r3d-cbar__line {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+.r3d-cbar__pt {
+  fill: var(--panel-solid);
+  stroke: var(--text);
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+  cursor: grab;
+}
+.r3d-cbar__pt:hover { stroke: var(--accent); }
+.r3d-cbar__strip {
+  height: 6px;
+  margin-top: 2px;
+  border: 1px solid var(--border);
+  border-radius: 1px;
+}
+.r3d-cbar__ticks {
+  position: relative;
+  height: 13px;
+  margin-top: 2px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.r3d-cbar__ticks span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.r3d-cbar__ticks span:first-child { transform: none; }
+.r3d-cbar__ticks span:last-child { transform: translateX(-100%); }
+.r3d-cbar__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+.r3d-cbar__name { display: flex; gap: 4px; width: 100%; }
+.r3d-cbar__name input {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+}
+.r3d-cbar__name input:focus { outline: none; border-color: var(--accent); }
+.r3d-cbar__note {
+  margin-top: 4px;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.r3d-cut {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 8px 10px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-solid);
+  z-index: 2;
+}
+.r3d-cut__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text);
+  font-size: 11px;
+}
+.r3d-cut__head button { height: 20px; padding: 0 4px; }
+.r3d-cut__note { color: var(--text-faint); font-size: 10px; max-width: 160px; }
+.r3d-cut .r3d__check input:disabled + * { opacity: 0.5; }

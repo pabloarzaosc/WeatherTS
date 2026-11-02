@@ -7,6 +7,9 @@ import { StatusBar } from "./ui/StatusBar";
 import { ZoomControls } from "./ui/ZoomControls";
 import { MeasureTool } from "./ui/MeasureTool";
 import { CrossSectionTool } from "./ui/CrossSectionTool";
+import { Radar3DTool } from "./ui/Radar3DTool";
+import { ColorTableHost } from "./ui/ColorTableHost";
+import { RadarDetectionsCard } from "./ui/RadarDetectionsCard";
 import { HydrographPanel } from "./ui/HydrographPanel";
 import { SpaceDashboard } from "./ui/space/SpaceDashboard";
 import { SpaceMapHud } from "./ui/space/SpaceMapHud";
@@ -14,7 +17,11 @@ import { TropicalDashboard } from "./ui/tropical/TropicalDashboard";
 import { TropicalMapHud } from "./ui/tropical/TropicalMapHud";
 import { DrawTool } from "./ui/DrawTool";
 import { AlertController } from "./ui/AlertController";
+import { AlertNotifier } from "./ui/AlertNotifier";
 import { AlertPanel } from "./ui/AlertPanel";
+import { AlertPointCard } from "./ui/AlertPointCard";
+import { ForecastOfficePanel } from "./ui/ForecastOfficePanel";
+import { LocalWeatherPanel } from "./ui/LocalWeatherPanel";
 import { OutlookLegend } from "./ui/OutlookLegend";
 import { BasemapPicker } from "./ui/BasemapPicker";
 import { MapContextMenu } from "./ui/sounding/MapContextMenu";
@@ -28,21 +35,29 @@ import { FrontPopup } from "./ui/FrontPopup";
 import { MapTimeline } from "./ui/MapTimeline";
 import { RadarHud } from "./ui/RadarHud";
 import { RadarReadout } from "./ui/RadarReadout";
+import { ShiftReadout } from "./ui/ShiftReadout";
+import { ProductInfoPanel } from "./ui/ProductInfoPanel";
 import { ObsReadout } from "./ui/ObsReadout";
 import { ObsCompare } from "./ui/ObsCompare";
 import { RunStrip } from "./ui/RunStrip";
 import { DayLoadOverlay } from "./ui/DayLoadOverlay";
 import { LoopLoadCard } from "./ui/LoopLoadCard";
+import { FramesPanel } from "./ui/FramesPanel";
 import { AnimationModal } from "./ui/AnimationModal";
+import { ExportPage, ExportToast } from "./ui/ExportPage";
+import { RadarSiteList } from "./ui/RadarSiteList";
+import { RadarSiteNotice } from "./ui/RadarSiteNotice";
 import { UpdateBanner } from "./ui/UpdateBanner";
 import { QuickStart } from "./ui/QuickStart";
 import { WhatsNew } from "./ui/WhatsNew";
 import { StationPanel } from "./ui/StationPanel";
+import { AirportPage } from "./ui/airport/AirportPage";
 import { StormCellPanel } from "./ui/StormCellPanel";
 import { ChaserController } from "./ui/ChaserController";
 import { ChaserPopup } from "./ui/ChaserPopup";
 import { MesoscalePopup } from "./ui/MesoscalePopup";
 import { MesoscalePanel } from "./ui/MesoscalePanel";
+import { ShellChrome } from "./ui/ShellChrome";
 import { useAppStore } from "./store/useAppStore";
 import { selectRailOpen, useAlertStore } from "./store/useAlertStore";
 import { useLayoutStore } from "./store/useLayoutStore";
@@ -109,6 +124,7 @@ export default function App() {
       <MapView />
       {/* alerts orchestration (fetches NWS data; renders nothing) */}
       <AlertController />
+      <AlertNotifier />
       {/* HUD overlay: click-through container; each child re-enables pointer events */}
       <div className="hud">
         {/* The tool dock replaces the top bar and the tab strip: every control
@@ -124,6 +140,10 @@ export default function App() {
         <DataPanel />
         <MeasureTool />
         <CrossSectionTool />
+        <Radar3DTool />
+        {/* colour tables: .pal import (drop anywhere), scale/offset, ] [ note */}
+        <ColorTableHost />
+        <RadarDetectionsCard />
         <HydrographPanel />
         <SpaceMapHud />
         <TropicalMapHud />
@@ -132,12 +152,16 @@ export default function App() {
         <DrawTool />
         <OutlookLegend />
         <AlertPanel />
+        {/* every alert under a click inside the polygons */}
+        <AlertPointCard />
         <ZoomControls />
         <StatusBar />
         <SoundingViewer />
         <RadarHud />
         {/* the gate value under the pointer, pinned to the pointer */}
         <RadarReadout />
+        <ShiftReadout />
+        <ProductInfoPanel />
         <ObsReadout />
         {/* the Models compare views: models side by side, or the runs of one */}
         <ObsCompare />
@@ -157,8 +181,15 @@ export default function App() {
         <DayLoadOverlay />
         {/* an analysis loop loading, with a way to stop it */}
         <LoopLoadCard />
+        {/* the radar loop frame by frame: state, details, download, remove */}
+        <FramesPanel />
         <UpdateBanner />
+        {/* NWS forecast offices: alerts, discussion, contact, coverage */}
+        <LocalWeatherPanel />
+        <ForecastOfficePanel />
       </div>
+      {/* minimal UI / broadcast top-edge bar, broadcast logo, the "?" list */}
+      <ShellChrome />
       {/* map right-click menu (renders its own fixed overlay) */}
       <MapContextMenu />
       {/* footprint of an open area-averaged sounding (draws on the map, renders nothing) */}
@@ -167,10 +198,18 @@ export default function App() {
       <AreaBoxTool />
       {/* the Customize Animation dialog (top-bar video icon) */}
       <AnimationModal />
+      {/* export step: the Export page (pane menu, right-click, dock) + its toast */}
+      <ExportPage />
+      <ExportToast />
+      {/* radar-sites: every radar in a table, and why a radar is down */}
+      <RadarSiteList />
+      <RadarSiteNotice />
       {/* first-run setup and the release log; both self-mount and stay hidden
           until they have a reason to appear, or Settings opens them */}
       {/* full METAR report, opened from the map card */}
       <StationPanel />
+      {/* an airport's METAR/TAF page, from the aviation layers or the Aviation panel */}
+      <AirportPage />
       {/* full storm-cell report with the per-scan trends, likewise from its card */}
       <StormCellPanel />
       {/* joins the chaser channel and, only when opted in, broadcasts this device */}

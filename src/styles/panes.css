@@ -1,0 +1,396 @@
+/* ---------- Panes: layouts, dividers, chips, sync, own scrubber (panes-layout) ---------- */
+
+:root {
+  /* A pane switch that is off (camera or animation not shared): amber. */
+  --pane-off: #f0b429;
+}
+:root[data-theme="light"] {
+  --pane-off: #b26a05;
+}
+
+/* Layouts: the tracks come from the dividers (MapView sets --pane-cols and
+   --pane-rows). Phones keep the fixed stacks from app.css. */
+@media (min-width: 821px) {
+  .map-canvas.map-canvas--l-2,
+  .map-canvas.map-canvas--l-2h,
+  .map-canvas.map-canvas--l-3,
+  .map-canvas.map-canvas--l-4,
+  .map-canvas.map-canvas--l-6 {
+    grid-template-columns: var(--pane-cols);
+    grid-template-rows: var(--pane-rows);
+  }
+}
+/* Three: two over one. */
+.map-canvas--l-3 > .mappane:nth-child(3) {
+  grid-column: 1 / -1;
+}
+@media (max-width: 820px) {
+  .map-canvas.map-canvas--l-2h {
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(2, 1fr);
+  }
+  .map-canvas.map-canvas--l-3 {
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(3, 1fr);
+  }
+  .map-canvas--l-3 > .mappane:nth-child(3) {
+    grid-column: auto;
+  }
+  .panediv {
+    display: none;
+  }
+}
+
+/* The focused pane's outline, for every split layout (app.css lists 2/4/6). */
+.map-canvas--multi .mappane {
+  outline: 1px solid transparent;
+  outline-offset: -1px;
+}
+.map-canvas--multi .mappane.is-focused::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+  border: 1px solid var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+/* Dividers: a 10px grab strip centred on the 2px gap. */
+.panediv {
+  position: absolute;
+  z-index: 9;
+  touch-action: none;
+}
+.panediv--x {
+  width: 10px;
+  margin-left: -5px;
+  cursor: col-resize;
+}
+.panediv--y {
+  height: 10px;
+  margin-top: -5px;
+  cursor: row-resize;
+}
+.panediv::after {
+  content: "";
+  position: absolute;
+  background: transparent;
+  transition: background var(--t-fast);
+}
+.panediv--x::after {
+  left: 4px;
+  width: 2px;
+  top: 0;
+  bottom: 0;
+}
+.panediv--y::after {
+  top: 4px;
+  height: 2px;
+  left: 0;
+  right: 0;
+}
+.panediv:hover::after,
+.panediv.is-dragging::after {
+  background: var(--accent);
+}
+
+/* Dock: six layouts in two rows of three. */
+.dock__fly-row:has(> .dock__pane:nth-child(5)) {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.dock__pane-icon--flip {
+  transform: rotate(180deg);
+}
+
+/* ---- header chips ---- */
+.map-canvas--multi .panehead {
+  padding-right: 96px; /* the pane's switches, top right */
+}
+.panehead__letter {
+  pointer-events: auto;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.panehead.is-active .panehead__letter {
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+/* With the letter there, the focused dot is not needed. */
+.panehead.is-active .panehead__name:has(.panehead__letter)::before {
+  display: none;
+}
+.panechip {
+  pointer-events: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: stretch;
+  min-width: 0;
+  max-width: 100%;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  transition: background var(--t-fast), border-color var(--t-fast);
+}
+.panechip:hover {
+  background: var(--panel-solid);
+  border-color: var(--border-strong);
+}
+.panechip--radar {
+  flex: 0 1 auto;
+  cursor: grab;
+}
+.panechip__main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 7px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.panechip__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.panechip__x {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--border);
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.panechip__x:hover {
+  color: var(--danger);
+}
+.panechip--ov {
+  cursor: grab;
+}
+.panechip--ov .panechip__main {
+  max-width: 220px;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+.panechip--empty {
+  align-items: center;
+  padding: 0 10px;
+  border-style: dashed;
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+  cursor: pointer;
+}
+.panechip--out {
+  align-items: center;
+  padding: 0 8px;
+  border-color: color-mix(in srgb, var(--pane-off) 60%, transparent);
+  color: var(--pane-off);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ---- top right: Sync camera, Follow the animation, close ---- */
+.panetools {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  z-index: 8;
+  display: flex;
+  gap: 3px;
+}
+.panetools__btn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast);
+}
+.panetools__btn:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.panetools__btn.is-off {
+  color: var(--pane-off);
+  border-color: color-mix(in srgb, var(--pane-off) 60%, transparent);
+  background: color-mix(in srgb, var(--pane-off) 12%, var(--panel-solid));
+}
+.panetools__close:hover {
+  color: var(--danger);
+  border-color: var(--danger-border);
+}
+
+/* ---- "doesn't see this part of the world" ---- */
+.paneout {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 8;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  max-width: calc(100% - 32px);
+  padding: 12px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-solid);
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: center;
+}
+.paneout p {
+  margin: 0;
+}
+.paneout button {
+  padding: 4px 16px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.paneout button:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* ---- drag and drop ---- */
+.panedrop {
+  position: absolute;
+  inset: 6px;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  pointer-events: none;
+}
+.panedrag-ghost {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-width: 360px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel-solid);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.panedrag-ghost.is-target {
+  border-color: var(--accent);
+}
+.panedrag-ghost small {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-faint);
+}
+body.is-panedrag,
+body.is-panedrag * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+/* ---- a pane's own scrubber (Follow the animation off) ---- */
+.paneplay {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--pane-off) 45%, var(--border));
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+.mappane:has(> .paneplay) .mappane__cbar {
+  bottom: 48px;
+}
+.paneplay__btn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-solid);
+  color: var(--text);
+  cursor: pointer;
+}
+.paneplay__btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.paneplay__rail {
+  flex: 1;
+  min-width: 40px;
+  accent-color: var(--accent);
+}
+.paneplay__time {
+  flex: none;
+  min-width: 48px;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 11px;
+  color: var(--text);
+}
+.paneplay__sel {
+  flex: none;
+  height: 22px;
+  padding: 0 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-solid);
+  color: var(--text);
+  font-size: 11px;
+}
+
+/* An emptied pane ("Select product") has no radar scale to show. */
+.mappane[data-empty] .mappane__cbar > .cbar:not(.cbar--obs) {
+  display: none;
+}

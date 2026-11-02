@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  Monitor,
+  ToggleRight,
   AlertTriangle,
   ChevronDown,
   Clock,
@@ -31,7 +33,8 @@ import { Select } from "../Select";
 import { useAppStore } from "../../store/useAppStore";
 import { useOnboardingStore } from "../../store/useOnboardingStore";
 import { useNexradStore } from "../../store/useNexradStore";
-import { usePaletteStore } from "../../store/usePaletteStore";
+import { MAX_CUSTOM, pidOfCustom, usePaletteStore } from "../../store/usePaletteStore";
+import { importDrop, importPalFiles } from "../ColorTableHost";
 import { useThemeStore, type ThemeMode } from "../../store/useThemeStore";
 import { useChaserStore } from "../../store/useChaserStore";
 import { useAlertStore, type AlertCategoryKey } from "../../store/useAlertStore";
@@ -42,8 +45,13 @@ import { buildLut, palGradient, parsePal } from "../../lib/pal";
 import { INITIAL_VIEW } from "../../map/mapStyle";
 import { getMap } from "../../map/mapInstance";
 import { DEFAULT_UNIT, UNITS_BY_KIND, UNIT_CHOICES } from "../../lib/radarUnits";
-import { SETTINGS_SECTIONS, type SettingDef, type SettingValue } from "../../settings/schema";
+import { ALERT_COLOR_EVENTS, SETTINGS_SECTIONS, type SettingDef, type SettingValue } from "../../settings/schema";
+import { AlertTypeSettings, openAlertTypePage } from "../settings/AlertTypeSettings";
 import { useSettingsStore } from "../../settings/useSettingsStore";
+import { FeaturesBlock, ProductTables, ShellRows } from "../settings/ShellSettings";
+import { revealSetting, searchSettings, SettingsResults, type SettingHit } from "../settings/SettingsSearch";
+import { useFeatureStore } from "../../store/useFeatureStore";
+import { useShellStore } from "../../store/useShellStore";
 
 // ---------------------------------------------------------------- controls ---
 
@@ -161,6 +169,23 @@ function SchemaRow({ def }: { def: SettingDef }) {
           {...common}
           control={
             <Select value={value as string} onChange={(v) => set(def.key, v)} options={def.options} aria-label={def.label} />
+          }
+        />
+      );
+    case "text":
+      return (
+        <Row
+          {...common}
+          control={
+            <input
+              className="setx__text-input"
+              type="text"
+              value={value as string}
+              placeholder={def.placeholder}
+              spellCheck={false}
+              onChange={(e) => set(def.key, e.target.value)}
+              aria-label={def.label}
+            />
           }
         />
       );
@@ -410,49 +435,32 @@ function PalStrip({ pal }: { pal: string }) {
 function PaletteBlock() {
   const custom = usePaletteStore((s) => s.custom);
   const overrides = usePaletteStore((s) => s.overrides);
-  const add = usePaletteStore((s) => s.add);
   const remove = usePaletteStore((s) => s.remove);
   const setTarget = usePaletteStore((s) => s.setTarget);
   const builtins = useNexradStore((s) => s.palettes);
   const loadCatalog = useNexradStore((s) => s.loadCatalog);
-  const repaint = useNexradStore((s) => s.repaint);
   const fileRef = useRef<HTMLInputElement | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [added, setAdded] = useState<string | null>(null);
+  const [over, setOver] = useState(false);
 
   // the built-in list comes from the backend; Settings can be opened first
   useEffect(() => {
     if (!builtins.length) void loadCatalog();
   }, [builtins.length, loadCatalog]);
 
-  const targetOf = (id: string) => Object.entries(overrides).find(([, v]) => v === id)?.[0] ?? "";
-
-  const onFiles = async (files: FileList | null) => {
-    if (!files?.length) return;
-    setError(null);
-    setAdded(null);
-    const ok: string[] = [];
-    for (const file of Array.from(files)) {
-      const res = add(file.name, await file.text());
-      if (!res.ok) {
-        setError(`${file.name}: ${res.error}`);
-        break;
-      }
-      const where = res.target ? ` → replaces ${res.target}` : " (pick what it replaces below)";
-      ok.push(`${file.name}${where}`);
-    }
-    if (ok.length) {
-      setAdded(ok.join(", "));
-      repaint(); // the radar may be showing the palette we just replaced
-    }
-    if (fileRef.current) fileRef.current.value = ""; // re-importing the same file should re-fire
+  // colour-tables: a saved palette belongs to a product (its pid), and is
+  // DRAWN when that product has it chosen (overrides) -- the editor's table
+  // menu and ] / [ switch between them.
+  const targetOf = (id: string) => {
+    const c = custom.find((p) => p.id === id);
+    return (c && pidOfCustom(c, overrides)) ?? "";
   };
 
   return (
     <div className="setx__block">
       <p className="setx__hint">
-        GRLevelX <code>.pal</code> files, in real data units (dBZ, kt). An imported table replaces a built-in one, so every
-        product using it picks it up. A <code>Product:</code> line wires it up automatically.
+        GRLevelX <code>.pal</code> files. Pick several, or drop files or a whole folder anywhere on the window: each is
+        sorted to its product by its <code>Product:</code> line, its file name, or its units, and checked before import.
+        Up to {MAX_CUSTOM} saved palettes; click a pane&apos;s colour bar to edit one.
       </p>
       <input
         ref={fileRef}
@@ -460,50 +468,71 @@ function PaletteBlock() {
         accept=".pal,text/plain"
         multiple
         style={{ display: "none" }}
-        onChange={(e) => void onFiles(e.target.files)}
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          void importPalFiles(files.filter((f) => /\.pal$/i.test(f.name)), files.filter((f) => !/\.pal$/i.test(f.name)).length);
+          if (fileRef.current) fileRef.current.value = ""; // re-importing the same file should re-fire
+        }}
       />
-      <button type="button" className="btn-reset" onClick={() => fileRef.current?.click()}>
-        <Upload size={14} /> Import .pal file
-      </button>
-      {error && <div className="sv__notice">{error}</div>}
-      {added && !error && <div className="setx__hint" style={{ color: "var(--accent-text)" }}>Imported {added}</div>}
+      <div
+        className={`ctab-zone${over ? " is-over" : ""}`}
+        onDragOver={(e) => {
+          if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+          e.preventDefault();
+          setOver(true);
+        }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => {
+          if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+          e.preventDefault();
+          setOver(false);
+          importDrop(e.dataTransfer);
+        }}
+      >
+        <button type="button" className="btn-reset" onClick={() => fileRef.current?.click()}>
+          <Upload size={14} /> Import .pal files
+        </button>
+        <span>or drop .pal files or a folder here</span>
+      </div>
+      <div className="setx__hint">
+        {custom.length} of {MAX_CUSTOM} saved
+      </div>
       {custom.length > 0 && (
         <ul className="pallist">
-          {custom.map((p) => (
-            <li key={p.id} className="pallist__item">
-              <div className="pallist__head">
-                <span className="pallist__name" title={p.label}>
-                  {p.label}
-                  {p.product && <em className="pallist__prod"> {p.product}</em>}
-                </span>
-                <button
-                  type="button"
-                  className="pallist__del"
-                  onClick={() => {
-                    remove(p.id);
-                    repaint();
-                  }}
-                  title={`Remove ${p.label}`}
-                  aria-label={`Remove ${p.label}`}
-                >
-                  <Trash2 size={13} />
-                </button>
-              </div>
-              <PalStrip pal={p.pal} />
-              <label className="pallist__target">
-                <span>Replaces</span>
-                <Select
-                  value={targetOf(p.id)}
-                  onChange={(value) => {
-                    setTarget(p.id, value);
-                    repaint();
-                  }}
-                  aria-label="Which product this palette replaces"
-                  options={[{ value: "", label: "— not used —" }, ...builtins.map((b) => ({ value: b.id, label: b.label }))]}
-                />
-              </label>
-            </li>
-          ))}
+          {custom.map((p) => {
+            const target = targetOf(p.id);
+            const drawn = target && overrides[target] === p.id;
+            return (
+              <li key={p.id} className="pallist__item">
+                <div className="pallist__head">
+                  <span className="pallist__name" title={p.label}>
+                    {p.label}
+                    {p.product && <em className="pallist__prod"> {p.product}</em>}
+                    {drawn && <em className="pallist__prod"> · in use</em>}
+                  </span>
+                  <button
+                    type="button"
+                    className="pallist__del"
+                    onClick={() => remove(p.id)}
+                    title={`Remove ${p.label}`}
+                    aria-label={`Remove ${p.label}`}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+                <PalStrip pal={p.pal} />
+                <label className="pallist__target">
+                  <span>For</span>
+                  <Select
+                    value={target}
+                    onChange={(value) => setTarget(p.id, value)}
+                    aria-label="Which product this palette is for"
+                    options={[{ value: "", label: "— not used —" }, ...builtins.map((b) => ({ value: b.id, label: b.label }))]}
+                  />
+                </label>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
@@ -586,7 +615,8 @@ interface Extra {
   /** Words the search matches for this block. */
   terms: string;
   group?: string;
-  render: () => ReactNode;
+  /** `query`: the search, when it picked rows rather than the whole section. */
+  render: (query: string) => ReactNode;
 }
 
 interface UiSection {
@@ -622,6 +652,21 @@ const UI_SECTIONS: UiSection[] = [
     description: "Where the panels sit.",
     before: [{ terms: "layout panel side alert rail left right floating tools reset", render: () => <LayoutBlock /> }],
   },
+  {
+    id: "interface",
+    label: "Interface",
+    icon: <Monitor size={14} />,
+    description: "Minimal UI, broadcast mode, the shortcut list, size and density.",
+    before: [{ terms: "minimal broadcast shortcuts keyboard keys", render: () => <ShellRows /> }],
+    schema: "ui",
+  },
+  {
+    id: "features",
+    label: "Features",
+    icon: <ToggleRight size={14} />,
+    description: "Presets, and a switch for each panel, tool and layer.",
+    before: [{ terms: "features presets essentials chaser analyst all switches", render: () => <FeaturesBlock /> }],
+  },
   { id: "map", label: "Map", icon: <MapIcon size={14} />, schema: "map" },
   {
     id: "radar",
@@ -633,6 +678,7 @@ const UI_SECTIONS: UiSection[] = [
     schema: "radar",
     after: [
       { terms: "units velocity kt knots m/s mph", group: "Units", render: () => <UnitRows /> },
+      { terms: "colour color table per product palette", group: "Colour tables", render: () => <ProductTables /> },
       { terms: "palette colour color table pal grlevelx import", group: "Colour palettes", render: () => <PaletteBlock /> },
     ],
   },
@@ -642,6 +688,13 @@ const UI_SECTIONS: UiSection[] = [
     icon: <AlertTriangle size={14} />,
     before: [{ terms: "category tornado severe special map filter", group: "On the map", render: () => <AlertCategoryRows /> }],
     schema: "alerts",
+    after: [
+      {
+        terms: `alert types per type colour color outline border fill flash sound intensity tier level pds emergency observed considerable destructive ${ALERT_COLOR_EVENTS.map((e) => e.event).join(" ")}`,
+        group: "Alert types",
+        render: (q) => <AlertTypeSettings query={q} />,
+      },
+    ],
   },
   { id: "lsr", label: "Storm reports", icon: <Megaphone size={14} />, schema: "lsr" },
   { id: "md", label: "Mesoscale discussions", icon: <MessageSquareWarning size={14} />, schema: "md" },
@@ -699,13 +752,13 @@ function Section({ section, query, open, onToggle }: { section: UiSection; query
 
   // Rows under their sub-headings, in order, a heading written once per run.
   const blocks: { group?: string; node: ReactNode; key: string }[] = [
-    ...before.map((e, i) => ({ group: e.group, node: e.render(), key: `b${i}` })),
+    ...before.map((e, i) => ({ group: e.group, node: e.render(whole ? "" : q), key: `b${i}` })),
     ...items.map((d) => ({ group: d.group, node: <SchemaRow def={d} />, key: d.key })),
-    ...after.map((e, i) => ({ group: e.group, node: e.render(), key: `a${i}` })),
+    ...after.map((e, i) => ({ group: e.group, node: e.render(whole ? "" : q), key: `a${i}` })),
   ];
 
   return (
-    <section className={`setx__sec${expanded ? " is-open" : ""}`}>
+    <section className={`setx__sec${expanded ? " is-open" : ""}`} data-sec={section.id}>
       <button type="button" className="setx__head" onClick={onToggle} aria-expanded={expanded}>
         <span className="setx__icon">{section.icon}</span>
         <span className="setx__title">{section.label}</span>
@@ -736,6 +789,17 @@ function Section({ section, query, open, onToggle }: { section: UiSection; query
 export function SettingsContent() {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<Set<string>>(() => new Set(["general"]));
+  // ux-shell: the search lists results; picking one opens its section and
+  // flashes the row (settings/SettingsSearch.tsx).
+  const results = useMemo(() => searchSettings(query, UI_SECTIONS), [query]);
+  const [active, setActive] = useState(0);
+  useEffect(() => setActive(0), [query]);
+  const pick = (h: SettingHit) => {
+    setQuery("");
+    setOpen((prev) => new Set(prev).add(h.section));
+    if (h.alertType) openAlertTypePage(h.alertType);
+    window.setTimeout(() => revealSetting(h), 50);
+  };
   const resetAll = useSettingsStore((s) => s.resetAll);
   const setProjection = useAppStore((s) => s.setProjection);
   const setReduceMotion = useAppStore((s) => s.setReduceMotion);
@@ -759,6 +823,9 @@ export function SettingsContent() {
     setThemeMode("auto");
     // Restoring defaults must never leave a location broadcast running.
     setSharing(false);
+    // ux-shell: every feature back on, the whole interface on screen.
+    useFeatureStore.getState().applyPreset("all");
+    useShellStore.getState().setMode("normal");
     getMap()?.flyTo({ center: INITIAL_VIEW.center, zoom: INITIAL_VIEW.zoom, bearing: 0, pitch: 0, essential: true });
   };
 
@@ -770,6 +837,22 @@ export function SettingsContent() {
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (!query.trim()) return;
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+              e.preventDefault();
+              const n = results.length || 1;
+              setActive((a) => (a + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+            } else if (e.key === "Enter") {
+              e.preventDefault();
+              const h = results[active] ?? results[0];
+              if (h) pick(h);
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              setQuery("");
+            }
+          }}
           placeholder="Search settings"
           aria-label="Search settings"
         />
@@ -780,9 +863,13 @@ export function SettingsContent() {
         )}
       </div>
 
-      {UI_SECTIONS.map((section) => (
-        <Section key={section.id} section={section} query={query} open={open.has(section.id)} onToggle={() => toggle(section.id)} />
-      ))}
+      {query.trim() ? (
+        <SettingsResults results={results} active={active} onPick={pick} onHover={setActive} />
+      ) : (
+        UI_SECTIONS.map((section) => (
+          <Section key={section.id} section={section} query="" open={open.has(section.id)} onToggle={() => toggle(section.id)} />
+        ))
+      )}
 
       <div className="setx__foot">
         <button type="button" className="btn-reset" onClick={() => setOpen(new Set(UI_SECTIONS.map((s) => s.id)))}>

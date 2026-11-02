@@ -14,8 +14,10 @@ import { fetchStormCellHistory, type StormCellSample } from "../lib/nexrad";
 import { computeImpacts, loadPlaces, type Place, type PlaceImpact } from "../lib/stormImpacts";
 import { useAlertStore } from "../store/useAlertStore";
 import { useAppStore } from "../store/useAppStore";
-import { useNexradStore } from "../store/useNexradStore";
+import { isTdwrId, useNexradStore } from "../store/useNexradStore";
 import { useStormCellStore } from "../store/useStormCellStore";
+import { useRadar3DStore } from "../store/useRadar3DStore";
+import { currentFrame, squareAround } from "../lib/radar3d/selection";
 
 /** Ray-cast point-in-ring, in lon/lat. */
 function inRing(lon: number, lat: number, ring: GeoJSON.Position[]): boolean {
@@ -303,13 +305,17 @@ export function StormCellPanel() {
               ? `${cell.headingCompass} at ${cell.speedMph} mph`
               : "Motion not resolved"}
           </span>
-          {meso?.tvs && <em className="scp__tvs">TVS</em>}
+          {meso?.tvs && (
+            <em className="scp__tvs" title="Tornado vortex signature from the NWS Level III product">
+              TVS · NWS L3
+            </em>
+          )}
         </div>
       )}
 
       {meso && !meso.tvs && (
         <div className="scp__meso">
-          <Tornado size={14} /> Mesocyclone detected
+          <Tornado size={14} /> Mesocyclone detected · NWS L3
         </div>
       )}
 
@@ -327,6 +333,25 @@ export function StormCellPanel() {
             <dt>Forecast</dt>
             <dd>{forecastLabel}</dd>
           </dl>
+          {site && !isTdwrId(site) && (
+            <button
+              type="button"
+              className="scp__link"
+              onClick={() => {
+                // An 80 km box on the cell; it follows the cell as new scans come.
+                useRadar3DStore.getState().openView({
+                  site,
+                  ...currentFrame(),
+                  sel: { kind: "box", ring: squareAround(cell.lon, cell.lat, 80) },
+                  follow: cell.id,
+                });
+                close();
+              }}
+              title="The cell in 3D; the box follows it as new scans come"
+            >
+              Render 3D <ArrowRight size={13} />
+            </button>
+          )}
         </section>
       )}
 

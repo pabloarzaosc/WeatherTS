@@ -10,19 +10,22 @@ export function LayerPower({
   on,
   onToggle,
   error = false,
+  onText = "LIVE",
 }: {
   label: string;
   on: boolean;
   onToggle: () => void;
   /** Draws the row as faulted and reads ERROR, whatever the toggle state. */
   error?: boolean;
+  /** What "on" reads: the archive's layers are on, but not live. */
+  onText?: string;
 }) {
   const cls = `layer-power${on ? " is-on" : ""}${error ? " is-error" : ""}`;
   return (
     <button type="button" className={cls} aria-pressed={on} onClick={onToggle}>
       <span className="layer-power__dot" />
       <span className="layer-power__txt">{label}</span>
-      <span className="layer-power__state">{error ? "ERROR" : on ? "LIVE" : "OFF"}</span>
+      <span className="layer-power__state">{error ? "ERROR" : on ? onText : "OFF"}</span>
     </button>
   );
 }

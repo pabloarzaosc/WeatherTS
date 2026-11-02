@@ -1,0 +1,343 @@
+/* Alerts: intensity tier chips, the new-alert glow in the list, the text
+   inputs of Settings' alert filters, and the per-type alert settings pages
+   (ui/settings/AlertTypeSettings.tsx). Theme tokens only; hairlines. */
+
+/* ---------------------------------------------------------- tier chip --- */
+.al-tierchip {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  padding: 0 7px 0 6px;
+  border: 1px solid color-mix(in srgb, var(--chip, var(--accent)) 75%, var(--text-faint));
+  border-radius: var(--radius-chip, 4px);
+  background: color-mix(in srgb, var(--chip, var(--accent)) 13%, transparent);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.al-tierchip::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--chip, var(--accent));
+  box-shadow: 0 0 0 1px rgba(var(--wash-rgb), 0.25);
+}
+
+/* ------------------------------------------------ new alert in the list --- */
+.alert-list__row.is-flashing {
+  animation: al-new-glow 0.9s ease-in-out infinite;
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
+}
+@keyframes al-new-glow {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  50% {
+    background-color: rgba(var(--wash-rgb), 0.1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .alert-list__row.is-flashing {
+    animation: none;
+    background-color: rgba(var(--wash-rgb), 0.07);
+  }
+}
+
+/* ----------------------------------------------- Settings text inputs --- */
+.setx__text-input {
+  width: 128px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-solid);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+.setx__text-input::placeholder {
+  color: var(--text-faint);
+  text-transform: none;
+}
+.setx__text-input:focus {
+  border-color: var(--accent-ring);
+  outline: none;
+}
+
+/* ------------------------------------------------- per-type alert pages --- */
+.atypes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 0 6px;
+}
+.atypes__search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 6px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-solid);
+  color: var(--text-faint);
+}
+.atypes__search:focus-within {
+  border-color: var(--accent-ring);
+}
+.atypes__search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.atypes__search input::-webkit-search-cancel-button {
+  display: none;
+}
+.atypes__empty {
+  margin: 6px 2px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.atypes__group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.atypes__ghead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+.atypes__ghead:hover {
+  background: rgba(var(--wash-rgb), 0.04);
+}
+.atypes__count {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.atype__chev {
+  margin-left: auto;
+  color: var(--text-faint);
+  transition: transform 0.15s;
+}
+.is-open > .atypes__ghead .atype__chev,
+.atype.is-open > .atype__head .atype__chev {
+  transform: rotate(180deg);
+}
+.atype {
+  border-top: 1px solid rgba(var(--wash-rgb), 0.06);
+}
+.atype__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  padding: 3px 8px 3px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.atype__head:hover {
+  background: rgba(var(--wash-rgb), 0.04);
+  color: var(--text);
+}
+.atype.is-open > .atype__head {
+  color: var(--text);
+}
+.atype.is-off .atype__name {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+.atype__swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(var(--wash-rgb), 0.28);
+}
+.atype__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.atype__tag {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 15px;
+}
+.atype__tag--mod {
+  border-color: var(--accent-ring);
+  color: var(--accent-text);
+}
+.atype__body {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 10px 8px 30px;
+}
+.atype__line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 30px;
+  border-bottom: 1px solid rgba(var(--wash-rgb), 0.05);
+}
+.atype__label {
+  color: var(--text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.atype__ctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.atype__range {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.atype__range .setx__range {
+  width: 88px;
+  margin: 0;
+}
+.atype__range .setx__value {
+  min-width: 34px;
+  text-align: right;
+}
+.atype__play {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.atype__play:hover:not(:disabled) {
+  border-color: var(--accent-ring);
+  color: var(--accent-text);
+}
+.atype__play:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.atype__tiers,
+.atypes__tiers {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 8px;
+}
+.atypes__tiers {
+  padding: 8px 2px 2px;
+}
+.atype__sub {
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.atype__tier {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "name colour" "sound sound";
+  align-items: center;
+  gap: 4px 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(var(--wash-rgb), 0.05);
+}
+.atype__tiername {
+  grid-area: name;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.atype__tier > .setx__color {
+  grid-area: colour;
+}
+.atype__tiersound {
+  grid-area: sound;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.atype__tiersound .uisel {
+  flex: 1;
+  min-width: 0;
+}
+.atype__chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--chip) 75%, var(--text-faint));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--chip) 16%, transparent);
+  color: var(--text);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.atype__tierof {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.atype__tier .setx__hex {
+  display: none;
+}
+.atype__resetall {
+  align-self: flex-start;
+  margin-top: 8px;
+}
+
+/* Flash row: the select and the colour share the line; the hex would not fit. */
+.atype__line .uisel + .setx__color .setx__hex {
+  display: none;
+}

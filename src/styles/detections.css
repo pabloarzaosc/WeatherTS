@@ -1,0 +1,250 @@
+/* ============================================================
+   Radar detections (radarDetectionsLayer + RadarDetectionsCard)
+   ============================================================ */
+
+/* The Vrot steps -- orange from 30 kt, red 50, magenta 65, purple 80 -- and
+   the debris marker. Data colours read over reflectivity, so they are bright
+   on the dark theme; the light theme's basemap is pale, so they go deeper
+   there and the casing turns white. */
+:root {
+  --det-orange: #ff9b26;
+  --det-red: #ff3b2f;
+  --det-magenta: #ff3cf0;
+  --det-purple: #a866ff;
+  --det-weak: #d8d8d8;
+  --det-debris: #45dcff;
+  --det-casing: #0b0f15;
+}
+:root[data-theme="light"] {
+  --det-orange: #e27500;
+  --det-red: #db1f14;
+  --det-magenta: #cf16c4;
+  --det-purple: #7232e0;
+  --det-weak: #3f4c5e;
+  --det-debris: #0090b4;
+  --det-casing: #ffffff;
+}
+
+.tone-weak { --c: var(--det-weak); }
+.tone-orange { --c: var(--det-orange); }
+.tone-red { --c: var(--det-red); }
+.tone-magenta { --c: var(--det-magenta); }
+.tone-purple { --c: var(--det-purple); }
+.tone-debris { --c: var(--det-debris); }
+
+/* No `position` here: the marker root is MapLibre's absolutely placed
+   element, which is also what the label hangs off. */
+.detmk {
+  display: block;
+  line-height: 0;
+  cursor: pointer;
+}
+.detmk--tds { --c: var(--det-debris); }
+.detmk svg { display: block; overflow: visible; }
+.detmk .cas {
+  fill: var(--det-casing);
+  stroke: var(--det-casing);
+  stroke-width: 4;
+  stroke-linejoin: round;
+}
+.detmk .fg {
+  fill: var(--c);
+  stroke: none;
+}
+.detmk .cas.ring { fill: none; stroke-width: 5.6; }
+.detmk .fg.ring { fill: none; stroke: var(--c); stroke-width: 2.6; stroke-linejoin: round; }
+.detmk .dot { fill: var(--det-casing); }
+.detmk.is-stale svg,
+.detmk.is-stale .detmk__lbl { opacity: 0.42; }
+.detmk.is-sel .cas { stroke: var(--text); }
+
+.detmk__lbl {
+  position: absolute;
+  left: calc(100% + 4px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 1px 4px;
+  border: 1px solid var(--border-strong);
+  border-left: 2px solid var(--c);
+  border-radius: 2px;
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10px;
+  line-height: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.det-lo .detmk__lbl { display: none; }
+/* A TVS beside the circle sits where the label would start. */
+.detmk.has-tvs .detmk__lbl { left: calc(100% + 20px); }
+/* Debris on a meso: the meso's label runs right, so this one goes underneath. */
+.detmk.lbl-under .detmk__lbl {
+  left: 50%;
+  top: calc(100% + 6px);
+  transform: translateX(-50%);
+}
+
+/* The NWS Level III TVS the storm-cell layer draws: badged so it is never
+   taken for the app's own detections. */
+.tvsmark__src {
+  position: absolute;
+  left: calc(100% + 3px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 0 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  background: var(--panel);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 9px;
+  line-height: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ---- the card ---- */
+.detcard {
+  position: fixed;
+  /* Over the cursor readout (61): the card sits where the cursor just was. */
+  z-index: 62;
+  padding: 9px 11px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 11.5px;
+  animation: fade-up 0.12s var(--ease-out) both;
+}
+.detcard__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+.detcard__head b {
+  font-size: 12.5px;
+  font-weight: 650;
+}
+.detcard__head button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+}
+.detcard__head button:hover { color: var(--text); }
+.detcard__swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--c);
+}
+.detcard__chip {
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  color: var(--text-dim);
+  font-size: 10px;
+  line-height: 15px;
+}
+.detcard__grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  row-gap: 2px;
+  margin: 0;
+}
+.detcard__grid dt {
+  color: var(--text-faint);
+}
+.detcard__grid dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 11px;
+}
+.detcard__grid small {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+.detcard__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.detcard__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+}
+.detcard__btn:hover { border-color: var(--accent); }
+.detcard__btn.is-on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.detcard__note {
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+.detcard__foot {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+/* ---- the Radar panel row and its key ---- */
+.detrow__note {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  color: var(--text-faint);
+}
+.detlegend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: -2px 0 8px;
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+.detlegend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.detlegend__shape {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  --c: var(--text-dim);
+}
+.detlegend__shape.is-circle { border-radius: 50%; background: var(--c); }
+.detlegend__shape.is-ring { border-radius: 50%; border: 2px solid var(--c); }
+.detlegend__shape.is-tri { background: var(--c); clip-path: polygon(0 0, 100% 0, 50% 100%); }
+.detlegend__shape.is-diamond { background: var(--det-debris); transform: rotate(45deg) scale(0.8); }
+.detlegend__ramp i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin: 0 2px 0 4px;
+  border-radius: 1px;
+  background: var(--c);
+}

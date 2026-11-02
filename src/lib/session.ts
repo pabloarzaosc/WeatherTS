@@ -22,6 +22,8 @@ import { useAppStore, type LayerUIState } from "../store/useAppStore";
 import { useGlmStore } from "../store/useGlmStore";
 import { useLsrStore } from "../store/useLsrStore";
 import { useNexradStore } from "../store/useNexradStore";
+import { siteIsDown } from "../store/useRadarSitesStore";
+import { useRadarEventStore } from "../store/useRadarEventStore";
 import { useRiverStore } from "../store/useRiverStore";
 import { useSurfaceObsStore } from "../store/useSurfaceObsStore";
 
@@ -37,7 +39,7 @@ export interface SavedView {
 
 type Pick<S, K extends keyof S> = { [P in K]?: S[P] };
 
-const RADAR = ["site", "family", "tilt", "frames", "smooth", "threshold", "showRing", "showTracks", "showReadout", "autoUpdate"] as const;
+const RADAR = ["site", "family", "tilt", "frames", "loopMinutes", "smooth", "threshold", "showRing", "showTracks", "showReadout", "autoUpdate"] as const;
 const SURFACE = ["displayMode", "networks", "elements", "spacing", "size", "tempUnits", "windUnits", "presUnits", "visUnits", "maxAgeMin", "fadeStale"] as const;
 const ALERTS = ["categoryFilters", "listOpen"] as const;
 const LSR = ["span", "cats", "minSeverity", "showLabels", "fadeOld", "inView", "sort"] as const;
@@ -149,7 +151,11 @@ export function restoreSession(): void {
       return;
     }
     const on = useAppStore.getState().layers.nexrad?.visible;
-    if (on && s.sites.some((x) => x.id === pending)) s.selectSite(pending);
+    if (on && s.sites.some((x) => x.id === pending)) {
+      s.selectSite(pending);
+      // radar-sites: it went down since; its reasons are up, no more tries.
+      if (siteIsDown(pending)) pending = null;
+    }
   });
 
   useSurfaceObsStore.setState(known(useSurfaceObsStore.getState(), saved.surface));
@@ -172,7 +178,13 @@ function snapshot(): Saved {
     layers: app.layers,
     order: app.layerOrder,
     view: view ?? undefined,
-    radar: { ...pick(useNexradStore.getState(), RADAR), site: useNexradStore.getState().site ?? lastSite },
+    radar: {
+      ...pick(useNexradStore.getState(), RADAR),
+      site: useNexradStore.getState().site ?? lastSite,
+      // A notable event stretches the loop to its window; the app reopens
+      // live, so it keeps the loop length from before the event.
+      ...(useRadarEventStore.getState().prevLoop != null ? { loopMinutes: useRadarEventStore.getState().prevLoop! } : {}),
+    },
     surface: pick(useSurfaceObsStore.getState(), SURFACE),
     alerts: pick(useAlertStore.getState(), ALERTS),
     lsr: pick(useLsrStore.getState(), LSR),

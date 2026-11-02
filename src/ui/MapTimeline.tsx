@@ -7,6 +7,7 @@ import { useAlertStore } from "../store/useAlertStore";
 import { useTimelineStore } from "../store/useTimelineStore";
 import { useAppStore } from "../store/useAppStore";
 import { useNexradStore } from "../store/useNexradStore";
+import { useArchiveStore } from "../store/useArchiveStore";
 import { useLsrStore } from "../store/useLsrStore";
 import { useFrontsStore } from "../store/useFrontsStore";
 import { obsFramesFailed, obsFramesHere, useObsStore } from "../store/useObsStore";
@@ -19,6 +20,9 @@ import { fhText } from "../lib/observations";
 import { nearestSpeed } from "../lib/playSpeeds";
 import { clearPlayNext, setPlayNext, type PlayDriver } from "../lib/playAhead";
 import { SpeedPicker } from "./SpeedPicker";
+import { RadarFrameStrip } from "./RadarFrameStrip";
+import { cutLabel } from "../lib/radarFrames";
+import { FramesToggle } from "./FramesToggle";
 
 /** Frames a play buffers ahead before it steps, like a video: radar scans,
  *  and Models frames. Past BUFFER_MAX_MS of waiting it plays what it has. */
@@ -78,6 +82,16 @@ function fmtObsShort(unix: number | null): string {
 }
 
 // Radar scan time: HH:MMZ (scans are ~4 min apart).
+// ux-shell: whether focus last moved by keyboard (Tab) rather than a click, so
+// Space activates a tabbed-to button but plays the loop after a click.
+let focusByKeyboard = false;
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Tab") focusByKeyboard = true;
+}, true);
+window.addEventListener("pointerdown", () => {
+  focusByKeyboard = false;
+}, true);
+
 function fmtScan(unix: number | null): string {
   if (!unix) return "--";
   const d = new Date(unix * 1000);
@@ -128,6 +142,11 @@ export function MapTimeline() {
   const radarIndex = useNexradStore((s) => s.index);
   const radarLoading = useNexradStore((s) => s.loading);
   const radarArchiveDay = useNexradStore((s) => s.archiveDate);
+  // A past window's last frame is history too, not the live edge (archive-l2:
+  // lightning read "LIVE" there).
+  const radarArchiveAt = useNexradStore((s) => s.archiveTime);
+  const radarTilt = useNexradStore((s) => (s.product.startsWith("L2") ? s.tilt : null));
+  const radarRep = useNexradStore((s) => s.sailsRep);
   // Model fields (pressure today, more later) scrub forecast hours on this same
   // timeline rather than carrying a second slider of their own.
   const satVisible = useAppStore((s) => s.layers["satellite"]?.visible ?? false);
@@ -156,6 +175,8 @@ export function MapTimeline() {
   const [playing, setPlaying] = useState(false);
   // Where playback starts comes from Settings; the buttons change it for the session.
   const [speed, setSpeed] = useState<number>(() => nearestSpeed(Number(getSetting<string>("timeline.speed"))));
+  // export step: the Export page's "Loop speed" reads the speed set here.
+  useEffect(() => useTimelineStore.getState().setSpeed(speed), [speed]);
   const [loop, setLoop] = useState(() => getSetting<boolean>("timeline.loop"));
   const [obsTimes] = useState<number[]>(() => recentSynoptic());
   const [lsrNow] = useState<number>(() => Date.now() / 1000);
@@ -260,7 +281,7 @@ export function MapTimeline() {
   // balloon run): it stands for now. A forecast hour never does.
   const lastFrontAnalysis = frontFrames.reduce((b, f, i) => (f.kind === "analysis" ? i : b), -1);
   const atLiveEdge =
-    (isRadar && radarArchiveDay === null && value >= maxHour) ||
+    (isRadar && radarArchiveDay === null && radarArchiveAt === null && value >= maxHour) ||
     (isSat && value >= maxHour) ||
     (isObs && !obsForecast && !obsArchive && value >= maxHour) ||
     (isLsr && value >= maxHour) ||
@@ -374,6 +395,15 @@ export function MapTimeline() {
     if (isFronts) {
       useFrontsStore.getState().goToUnix(null);
       return;
+    }
+    if (isRadar) {
+      // Inside an archive window or a loaded day, NOW means live -- not the
+      // window's last frame, which is all the nearest-frame pick below can reach.
+      const nx = useNexradStore.getState();
+      if (nx.archiveTime !== null || nx.archiveDate !== null) {
+        useArchiveStore.getState().backToLive();
+        return;
+      }
     }
     if (!times || times.length === 0) {
       scrub(0);
@@ -496,6 +526,14 @@ export function MapTimeline() {
           buffering = true;
           bufferSince = performance.now();
           continue;
+        }
+        // Loop delay: the last frame held a moment before the loop starts again.
+        if (atEnd && stepped) {
+          const hold = Number(getSetting<number>("timeline.loopDelay")) * 1000;
+          if (hold > 0) {
+            await wait(hold);
+            if (cancelled) return;
+          }
         }
         stepped = true;
         shownAt = performance.now();
@@ -889,6 +927,8 @@ export function MapTimeline() {
   }, [playing, driver]);
   useEffect(() => useTimelineStore.subscribe((s, prev) => {
     if (s.stops !== prev.stops) setPlaying(false);
+    // A loop paused in the background plays on when the window is back.
+    if (s.resumes !== prev.resumes) setPlaying(true);
   }), []);
 
   // Stop playing if the context can no longer play (e.g. viewer closed).
@@ -897,15 +937,39 @@ export function MapTimeline() {
   }, [canPlay, playing]);
 
   // Keyboard scrubbing works anywhere (not just when the viewer is focused).
+  // ux-shell: Space plays / pauses (as the play button does), also asked for
+  // by the minimal UI's top bar with a "weatherts:toggle-play" event.
   useEffect(() => {
+    const togglePlay = () => {
+      if (!canPlay) return;
+      if (!playing && isObs) useObsStore.getState().armLoop();
+      if (!playing && isSat) useSatStore.getState().armLoop();
+      setPlaying((v) => !v);
+    };
     const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (e.key === "ArrowRight") step(1);
       else if (e.key === "ArrowLeft") step(-1);
+      else if (e.key === " " && !e.ctrlKey && !e.metaKey && !e.altKey && !e.defaultPrevented && !el?.isContentEditable) {
+        // A button reached with Tab keeps Space as its own; one that only
+        // holds focus from a click gives it to the loop. (:focus-visible
+        // cannot tell: any key press turns it on for the focused element.)
+        const btn = el?.closest?.('button, a[href], [role="button"], [role="switch"], [role="checkbox"], [role="option"], [role="tab"]') as HTMLElement | null;
+        if (btn && focusByKeyboard) return;
+        if (el?.closest?.('[role="listbox"], [role="menu"], [role="dialog"]')) return;
+        e.preventDefault();
+        btn?.blur();
+        if (!e.repeat) togglePlay();
+      }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("weatherts:toggle-play", togglePlay);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("weatherts:toggle-play", togglePlay);
+    };
   });
 
   // Observed products read as a clock time; a model forecast leads with its hour.
@@ -921,6 +985,11 @@ export function MapTimeline() {
       : isRaob
         ? fmtObsShort(selectedUnix)
         : `F${String(value).padStart(3, "0")}`;
+  // A SAILS / MRLE rescan says which scan of its tilt it is ("cut 2/3").
+  const radarCut = isRadar ? cutLabel(radarScans[value], radarTilt, radarRep) : "";
+  // The Level II volume still being written (hatched at the strip's end).
+  const radarPartial = isRadar && !!radarScans[value]?.partial;
+  const chipText = [chip, radarCut, radarPartial ? "scan in progress" : ""].filter(Boolean).join(" · ");
   const rendering = isRadar
     ? radarLoading
     : isSat
@@ -962,6 +1031,8 @@ export function MapTimeline() {
         <Repeat size={15} />
       </button>
       <SpeedPicker speed={speed} onChange={setSpeed} disabled={!canPlay} />
+      {/* The radar loop's frames, one by one (FramesPanel.tsx). */}
+      {isRadar && <FramesToggle />}
 
       <span className="maptimeline__sep" />
 
@@ -971,15 +1042,19 @@ export function MapTimeline() {
       <button type="button" className="maptimeline__step" onClick={() => step(-1)} disabled={value <= 0} title="Previous (Left arrow)">
         <ChevronLeft size={16} />
       </button>
-      <input
-        type="range"
-        className="maptimeline__scrub sv__scrub"
-        min={0}
-        max={maxHour}
-        value={value}
-        onChange={(e) => scrub(Number(e.target.value))}
-        style={{ "--sv-progress": `${progress}%` } as React.CSSProperties}
-      />
+      <div className="maptimeline__scrubwrap">
+        <input
+          type="range"
+          className="maptimeline__scrub sv__scrub"
+          min={0}
+          max={maxHour}
+          value={value}
+          onChange={(e) => scrub(Number(e.target.value))}
+          style={{ "--sv-progress": `${progress}%` } as React.CSSProperties}
+        />
+        {/* Each radar frame's state under the scrubber (radarFrameStatus.ts). */}
+        {isRadar && <RadarFrameStrip />}
+      </div>
       <button type="button" className="maptimeline__step" onClick={() => step(1)} disabled={value >= maxHour} title="Next (Right arrow)">
         <ChevronRight size={16} />
       </button>
@@ -992,7 +1067,7 @@ export function MapTimeline() {
       </button>
 
       <div className="maptimeline__readout">
-        <b className="maptimeline__chip">{rendering ? `···${chip}` : chip}</b>
+        <b className="maptimeline__chip">{rendering ? `···${chipText}` : chipText}</b>
         <span className="maptimeline__valid">{fmtValid(selectedUnix)}</span>
       </div>
     </div>

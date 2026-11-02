@@ -10,6 +10,8 @@ import {
   useOnboardingStore,
 } from "../store/useOnboardingStore";
 import { appVersion } from "../lib/appVersion";
+import { PRESETS } from "../lib/features";
+import { currentPreset, useFeatureStore } from "../store/useFeatureStore";
 
 type UnitSystem = "imperial" | "metric";
 
@@ -52,6 +54,8 @@ export function QuickStart() {
 
   const [step, setStep] = useState(0);
   const system: UnitSystem = tempUnits === "F" ? "imperial" : "metric";
+  const preset = currentPreset(useFeatureStore((s) => s.off));
+  const applyPreset = useFeatureStore((s) => s.applyPreset);
 
   // Offer itself once, on a genuinely fresh install.
   useEffect(() => {
@@ -104,6 +108,31 @@ export function QuickStart() {
   if (!open) return null;
 
   const steps = [
+    {
+      // ux-shell: a preset of features (lib/features.ts). Nothing is hidden
+      // until one is picked; Skip keeps everything.
+      key: "watch",
+      title: "How do you watch the weather?",
+      lede: "Pick the closest: WeatherTS hides what you would not use. Everything stays on until you pick, and Settings → Features has All and a switch for every feature.",
+      body: (
+        <div className="qs__choices">
+          {PRESETS.filter((p) => p.id !== "all").map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={`qs__choice${preset === p.id ? " is-on" : ""}`}
+              onClick={() => applyPreset(preset === p.id ? "all" : p.id)}
+            >
+              <span className="qs__choice-mark">{preset === p.id && <Check size={13} />}</span>
+              <span className="qs__choice-text">
+                <b>{p.label}</b>
+                <i>{p.blurb}</i>
+              </span>
+            </button>
+          ))}
+        </div>
+      ),
+    },
     {
       key: "units",
       title: "Pick your units",

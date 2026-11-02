@@ -23,7 +23,7 @@ import math
 from typing import Any, Callable, Optional
 
 import numpy as np
-from scipy.ndimage import gaussian_filter
+from scipy.ndimage import gaussian_filter, minimum_filter
 
 NOMADS = "https://nomads.ncep.noaa.gov/pub/data/nccf/com"
 
@@ -196,6 +196,17 @@ ICE_IN = [(0, T0), (0.01, T0), (0.05, "#f0b8d8"), (0.1, "#e080b8"), (0.25, "#c04
 # Saffir-Simpson, by maximum wind in knots: depression, storm, categories 1-5.
 SS_KT = [(0, "#9ed1f0"), (34, "#5cbf5c"), (64, "#f2d23c"), (83, "#f0a83c"), (96, "#e4552e"), (113, "#c02a5a"),
          (137, "#8e2a9e"), (170, "#8e2a9e")]
+# Flight category, as the aviation layers colour it; each category a band.
+FLTCAT_PAL = [(0, "#4ade80"), (1, "#3b82f6"), (2, "#ff6b5e"), (3, "#c58af9"), (4, "#c58af9")]
+FLTCAT_LABELS = [{"v": 0.5, "t": "VFR"}, {"v": 1.5, "t": "MVFR"}, {"v": 2.5, "t": "IFR"}, {"v": 3.5, "t": "LIFR"}]
+FLTCAT_NAMES = ["VFR", "MVFR", "IFR", "LIFR"]
+# The tropopause and the level of the strongest wind, as flight levels.
+TROP_FL = [(200, "#e4552e"), (280, "#f2d23c"), (340, "#7fbf6a"), (400, "#3fa9dd"), (460, "#3d6fcf"), (540, "#6b2fa0")]
+# Supercooled liquid water (g/kg): a trace, light, moderate, heavy icing.
+SLW_GKG = [(0, T0), (0.02, T0), (0.05, "#bfe3f5"), (0.1, "#7cc3ec"), (0.2, "#3f8fd8"), (0.35, "#5b4fc4"),
+           (0.5, "#8e3fb0"), (0.8, "#c02a8a"), (1.2, "#e4552e")]
+# Ellrod's TI1 (x 1e-7 s^-2): 4 light-moderate, 8 moderate, 12 severe.
+ELLROD_PAL = [(0, T0), (3.9, T0), (4, "#facc15"), (8, "#f59e0b"), (12, "#ef4444"), (16, "#a855f7"), (24, "#6b21a8")]
 SS_LABELS = [{"v": 17, "t": "TD"}, {"v": 49, "t": "TS"}, {"v": 73, "t": "1"}, {"v": 89, "t": "2"},
              {"v": 104, "t": "3"}, {"v": 125, "t": "4"}, {"v": 153, "t": "5"}]
 QPF_IN = [
@@ -367,6 +378,15 @@ SOURCES: dict[str, dict[str, Any]] = {
                 "srh1", "ushr6", "vshr6", "ustm", "vstm",
             ),
             "mslp": "PRMSL:mean sea level",
+            # Aviation: the ceiling (above sea level, 20 km where there is
+            # none), the tropopause and the strongest wind with their ICAO
+            # standard-atmosphere heights (which are flight levels), and the
+            # cloud water that freezes on a wing.
+            "ceil_msl": "HGT:cloud ceiling",
+            "trop_icaht": "ICAHT:tropopause", "trop_t": "TMP:tropopause", "trop_vwsh": "VWSH:tropopause",
+            "maxw_icaht": "ICAHT:max wind", "umaxw": "UGRD:max wind", "vmaxw": "VGRD:max wind",
+            "tmp600": "TMP:600 mb",
+            **{f"clmr{lv}": f"CLMR:{lv} mb" for lv in (850, 700, 600, 500)},
         },
     },
     "nam-anl": {
@@ -1755,6 +1775,54 @@ def _run_max(hourly: str, running: str) -> Callable:
     return make
 
 
+def _fltcat(get) -> np.ndarray:
+    """VFR, MVFR, IFR or LIFR from the ceiling and the visibility, as a band
+    value (0.5 VFR ... 3.5 LIFR). Where there is no ceiling the visibility
+    alone decides."""
+    c = get("ceil")
+    v = get("vis")
+    cft = np.where(np.isfinite(c), c * 3.28084, np.inf)
+    vsm = v / 1609.344
+    cat = np.zeros(v.shape, dtype=np.float32)
+    cat = np.where((cft <= 3000.0) | (vsm <= 5.0), 1.0, cat)
+    cat = np.where((cft < 1000.0) | (vsm < 3.0), 2.0, cat)
+    cat = np.where((cft < 500.0) | (vsm < 1.0), 3.0, cat)
+    return np.where(np.isfinite(v), cat + 0.5, np.nan)
+
+
+def _slw(get) -> np.ndarray:
+    """Supercooled liquid water: the cloud water the model carries where it is
+    between 0 and -20 C, the most at any of 850, 700, 600 and 500 mb (g/kg) --
+    the stuff that freezes on a wing, from about 5,000 to 18,000 ft."""
+    best = None
+    for lv in (850, 700, 600, 500):
+        t = get(f"tmp{lv}") - 273.15
+        w = get(f"clmr{lv}") * 1000.0
+        here = np.where((t <= 0.0) & (t >= -20.0), w, 0.0)
+        best = here if best is None else np.fmax(best, here)
+    return best
+
+
+def _ellrod(lower: int, upper: int) -> Callable:
+    """Ellrod and Knapp's (1992) clear-air turbulence index TI1 between two
+    levels: the vertical wind shear times the deformation of the layer's mean
+    wind, in units of 1e-7 s^-2."""
+    def fn(get):
+        du, dv = get(f"u{upper}") - get(f"u{lower}"), get(f"v{upper}") - get(f"v{lower}")
+        dz = np.maximum(get(f"hgt{upper}") - get(f"hgt{lower}"), 100.0)
+        vws = np.hypot(du, dv) / dz
+        um = 0.5 * (get(f"u{upper}") + get(f"u{lower}"))
+        vm = 0.5 * (get(f"v{upper}") + get(f"v{lower}"))
+        _, dudx, dudy, gu = _derivs(um, get.grid, 25.0)
+        _, dvdx, dvdy, gv = _derivs(vm, get.grid, 25.0)
+        deform = np.hypot(dudx - dvdy, dvdx + dudy)
+        # Near the edge of the model's domain the derivatives reach into the
+        # filler beyond it and draw a false ridge along the border.
+        inner = minimum_filter((gu & gv).astype(np.uint8), size=9) > 0
+        return np.where(inner, vws * deform * 1e7, np.nan)
+    return fn
+
+
 # name -> ways to make it, tried in order; the first whose ingredients the
 # source can supply is the one used. A third element, when present, is a test
 # the source must also pass.
@@ -1790,8 +1858,18 @@ DERIVED: dict[str, list[Recipe]] = {
     "lfc": [(("lfc_msl", "hgt_sfc", "mucape"), _parcel_height("lfc_msl"))],
     "el": [(("el_msl", "hgt_sfc", "mucape"), _parcel_height("el_msl"))],
     "ceil": [(("ceil_agl",), lambda get: np.where(get("ceil_agl") < 15999.0, get("ceil_agl"), np.nan)),
-             (("ceil_msl", "hgt_sfc"), _above_ground("ceil_msl"))],
+             # The GFS writes 20 km where there is no ceiling at all.
+             (("ceil_msl", "hgt_sfc"), lambda get: np.where(get("ceil_msl") < 15999.0,
+                                                            np.maximum(get("ceil_msl") - get("hgt_sfc"), 0.0),
+                                                            np.nan))],
     "etop_m": [(("etop",), lambda get: np.where(get("etop") > 0.0, get("etop"), np.nan))],
+    "fltcat": [(("ceil", "vis"), _fltcat)],
+    "trop_fl": [(("trop_icaht",), lambda get: get("trop_icaht") * 3.28084 / 100.0)],
+    "maxw_fl": [(("maxw_icaht",), lambda get: get("maxw_icaht") * 3.28084 / 100.0)],
+    "maxw_spd": [(("umaxw", "vmaxw"), _speed("umaxw", "vmaxw"))],
+    "slw": [(tuple(f"{v}{lv}" for lv in (850, 700, 600, 500) for v in ("tmp", "clmr")), _slw)],
+    "ellrod": [(("u300", "v300", "u250", "v250", "hgt300", "hgt250"), _ellrod(300, 250))],
+    "ellrod_mid": [(("u700", "v700", "u500", "v500", "hgt700", "hgt500"), _ellrod(700, 500))],
     "stp": [(("sbcape", "lcl", "srh1", "shr6"), _stp)],
     "scp": [(("mucape", "mucin", "srh3", "shr6"), _scp)],
     "ehi1": [(("sbcape", "srh1"), lambda get: get("sbcape") * get("srh1") / 160000.0)],
@@ -1902,7 +1980,10 @@ def _ptype_text(v: float) -> str:
     return f"{PTYPE_NAMES[kind]} · {round(v - kind * 100)} dBZ"
 
 
-FORMATS: dict[str, Callable[[float], str]] = {"ptype": _ptype_text}
+FORMATS: dict[str, Callable[[float], str]] = {
+    "ptype": _ptype_text,
+    "fltcat": lambda v: FLTCAT_NAMES[int(min(max(v, 0), 3.99))],
+}
 
 
 def _p(label: str, group: str, shade: str, unit: str, palette: list, *, sub: Optional[str] = None,
@@ -2010,6 +2091,32 @@ PRODUCTS: dict[str, dict[str, Any]] = {
                note="Above sea level."),
     "hpbl": _p("Boundary Layer Height", "Clouds & Visibility", "hpbl", "m", PBL_M,
                note="How deep the mixed layer runs: the ceiling on how far surface air is stirred."),
+    # ----- Aviation
+    "fltcat": _p("Flight Category", "Aviation", "fltcat", "", FLTCAT_PAL, sub="Ceiling & visibility", stepped=True,
+                 labels=FLTCAT_LABELS, fmt="fltcat",
+                 note="VFR, MVFR, IFR or LIFR from the model's own ceiling and visibility, by the FAA's limits: "
+                      "the worse of the two decides."),
+    "ellrod": _p("Turbulence Index, 300-250 mb", "Aviation", "ellrod", "x1e-7 s⁻²", ELLROD_PAL, sub="Turbulence",
+                 barbs=wind(250), decimals=1, lines=own(4, lo=4),
+                 note="Ellrod's TI1 (vertical shear times deformation), the jet-level clear-air turbulence guide: "
+                      "4 light to moderate, 8 moderate, 12 severe."),
+    "ellrod_mid": _p("Turbulence Index, 700-500 mb", "Aviation", "ellrod_mid", "x1e-7 s⁻²", ELLROD_PAL,
+                     sub="Turbulence", barbs=wind(500), decimals=1, lines=own(4, lo=4),
+                     note="The same index in the middle of the atmosphere, where most piston and turboprop "
+                          "traffic flies."),
+    "slw": _p("Icing: Supercooled Liquid Water", "Aviation", "slw", "g/kg", SLW_GKG, sub="Icing", decimals=2,
+              note="The model's cloud water where the air is 0 to -20 °C, the most at 850, 700, 600 or 500 mb "
+                   "(about 5,000 to 18,000 ft): 0.05 a trace, 0.1 light, 0.2-0.5 moderate, more is heavy icing."),
+    "frz_avn": _p("Freezing Level (MSL)", "Aviation", "frz_msl", "ft", FRZ_FT, sub="Icing", convert="m->ft",
+                  lines=own(2000, lo=2000),
+                  note="Height of the 0 °C isotherm above sea level: below it rain, above it supercooled cloud."),
+    "trop_fl": _p("Tropopause", "Aviation", "trop_fl", "FL", TROP_FL, sub="Jet & tropopause", lines=own(20),
+                  note="The tropopause as a flight level (its ICAO standard-atmosphere height): above it the air "
+                       "is stable and dry; a sharp fold in it marks where the jet drags it down."),
+    "maxw": _p("Maximum Wind", "Aviation", "maxw_spd", "kt", WIND_KT_HIGH, sub="Jet & tropopause", convert="ms->kt",
+               barbs=("umaxw", "vmaxw"),
+               lines={"var": "maxw_fl", "unit": "FL", "step": 20.0, "lo": None, "hi": None},
+               note="The strongest wind in the column, wherever it is; the lines give its flight level."),
     # ----- Fire and smoke
     "smoke": _p("Near-Surface Smoke", "Fire & Smoke", "smoke", "µg/m³", SMOKE_UG, convert="kgm3->ugm3",
                 note="Smoke at 8 m above ground, from the HRRR/RAP smoke scheme."),

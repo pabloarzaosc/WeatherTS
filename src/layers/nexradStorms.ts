@@ -1,6 +1,11 @@
 import maplibregl, { type GeoJSONSource, type Map as MapLibreMap, type MapLayerMouseEvent } from "maplibre-gl";
 
-import { useNexradStore } from "../store/useNexradStore";
+import { stormReportAt, useNexradStore } from "../store/useNexradStore";
+import { usePaneStore } from "../store/usePaneStore";
+import { paneIdOf } from "../map/mapInstance";
+import type { StormReport } from "../lib/nexrad";
+import { useAppStore } from "../store/useAppStore";
+import { mapInk } from "../map/mapInk";
 
 /**
  * SCIT storm cells: their past track, their forecast track, and the mesocyclone
@@ -115,9 +120,29 @@ interface PaneState {
 }
 const state = new WeakMap<MapLibreMap, PaneState>();
 
-function buildFC(): GeoJSON.FeatureCollection {
-  const st = useNexradStore.getState();
-  if (!st.showTracks || !st.storms) return EMPTY;
+/** panes-layout: the frame time of a pane on its own scrubber, else null. */
+function ownTimeOf(s: ReturnType<typeof useNexradStore.getState>, map: MapLibreMap): number | null {
+  const id = paneIdOf(map);
+  return (id && s.paneRadar[id]?.ownTime) || null;
+}
+
+/** The report this pane draws: none when its chip took the tracks off, its
+ *  own frame's on its own scrubber, else the loop's. */
+function reportFor(map: MapLibreMap): StormReport | null {
+  const s = useNexradStore.getState();
+  const id = paneIdOf(map);
+  if (id && usePaneStore.getState().isHidden(id, "storms")) return null;
+  const own = ownTimeOf(s, map);
+  if (own == null || !s.site) return s.storms;
+  const t = s.scans.length ? s.scans.reduce((b, f) => (Math.abs(f.time - own) < Math.abs(b.time - own) ? f : b)).time : own;
+  return stormReportAt(s.site, t, () => pushStorms(map));
+}
+
+function buildFC(map: MapLibreMap): GeoJSON.FeatureCollection {
+  const st0 = useNexradStore.getState();
+  const report = reportFor(map);
+  if (!st0.showTracks || !report) return EMPTY;
+  const st = { ...st0, storms: report };
   const features: GeoJSON.Feature[] = [];
   for (const c of st.storms.cells) {
     if (c.past.length >= 2) {
@@ -184,29 +209,60 @@ function syncMesos(map: MapLibreMap) {
   for (const m of st.markers) m.remove();
   st.markers = [];
 
-  const s = useNexradStore.getState();
-  if (!s.showTracks || !s.storms) return;
+  const s0 = useNexradStore.getState();
+  const report = reportFor(map);
+  if (!s0.showTracks || !report) return;
+  const s = { ...s0, storms: report };
 
   for (const meso of s.storms.mesos) {
     if (!meso.tvs) continue;
     const el = document.createElement("div");
     el.className = "tvsmark";
-    el.title = `TVS — tornado vortex signature${meso.stormId ? ` (cell ${meso.stormId})` : ""}`;
+    el.title = `TVS (NWS Level III) — tornado vortex signature${meso.stormId ? ` (cell ${meso.stormId})` : ""}`;
     // Drawn as a polygon rather than a border trick so the outline follows the
     // triangle instead of boxing it.
     el.innerHTML =
       '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">' +
       '<polygon points="12,20.5 1.8,3.5 22.2,3.5" ' +
       'fill="currentColor" stroke="#0b0f15" stroke-width="1.6" stroke-linejoin="round"/>' +
-      "</svg>";
+      "</svg>" +
+      // The NWS RPG's own TVS, badged so it is never taken for the app's
+      // detections computed from the volume (radarDetectionsLayer).
+      '<span class="tvsmark__src">NWS L3</span>';
     st.markers.push(
       new maplibregl.Marker({ element: el }).setLngLat([meso.lon, meso.lat]).addTo(map),
     );
   }
 }
 
+/**
+ * What this module paints by the basemap's tone (mapInk): the cone's fill, the
+ * cell dot and the cell labels. The track lines, the cone edge and the dot's
+ * ring are the Settings styler's (settings/mapStyle.ts radarRules), which
+ * turns their default white to dark ink over a light basemap -- written in
+ * one place only, or the two would take turns.
+ */
+const TRACK_INK = {
+  dark: { coneFill: "#e2ecf7", dot: "#05080d", text: "#ffffff", halo: "rgba(5,8,13,0.95)" },
+  light: { coneFill: "#14263b", dot: "#ffffff", text: "#0d1218", halo: "rgba(255,255,255,0.92)" },
+};
+
+/** Paint the module's own track props for the basemap on screen. */
+function paintStorms(map: MapLibreMap): void {
+  const k = TRACK_INK[mapInk().tone];
+  const paint: [string, string, unknown][] = [
+    [TRACK_CONE, "fill-color", k.coneFill],
+    [CELL_DOT, "circle-color", k.dot],
+    [CELL_LABEL, "text-color", k.text],
+    [CELL_LABEL, "text-halo-color", k.halo],
+  ];
+  for (const [id, prop, value] of paint) {
+    if (map.getLayer(id)) map.setPaintProperty(id, prop, value);
+  }
+}
+
 export function pushStorms(map: MapLibreMap): void {
-  (map.getSource(SRC) as GeoJSONSource | undefined)?.setData(buildFC());
+  (map.getSource(SRC) as GeoJSONSource | undefined)?.setData(buildFC(map));
   syncMesos(map);
 }
 
@@ -335,15 +391,31 @@ export function addStorms(map: MapLibreMap): void {
   map.on("mouseenter", CELL_DOT, onEnter);
   map.on("mouseleave", CELL_DOT, onLeave);
 
-  const unsub = useNexradStore.subscribe((s, prev) => {
+  const unsubStorms = useNexradStore.subscribe((s, prev) => {
     if (
       s.storms !== prev.storms ||
       s.showTracks !== prev.showTracks ||
-      s.selectedCellId !== prev.selectedCellId
+      s.selectedCellId !== prev.selectedCellId ||
+      ownTimeOf(s, map) !== ownTimeOf(prev, map)
     ) {
       pushStorms(map);
     }
   });
+  // The storm chip's x on this pane (panes-layout).
+  const unsubHidden = usePaneStore.subscribe((s, p) => {
+    const id = paneIdOf(map);
+    if (id && s.hidden[id] !== p.hidden[id]) pushStorms(map);
+  });
+  // Another basemap, another surface under the tracks.
+  const unsubBase = useAppStore.subscribe((s, prev) => {
+    if (s.basemapId !== prev.basemapId) paintStorms(map);
+  });
+  const unsub = () => {
+    unsubStorms();
+    unsubBase();
+    unsubHidden();
+  };
+  paintStorms(map);
 
   state.set(map, { unsub, onClick, onEnter, onLeave, markers: [] });
   pushStorms(map);

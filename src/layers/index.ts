@@ -27,7 +27,9 @@ import { obsLayer } from "./modules/obsLayer";
 import { satelliteLayer } from "./modules/satelliteLayer";
 import { nexradLayer } from "./modules/nexradLayer";
 import { lsrLayer } from "./modules/lsrLayer";
+import { radarEventsLayer } from "./modules/radarEventsLayer";
 import { glmLayer } from "./modules/glmLayer";
+import { radarDetectionsLayer } from "./modules/radarDetectionsLayer";
 import { riversLayer } from "./modules/riversLayer";
 import { nwmLayer } from "./modules/nwmLayer";
 import { auroraLayer, spaceFieldLayer } from "./modules/spaceLayers";
@@ -44,6 +46,7 @@ import { acarsLayer } from "./modules/acarsLayer";
 import { chasersLayer } from "./modules/chasersLayer";
 import { homesLayer } from "./modules/homesLayer";
 import { mesoscaleLayer } from "./modules/mesoscaleLayer";
+import { aviationLayers } from "./modules/aviationLayers";
 import { drawLayer } from "./modules/drawLayer";
 
 // Satellite imagery is the bottom of the stack: an opaque picture of the whole
@@ -58,6 +61,9 @@ for (const layer of outlookLayers) registerLayer(layer);
 registerLayer(alertsLayer);
 // Above the outlooks it refines: an MD is hours newer than the day outlook.
 registerLayer(mesoscaleLayer);
+// Aviation: airspace and advisories as areas under the radar (their outlines and
+// labels are lifted over it), the stations and reports as markers on top.
+for (const layer of aviationLayers) registerLayer(layer);
 registerLayer(raobLayer);
 registerLayer(vwpLayer);
 // The analysed field is a backdrop: isobars, fronts and radar are all read
@@ -79,6 +85,8 @@ registerLayer(nexradLayer);
 registerLayer(nwmLayer);
 // Lightning is read against the radar scan under it.
 registerLayer(glmLayer);
+// The radar's own detections (mesocyclones, TVS, debris), read over the scan they come from.
+registerLayer(radarDetectionsLayer);
 // River gauges: a flooding river is read against the radar's rain over it.
 registerLayer(riversLayer);
 // Tropical cyclones over the radar and satellite they are read against: the
@@ -91,6 +99,8 @@ registerLayer(tropicalStormsLayer);
 registerLayer(tropicalGuidanceLayer);
 // Ground truth sits on top of every product it might be checked against.
 registerLayer(lsrLayer);
+// The Archive panel's notable events, a dot each: over the products, under people.
+registerLayer(radarEventsLayer);
 // Home pins first: they are the static backdrop to the live positions above.
 registerLayer(homesLayer);
 // People sit above everything: where someone actually is must never be buried.

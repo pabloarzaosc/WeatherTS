@@ -14,6 +14,11 @@ function hms(unix: number): string {
   return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}Z`;
 }
 
+/** "2024-05-06 23:32:42Z": a past frame's day matters. */
+function ymdHms(unix: number): string {
+  return `${new Date(unix * 1000).toISOString().slice(0, 10)} ${hms(unix)}`;
+}
+
 function age(s: number): string {
   if (s < 90) return `${Math.max(0, Math.round(s))} s`;
   return `${Math.round(s / 60)} min`;
@@ -28,7 +33,10 @@ export function LightningView() {
   const setSat = useGlmStore((s) => s.setSat);
   const minutes = useGlmStore((s) => s.minutes);
   const setMinutes = useGlmStore((s) => s.setMinutes);
-  const data = useGlmStore((s) => s.data);
+  // Switched off, the store stops following the timeline: its last answer
+  // (often a live one) would describe a moment no longer on screen.
+  const rawData = useGlmStore((s) => s.data);
+  const data = enabled ? rawData : null;
   const busy = useGlmStore((s) => s.busy);
   const error = useGlmStore((s) => s.error);
   const atUnix = useGlmStore((s) => s.atUnix);
@@ -55,22 +63,31 @@ export function LightningView() {
   }, [data]);
 
   const info = data?.info;
-  const drift = info && info.live ? Math.max(0, now - info.end) : 0;
+  // GOES-16's lightning mapper (GLM) files begin in 2017: an older frame's
+  // window is empty because there is no data, not because it was quiet.
+  const GLM_FIRST_UNIX = 1483228800;
+  // At a past frame (archive playback) nothing here is live: the state, the
+  // window and the ages all count from the frame's time.
+  const past = atUnix != null || (info != null && !info.live);
+  const drift = info && info.live && atUnix == null ? Math.max(0, now - info.end) : 0;
   const status = !info
     ? busy
       ? "Loading…"
-      : ""
-    : info.live
+      : atUnix != null
+        ? `Ending at ${ymdHms(atUnix)}`
+        : ""
+    : info.live && atUnix == null
       ? info.latest
         ? `Live · NOAA's files reach ${hms(info.latest)}`
         : "Live"
-      : `Ending at the frame on the timeline · ${hms(info.end)}`;
+      : `Ending at the timeline's frame · ${ymdHms(info.end)}${info.end < GLM_FIRST_UNIX ? " · GLM data starts in 2017" : ""}`;
 
   return (
     <div className="sfcobs lsrv glmv">
       <LayerPower
         label="Lightning (GLM)"
         on={enabled}
+        onText={past ? "ARCHIVE" : "LIVE"}
         error={!!error}
         onToggle={() => setLayerVisible(LAYER, !enabled)}
       />
@@ -99,7 +116,7 @@ export function LightningView() {
         <div className={`lsrv__tile glmv__tile${stats.newest != null ? "" : " is-empty"}`}>
           <span className="glmv__label">Newest</span>
           <b>{stats.newest != null ? age(stats.newest + drift) : "–"}</b>
-          <small>ago</small>
+          <small>{past ? "before the frame" : "ago"}</small>
         </div>
       </div>
 

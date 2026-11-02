@@ -31,6 +31,7 @@ from typing import Any, Optional
 import numpy as np
 from metpy.io import Level2File
 
+import level2_fast
 import nexrad_level2 as l2
 from nexrad_core import _KIND_DEFAULT_PALETTE, _mean_storm_motion, get_cmap, icao_for, site_id
 
@@ -84,10 +85,14 @@ def _raw(site: str, vol: Any) -> tuple[bytes, str]:
     return l2._volume_raw(icao_for(site), vol)
 
 
-def _stack(site: str, key: str, vol: Any, fam: str) -> dict:
+def _stack(site: str, key: str, vol: Any, fam: str, dealias: str = "off") -> dict:
     """Every sweep of one moment in a volume: elevation, azimuths (sorted),
-    gate spacing and values, one sweep per cut (the longest-range one of a
-    split cut), low to high."""
+    gate spacing and values (and the Nyquist velocity, m/s, where known), one
+    sweep per cut (the longest-range one of a split cut), low to high.
+    Velocity ("G") with `dealias` region | vad comes unfolded the way the
+    map's Level II velocity is (radar_derived.unfold), sweep by sweep."""
+    if fam == "G" and dealias in ("region", "vad"):
+        return _unfolded_stack(site, key, vol, dealias)
     ck = (site, key, fam)
     with _STACK_LOCK:
         hit = _STACKS.get(ck)
@@ -104,32 +109,47 @@ def _stack(site: str, key: str, vol: Any, fam: str) -> dict:
         src = spec["src"]
         raw, stamp = _raw(site, vol)
         with l2._DECODE_SEM:
-            f = Level2File(io.BytesIO(raw))
-            hdr = None
+            # The one moment read straight from the bytes (level2_fast, ~0.3
+            # s); MetPy, which scales every moment (~2.5 s), for what that
+            # does not read -- a legacy volume.
+            buf = level2_fast.plain(raw)
+            fast = level2_fast.read_moment(buf, src, l2._MS_TO_KT if spec.get("kt") else None)
+            if fast is not None:
+                out = {"sweeps": fast["sweeps"], "lat": fast["lat"], "lon": fast["lon"],
+                       "heightKm": (fast["siteAmslM"] + fast["feedhornM"]) / 1000.0,
+                       "groundKm": fast["siteAmslM"] / 1000.0, "stamp": stamp, "vcp": fast["vcp"]}
+                with _STACK_LOCK:
+                    _STACKS[ck] = out
+                    while len(_STACKS) > _STACK_MAX:
+                        _STACKS.popitem(last=False)
+                    _GATES.pop(ck, None)
+                return out
+            f = Level2File(io.BytesIO(buf))
+            first = None  # a radial, for where the radar is
             by_angle: dict[float, tuple[int, int]] = {}
             for i, sw in enumerate(f.sweeps):
-                if not sw or src not in sw[0][4]:
+                if not sw or src not in l2._moments(sw[0]):
                     continue
-                if hdr is None:
-                    hdr = sw[0][1]
+                if first is None:
+                    first = sw[0]
                 angle = round(l2._sweep_angle(f, sw), 1)
-                gates = int(sw[0][4][src][0].num_gates)
+                gates = int(l2._moments(sw[0])[src][0].num_gates)
                 # A split cut flies the angle twice; the sweep reaching
                 # furthest is the surveillance one (reflectivity to 460 km).
                 if angle not in by_angle or gates > by_angle[angle][1]:
                     by_angle[angle] = (i, gates)
-            if hdr is None:
+            if first is None:
                 raise RuntimeError(f"This volume carries no {spec['label']}.")
             sweeps = []
             for angle in sorted(by_angle):
                 idx, ngates = by_angle[angle]
                 radials = sorted(f.sweeps[idx], key=lambda r: float(r[0].az_angle))
-                h0 = radials[0][4][src][0]
+                h0 = l2._moments(radials[0])[src][0]
                 vals = np.full((len(radials), ngates), np.nan, dtype=np.float32)
                 az = np.empty(len(radials), dtype=np.float32)
                 for k, r in enumerate(radials):
                     az[k] = float(r[0].az_angle)
-                    blk = r[4].get(src)
+                    blk = l2._moments(r).get(src)
                     if blk is None:
                         continue
                     d = np.asarray(blk[1], dtype=np.float32)
@@ -137,15 +157,22 @@ def _stack(site: str, key: str, vol: Any, fam: str) -> dict:
                     vals[k, :n] = d[:n]
                 if spec.get("kt"):
                     vals *= l2._MS_TO_KT
+                r0 = radials[0]
+                if len(r0) > 4 and r0[3] is not None:
+                    nyq = float(getattr(r0[3], "nyq_vel", 0.0) or 0.0) or None
+                else:
+                    nyq = float(getattr(r0[0], "nyq_vel", 0.0) or 0.0) or None
                 sweeps.append({
                     "elev": float(angle), "az": az, "first": float(h0.first_gate),
-                    "width": float(h0.gate_width), "vals": vals.astype(np.float16),
+                    "width": float(h0.gate_width), "vals": vals.astype(np.float16), "nyq": nyq,
                 })
-            vcp = int(getattr(hdr, "vcp", 0)) or None
+            lat, lon, vcp = l2._site_of(first, site)
+            # A legacy volume (before 2008) says nothing of the antenna's height.
+            hdr = first[1] if len(first) > 4 else None
             site_amsl = float(getattr(hdr, "site_amsl", 0.0) or 0.0)
             feed = float(getattr(hdr, "feedhorn_agl", 0.0) or 0.0)
             out = {
-                "sweeps": sweeps, "lat": float(hdr.lat), "lon": float(hdr.lon),
+                "sweeps": sweeps, "lat": lat, "lon": lon,
                 "heightKm": (site_amsl + feed) / 1000.0, "groundKm": site_amsl / 1000.0,
                 "stamp": stamp, "vcp": vcp,
             }
@@ -186,6 +213,58 @@ def _from_radar(rlat: float, rlon: float, lat: np.ndarray, lon: np.ndarray) -> t
     return s, az % 360.0
 
 
+def _unfolded_stack(site: str, key: str, vol: Any, alg: str) -> dict:
+    """The velocity stack unfolded by `alg`, cached beside the raw one: what
+    the map draws as Level II velocity, so the 3D view, the cross-section and
+    their SRV agree with it. Region unfolding gets the cut's reflectivity
+    (the surveillance sweep's, regridded) as the map's does."""
+    import radar_derived as rdv  # noqa: PLC0415 - radar_derived imports this module
+
+    ck = (site, key, "G", alg)
+    with _STACK_LOCK:
+        hit = _STACKS.get(ck)
+        if hit is not None:
+            _STACKS.move_to_end(ck)
+            return hit
+        gate = _GATES.setdefault(ck, threading.Lock())
+    with gate:
+        with _STACK_LOCK:
+            hit = _STACKS.get(ck)
+            if hit is not None:
+                return hit
+        raw = _stack(site, key, vol, "G")
+        ref = None
+        if alg == "region":
+            try:
+                ref = _stack(site, key, vol, "B")
+            except Exception:  # noqa: BLE001 - unfolded without it
+                ref = None
+        sweeps = []
+        for sw in raw["sweeps"]:
+            nyq = sw.get("nyq")
+            if not nyq:
+                sweeps.append(sw)
+                continue
+            v = sw["vals"].astype(np.float32) / np.float32(l2._MS_TO_KT)
+            r = (sw["first"] + np.arange(v.shape[1], dtype=np.float64) * sw["width"])
+            dbz = None
+            if ref is not None:
+                b = next((x for x in ref["sweeps"] if abs(x["elev"] - sw["elev"]) < 0.05), None)
+                if b is not None:
+                    rb = b["first"] + np.arange(b["vals"].shape[1], dtype=np.float64) * b["width"]
+                    dbz = rdv.regrid(b["vals"].astype(np.float32), b["az"].astype(np.float64), rb,
+                                     sw["az"].astype(np.float64), r)
+            u = rdv.unfold(v, nyq, r, sw["az"].astype(np.float64), float(sw["elev"]), alg, dbz)
+            sweeps.append(dict(sw, vals=(u * np.float32(l2._MS_TO_KT)).astype(np.float16)))
+        out = dict(raw, sweeps=sweeps, dealias=alg)
+        with _STACK_LOCK:
+            _STACKS[ck] = out
+            while len(_STACKS) > _STACK_MAX:
+                _STACKS.popitem(last=False)
+            _GATES.pop(ck, None)
+        return out
+
+
 def _sample(sw: dict, az: np.ndarray, rng: np.ndarray) -> np.ndarray:
     """A sweep's value at each (azimuth of the column, slant range of the pixel)."""
     azs = sw["az"].astype(np.float64)
@@ -207,8 +286,11 @@ def _sample(sw: dict, az: np.ndarray, rng: np.ndarray) -> np.ndarray:
 
 def cross_section(site: str, a: tuple[float, float], b: tuple[float, float], fam: str = "B",
                   at: Optional[float] = None, key: str = "", top_km: float = 16.0,
-                  cols: int = 0, rows: int = 320) -> dict:
-    """The section from a to b (lat, lon) of moment `fam` (an L2 family code)."""
+                  cols: int = 0, rows: int = 320, dealias: str = "off", motion: str = "") -> dict:
+    """The section from a to b (lat, lon) of moment `fam` (an L2 family code).
+    Velocity and SRV unfolded by `dealias`; SRV takes out `motion` (auto |
+    sti | <from>/<kt>, the map's storm-motion setting), or with none given
+    the NWS cells' mean motion as before."""
     site = site_id(site)
     if fam not in l2.L2_MOMENTS:
         raise ValueError(f"Unknown moment {fam}")
@@ -216,8 +298,40 @@ def cross_section(site: str, a: tuple[float, float], b: tuple[float, float], fam
     src_fam = "G" if fam == "S" else fam  # storm-relative rides on velocity
     t0 = time.time()
     vkey, vol = _volume_for(site, at, key)
-    st = _stack(site, vkey, vol, src_fam)
+    st = _stack(site, vkey, vol, src_fam, dealias)
+    how, motion = motion, None
+    if fam == "S":
+        if how:
+            import radar_derived as rdv  # noqa: PLC0415
 
+            mo = rdv.motion_for(site, vkey, how, l2._stamp_unix(st["stamp"]))
+            motion = (float(mo["speedKt"]), float(mo["towardDeg"]))
+        else:
+            speed_kt, toward = _mean_storm_motion(site)
+            motion = (speed_kt, toward)
+    out = section(st, a, b, fam=fam, label=spec["label"], units=spec["units"], kind=spec["kind"],
+                  site_label=icao_for(site), key=vkey, scan_unix=l2._stamp_unix(st["stamp"]), motion=motion,
+                  top_km=top_km, cols=cols, rows=rows)
+    out["meta"]["ms"] = round((time.time() - t0) * 1000)
+    return out
+
+
+# Moments a non-NEXRAD volume can be sliced in, by the viewer's family code.
+SECTION_SPECS = {
+    "B": ("Reflectivity", "dBZ", "ref"), "U": ("Unfiltered Reflectivity", "dBZ", "ref"),
+    "G": ("Velocity", "kt", "vel"), "S": ("Storm Relative Velocity", "kt", "srv"), "W": ("Spectrum Width", "kt", "sw"),
+    "C": ("Correlation Coefficient", "", "cc"), "X": ("Differential Reflectivity", "dB", "zdr"),
+    "P": ("Differential Phase", "°", "phi"), "K": ("Specific Differential Phase", "°/km", "kdp"),
+}
+
+
+def section(st: dict, a: tuple[float, float], b: tuple[float, float], *, fam: str, label: str, units: str,
+            kind: str, site_label: str, key: str, scan_unix: Optional[int],
+            motion: Optional[tuple[float, float]] = None, top_km: float = 16.0, cols: int = 0,
+            rows: int = 320) -> dict:
+    """The section from a to b through a stack of sweeps (see _stack): the
+    part every radar shares, whatever its volume came from."""
+    t0 = time.time()
     length_guess = _line(a, b, 2)[2]
     if cols <= 0:
         cols = int(min(900, max(240, length_guess / 0.25)))
@@ -239,8 +353,8 @@ def cross_section(site: str, a: tuple[float, float], b: tuple[float, float], fam
     sweeps = st["sweeps"]
     elevs = np.array([sw["elev"] for sw in sweeps])
     samples = np.stack([_sample(sw, az, rng) for sw in sweeps])  # tilts x rows x cols
-    if fam == "S":
-        speed_kt, toward = _mean_storm_motion(site)
+    if fam == "S" and motion is not None:
+        speed_kt, toward = motion
         samples = samples - (speed_kt * np.cos(np.radians(az - toward)))[None, None, :]
 
     # The beam each pixel sits in, or the two either side of it.
@@ -256,7 +370,7 @@ def cross_section(site: str, a: tuple[float, float], b: tuple[float, float], fam
     gap = e_hi - e_lo
     between = (theta > e_lo) & (theta < e_hi) & (gap <= MAX_BLEND_GAP)
     out = np.where(inside, near_v, np.nan)
-    if spec["kind"] in _BLEND:
+    if kind in _BLEND:
         w = np.clip((theta - e_lo) / np.where(gap > 0, gap, 1.0), 0.0, 1.0)
         blend = np.where(np.isfinite(v_lo) & np.isfinite(v_hi), v_lo * (1 - w) + v_hi * w,
                          np.where(np.isfinite(v_lo), v_lo, v_hi))
@@ -266,7 +380,7 @@ def cross_section(site: str, a: tuple[float, float], b: tuple[float, float], fam
     # Under the ground, and under the lowest beam, nothing is seen.
     out[z[:, 0] < st["groundKm"] - 0.05, :] = np.nan
 
-    pid = _KIND_DEFAULT_PALETTE.get(spec["kind"], "REF")
+    pid = _KIND_DEFAULT_PALETTE.get(kind, "REF")
     _, vmin, vmax = get_cmap(pid)
     tq = (out - vmin) / ((vmax - vmin) or 1.0)
     codes = np.clip(np.rint(tq * 254.0) + 1.0, 1, 255)
@@ -276,16 +390,19 @@ def cross_section(site: str, a: tuple[float, float], b: tuple[float, float], fam
     lut[1:] = np.linspace(vmin, vmax, 255, dtype=np.float32)
 
     meta = {
-        "site": icao_for(site), "siteLat": st["lat"], "siteLon": st["lon"],
+        "site": site_label, "siteLat": st["lat"], "siteLon": st["lon"],
         "radarHeightKm": round(h0, 3), "groundKm": round(st["groundKm"], 3),
-        "product": f"L2{fam}", "productLabel": spec["label"], "units": spec["units"], "kind": spec["kind"],
+        "product": f"L2{fam}", "productLabel": label, "units": units, "kind": kind,
         "family": fam, "defaultPalette": pid, "vmin": vmin, "vmax": vmax,
         "rows": rows, "cols": cols, "topKm": top_km, "lengthKm": round(length, 3),
         "a": [a[0], a[1]], "b": [b[0], b[1]],
         # Distance from the radar under each column, for the beams' heights.
         "rangeKm": [round(float(v), 2) for v in s],
         "elevations": [round(float(e), 2) for e in elevs],
-        "key": vkey, "scanUnix": l2._stamp_unix(st["stamp"]), "vcp": st["vcp"],
+        "key": key, "scanUnix": scan_unix, "vcp": st["vcp"],
+        # What SRV took out (speed kt, toward deg) and how velocity was unfolded.
+        "motion": [round(float(motion[0]), 1), round(float(motion[1]), 1)] if fam == "S" and motion else None,
+        "dealias": st.get("dealias", "off") if fam in ("G", "S") else None,
         "lut": [None if not np.isfinite(v) else round(float(v), 4) for v in lut],
         "ms": round((time.time() - t0) * 1000),
     }

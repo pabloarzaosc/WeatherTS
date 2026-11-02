@@ -3,6 +3,7 @@
  * a vertical slice A to B through a Level II volume.
  */
 import { BACKEND_BASE } from "./apiConfig";
+import { velocityParams } from "./radarOptions";
 
 /** The Level II moments a section can show, by family code. */
 export const XSECT_MOMENTS: { fam: string; short: string; label: string }[] = [
@@ -75,6 +76,8 @@ export async function fetchXsect(
   });
   if (opts.at != null) q.set("at", String(Math.round(opts.at)));
   if (opts.key) q.set("key", opts.key);
+  // Velocity and SRV unfolded, and SRV's storm motion, as the map draws them.
+  for (const [k, v] of Object.entries(velocityParams(opts.site, opts.fam))) q.set(k, v);
   const res = await fetch(`${BACKEND_BASE}/api/nexrad/xsect?${q}`, { signal });
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;

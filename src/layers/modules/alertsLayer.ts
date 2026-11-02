@@ -1,9 +1,12 @@
 import type { ExpressionSpecification, GeoJSONSource, MapLayerMouseEvent } from "maplibre-gl";
 import type { LayerModule } from "../types";
 import { useAlertStore } from "../../store/useAlertStore";
-import { alertsToFeatureCollection } from "../../lib/nwsAlerts";
 import { markerUnderPoint } from "../clickPriority";
 import { getSetting, useSettingsStore } from "../../settings/useSettingsStore";
+import { alertFilters, alertMapData, alertMotionData } from "../../lib/alertStyle";
+import { flashingIds, onFlashChange } from "../../lib/alertFlash";
+import { allMaps, paneIdOf, setActivePane } from "../../map/mapInstance";
+import { useAlertListStore } from "../../store/useAlertListStore";
 
 const SRC = "alerts-src";
 const FILL = "alerts-fill";
@@ -13,10 +16,19 @@ const WATCH_CASING = "alerts-watch-casing";
 const WATCH_LINE = "alerts-watch-line";
 const ADVISORY_CASING = "alerts-advisory-casing";
 const ADVISORY_LINE = "alerts-advisory-line";
+const FLASH_FILL = "alerts-flash-fill";
+const FLASH_LINE = "alerts-flash-line";
+const FLASH_CASING = "alerts-flash-casing";
+const MOTION_SRC = "alerts-motion-src";
+const MOTION_CASING = "alerts-motion-casing";
+const MOTION_LINE = "alerts-motion-line";
+const MOTION_LABEL = "alerts-motion-label";
 const DEFAULT_ALERT_OPACITY = 0.86;
 
 /** Source id the AlertController feeds with fetched alert polygons. */
 export const ALERT_SOURCE = SRC;
+/** Source id of the storm motion arrows (alertStyle.alertMotionData). */
+export const ALERT_MOTION_SOURCE = MOTION_SRC;
 
 // Per-map: split-screen adds this module to several maps, and module-level
 // handlers would have each pane detaching the previous pane's listeners.
@@ -25,6 +37,7 @@ interface PaneState {
   onEnter: () => void;
   onLeave: () => void;
   unsubTime: () => void;
+  activeTimer: number;
 }
 const state = new WeakMap<import("maplibre-gl").Map, PaneState>();
 
@@ -52,7 +65,29 @@ function visibilityExpr(): ExpressionSpecification | null {
   if (!cat.tornado) clauses.push(["!", ["coalesce", ["get", "catTornado"], false]]);
   if (!cat.special) clauses.push(["!", ["coalesce", ["get", "catSpecial"], false]]);
   if (!cat.severe) clauses.push(["!", ["coalesce", ["get", "catSevere"], false]]);
+  // Settings' filters: types switched off, states, offices, only active. The
+  // list applies the same test (alertStyle.passesAlertFilters).
+  const f = alertFilters();
+  if (f.hidden.length) clauses.push(["!", ["in", ["coalesce", ["get", "evKey"], ""], ["literal", f.hidden]]]);
+  if (f.onlyActive) clauses.push(["<=", ["coalesce", ["get", "onsetUnix"], 0], t ?? Math.round(Date.now() / 1000)]);
+  if (f.states.length) {
+    clauses.push(["any", ...f.states.map((st) => ["in", `|${st}|`, ["coalesce", ["get", "states"], ""]])] as ExpressionSpecification);
+  }
+  if (f.wfos.length) clauses.push(["in", ["coalesce", ["get", "wfo"], ""], ["literal", f.wfos]]);
+  // The alert list's eyes: whole groups, single types, single alerts.
+  const lv = useAlertListStore.getState();
+  if (lv.hiddenGroups.length) clauses.push(["!", ["in", ["coalesce", ["get", "grp"], ""], ["literal", lv.hiddenGroups]]]);
+  if (lv.hiddenTypes.length) clauses.push(["!", ["in", ["coalesce", ["get", "evKey"], ""], ["literal", lv.hiddenTypes]]]);
+  if (lv.hiddenIds.length) clauses.push(["!", ["in", ["to-string", ["get", "id"]], ["literal", lv.hiddenIds]]]);
   return clauses.length > 0 ? (["all", ...clauses] as ExpressionSpecification) : null;
+}
+
+const withExpr = (expr: ExpressionSpecification | null, more: ExpressionSpecification): ExpressionSpecification =>
+  expr ? (["all", expr, more] as ExpressionSpecification) : more;
+
+/** The flashing alerts, under the same filter as the rest. */
+function flashFilter(expr: ExpressionSpecification | null): ExpressionSpecification {
+  return withExpr(expr, ["in", ["get", "id"], ["literal", flashingIds()]]);
 }
 
 /**
@@ -112,7 +147,40 @@ function pushFilter(map: import("maplibre-gl").Map) {
       map.setLayoutProperty(id, "visibility", outlined ? "none" : "visible");
     }
   }
+  for (const id of [FLASH_FILL, FLASH_CASING, FLASH_LINE]) if (map.getLayer(id)) map.setFilter(id, flashFilter(expr));
+  const arrows = getSetting<boolean>("alerts.motionArrows") ? "visible" : "none";
+  for (const id of [MOTION_CASING, MOTION_LINE, MOTION_LABEL]) {
+    if (!map.getLayer(id)) continue;
+    map.setFilter(id, withExpr(expr, ["==", ["get", "part"], id === MOTION_LABEL ? "label" : "arrow"]));
+    map.setLayoutProperty(id, "visibility", arrows);
+  }
 }
+
+/**
+ * The flash: the flashing alerts' outline and fill pulse, on every pane, while
+ * any flash runs. One clock for all maps; only paint values change between
+ * ticks (no data, no re-tiling).
+ */
+let flashClock: number | null = null;
+function flashTick(): void {
+  const phase = (Date.now() % 900) / 900;
+  const pulse = 0.5 - 0.5 * Math.cos(phase * 2 * Math.PI);
+  for (const map of allMaps()) {
+    const line = +(0.15 + 0.85 * pulse).toFixed(2);
+    if (map.getLayer(FLASH_LINE)) map.setPaintProperty(FLASH_LINE, "line-opacity", line);
+    if (map.getLayer(FLASH_CASING)) map.setPaintProperty(FLASH_CASING, "line-opacity", +(line * 0.7).toFixed(2));
+    if (map.getLayer(FLASH_FILL)) map.setPaintProperty(FLASH_FILL, "fill-opacity", +(0.32 * pulse).toFixed(2));
+  }
+}
+onFlashChange(() => {
+  const any = flashingIds().length > 0;
+  for (const map of allMaps()) if (map.getLayer(FLASH_LINE)) pushFilter(map);
+  if (any && flashClock === null) flashClock = window.setInterval(flashTick, 60);
+  if (!any && flashClock !== null) {
+    window.clearInterval(flashClock);
+    flashClock = null;
+  }
+});
 
 const priority: ExpressionSpecification = ["coalesce", ["get", "priority"], 0];
 const sortKey: ExpressionSpecification = ["to-number", ["get", "priority"], 0];
@@ -154,8 +222,10 @@ const CASING_EXTRA_PX = 1.6;
 // write also re-tiled every alert polygon.
 const fillOpacity = (opacity: number): ExpressionSpecification | number => {
   const warning = +(getSetting<number>("alerts.warningFill") * opacity).toFixed(4);
-  if (getSetting<boolean>("alerts.outlineWatches")) return warning;
-  return ["case", NO_OUTLINE, +(getSetting<number>("alerts.areaFill") * opacity).toFixed(4), warning];
+  // Each type's own fill strength (its Settings page, 1x by default).
+  const mul: ExpressionSpecification = ["coalesce", ["get", "fillMul"], 1];
+  if (getSetting<boolean>("alerts.outlineWatches")) return ["*", mul, warning];
+  return ["*", mul, ["case", NO_OUTLINE, +(getSetting<number>("alerts.areaFill") * opacity).toFixed(4), warning]];
 };
 
 const lineOpacity = (opacity: number): number => ALERT_LINE * opacity;
@@ -255,7 +325,8 @@ export const alertsLayer: LayerModule = {
         source: SRC,
         layout: { "line-sort-key": sortKey },
         paint: {
-          "line-color": ["case", ["get", "isEmergency"], "#ff1d48", ["get", "color"]],
+          // The tier's colour when it has one (baked as "color" by alertStyle).
+          "line-color": ["get", "color"],
           "line-width": strokeWidth as never,
           "line-opacity": lineOpacity(DEFAULT_ALERT_OPACITY),
         },
@@ -318,8 +389,85 @@ export const alertsLayer: LayerModule = {
       });
     }
 
-    const source = map.getSource(SRC) as GeoJSONSource | undefined;
-    source?.setData(alertsToFeatureCollection(useAlertStore.getState().features));
+    // Flashing alerts: a pulsing fill and a wide line in the type's flash colour.
+    if (!map.getLayer(FLASH_FILL)) {
+      map.addLayer({
+        id: FLASH_FILL,
+        type: "fill",
+        source: SRC,
+        filter: ["in", ["get", "id"], ["literal", []]],
+        paint: { "fill-color": ["coalesce", ["get", "flashColor"], "#ffffff"], "fill-opacity": 0 },
+      });
+    }
+    // A dark band under the flash line, so a white flash reads on a light map too.
+    if (!map.getLayer(FLASH_CASING)) {
+      map.addLayer({
+        id: FLASH_CASING,
+        type: "line",
+        source: SRC,
+        filter: ["in", ["get", "id"], ["literal", []]],
+        layout: { "line-join": "round" },
+        paint: { "line-color": CASING_COLOR, "line-width": ["+", 5, ["*", 2, strokeWidth]] as never, "line-opacity": 0 },
+      });
+    }
+    if (!map.getLayer(FLASH_LINE)) {
+      map.addLayer({
+        id: FLASH_LINE,
+        type: "line",
+        source: SRC,
+        filter: ["in", ["get", "id"], ["literal", []]],
+        layout: { "line-join": "round" },
+        paint: {
+          "line-color": ["coalesce", ["get", "flashColor"], "#ffffff"],
+          "line-width": ["+", 2.5, ["*", 2, strokeWidth]] as never,
+          "line-opacity": 0,
+          "line-blur": 0.6,
+        },
+      });
+    }
+
+    // Storm motion arrows (storm-based warnings), above the outlines.
+    if (!map.getSource(MOTION_SRC)) {
+      map.addSource(MOTION_SRC, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    }
+    if (!map.getLayer(MOTION_CASING)) {
+      map.addLayer({
+        id: MOTION_CASING,
+        type: "line",
+        source: MOTION_SRC,
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": CASING_COLOR, "line-width": 4.2, "line-opacity": lineOpacity(DEFAULT_ALERT_OPACITY) },
+      });
+    }
+    if (!map.getLayer(MOTION_LINE)) {
+      map.addLayer({
+        id: MOTION_LINE,
+        type: "line",
+        source: MOTION_SRC,
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": ["get", "color"], "line-width": 2, "line-opacity": lineOpacity(DEFAULT_ALERT_OPACITY) },
+      });
+    }
+    if (!map.getLayer(MOTION_LABEL)) {
+      map.addLayer({
+        id: MOTION_LABEL,
+        type: "symbol",
+        source: MOTION_SRC,
+        minzoom: 6,
+        layout: {
+          "text-field": ["get", "label"],
+          "text-font": ["Noto Sans Bold"],
+          "text-size": 11,
+          "text-allow-overlap": false,
+          "text-padding": 2,
+        },
+        paint: { "text-color": ["get", "color"], "text-halo-color": "rgba(6,10,16,0.9)", "text-halo-width": 1.4 },
+      });
+    }
+
+    const features = useAlertStore.getState().features;
+    (map.getSource(SRC) as GeoJSONSource | undefined)?.setData(alertMapData(features));
+    (map.getSource(MOTION_SRC) as GeoJSONSource | undefined)?.setData(alertMotionData(features));
 
     const unsubTimeOnly = useAlertStore.subscribe(
       (s) => s.timeFilter,
@@ -333,12 +481,32 @@ export const alertsLayer: LayerModule = {
       (s) => s.values["alerts.outlineWatches"],
       () => pushFilter(map),
     );
+    // The filters Settings holds: motion arrows, only active, states, offices,
+    // and every type's switch -- one signature, so other edits do not refilter.
+    const filterSig = (v: Record<string, unknown>) =>
+      Object.keys(v)
+        .filter((k) => /^alerts\.(motionArrows|onlyActive|states|wfos)$|^alerts\.type\..*\.on$/.test(k))
+        .sort()
+        .map((k) => `${k}=${String(v[k])}`)
+        .join(";");
+    const unsubFilters = useSettingsStore.subscribe((s) => filterSig(s.values), () => pushFilter(map));
+    const unsubEyes = useAlertListStore.subscribe(
+      (s) => [s.hiddenGroups, s.hiddenTypes, s.hiddenIds] as const,
+      () => pushFilter(map),
+      { equalityFn: (a, b) => a.every((v, i) => v === b[i]) },
+    );
     const unsubTime = () => {
+      unsubEyes();
       unsubTimeOnly();
       unsubCategory();
       unsubOutlines();
+      unsubFilters();
     };
     pushFilter(map);
+    // "Only active" compares onset with now while the timeline is live.
+    const activeTimer = window.setInterval(() => {
+      if (getSetting<boolean>("alerts.onlyActive") && useAlertStore.getState().timeFilter === null) pushFilter(map);
+    }, 60_000);
 
     const onClick = (e: MapLayerMouseEvent) => {
       // A sounding dot drawn on top of this polygon is what the user aimed at;
@@ -353,7 +521,13 @@ export const alertsLayer: LayerModule = {
             .map(String),
         ),
       );
-      if (ids.length > 0) useAlertStore.getState().selectMany(ids);
+      // Every alert under the click, in a card at the point (AlertPointCard);
+      // a row of it opens the full text in the rail.
+      if (ids.length > 0) {
+        const pane = paneIdOf(map);
+        if (pane) setActivePane(pane);
+        useAlertListStore.getState().openPoint({ lon: e.lngLat.lng, lat: e.lngLat.lat, ids });
+      }
     };
     const onEnter = () => {
       map.getCanvas().style.cursor = "pointer";
@@ -364,21 +538,26 @@ export const alertsLayer: LayerModule = {
     map.on("click", FILL, onClick);
     map.on("mouseenter", FILL, onEnter);
     map.on("mouseleave", FILL, onLeave);
-    state.set(map, { onClick, onEnter, onLeave, unsubTime });
+    state.set(map, { onClick, onEnter, onLeave, unsubTime, activeTimer });
 
     // signal the controller to start fetching
     useAlertStore.getState().setActive(true);
   },
 
-  removeFrom(map) {
+  removeFrom(map, styleSwap) {
     const st = state.get(map);
     if (st) {
       map.off("click", FILL, st.onClick);
       map.off("mouseenter", FILL, st.onEnter);
       map.off("mouseleave", FILL, st.onLeave);
       st.unsubTime();
+      window.clearInterval(st.activeTimer);
       state.delete(map);
     }
+    for (const id of [MOTION_LABEL, MOTION_LINE, MOTION_CASING, FLASH_LINE, FLASH_CASING, FLASH_FILL]) {
+      if (map.getLayer(id)) map.removeLayer(id);
+    }
+    if (map.getSource(MOTION_SRC)) map.removeSource(MOTION_SRC);
     for (const id of [WATCH_LINE, WATCH_CASING, ADVISORY_LINE, ADVISORY_CASING]) {
       if (map.getLayer(id)) map.removeLayer(id);
     }
@@ -386,6 +565,9 @@ export const alertsLayer: LayerModule = {
     if (map.getLayer(CASING)) map.removeLayer(CASING);
     if (map.getLayer(FILL)) map.removeLayer(FILL);
     if (map.getSource(SRC)) map.removeSource(SRC);
+    // Closing one split-screen pane (panes-layout) must not stop the alerts
+    // the other panes still draw: inactive only when no map has them left.
+    if (styleSwap || allMaps().some((m) => m !== map && m.getSource(SRC))) return;
     const s = useAlertStore.getState();
     s.setActive(false);
     s.select(null);
@@ -395,13 +577,13 @@ export const alertsLayer: LayerModule = {
     if (map.getLayer(FILL)) map.setPaintProperty(FILL, "fill-opacity", fillOpacity(opacity));
     if (map.getLayer(CASING)) map.setPaintProperty(CASING, "line-opacity", lineOpacity(opacity));
     if (map.getLayer(OUTLINE)) map.setPaintProperty(OUTLINE, "line-opacity", lineOpacity(opacity));
-    for (const id of [ADVISORY_CASING, ADVISORY_LINE, WATCH_CASING, WATCH_LINE]) {
+    for (const id of [ADVISORY_CASING, ADVISORY_LINE, WATCH_CASING, WATCH_LINE, MOTION_CASING, MOTION_LINE]) {
       if (map.getLayer(id)) map.setPaintProperty(id, "line-opacity", lineOpacity(opacity));
     }
   },
 
   getLayerIds() {
-    return [FILL, ADVISORY_CASING, ADVISORY_LINE, WATCH_CASING, WATCH_LINE, CASING, OUTLINE];
+    return [FILL, FLASH_FILL, ADVISORY_CASING, ADVISORY_LINE, WATCH_CASING, WATCH_LINE, CASING, OUTLINE, FLASH_CASING, FLASH_LINE, MOTION_CASING, MOTION_LINE, MOTION_LABEL];
   },
 
   // The polygon border has to stay readable over whatever product is drawn on
@@ -415,6 +597,7 @@ export const alertsLayer: LayerModule = {
     // Casing first: it has to stay directly under the line it belongs to. The
     // tiers stack by weight -- advisory dots, then watch dashes, then warnings:
     // a warning inside a watch is the edge that matters.
-    return [ADVISORY_CASING, ADVISORY_LINE, WATCH_CASING, WATCH_LINE, CASING, OUTLINE];
+    // The flash and the motion arrows ride on top of the outlines.
+    return [ADVISORY_CASING, ADVISORY_LINE, WATCH_CASING, WATCH_LINE, CASING, OUTLINE, FLASH_CASING, FLASH_LINE, MOTION_CASING, MOTION_LINE, MOTION_LABEL];
   },
 };

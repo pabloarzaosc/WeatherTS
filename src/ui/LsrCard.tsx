@@ -126,7 +126,7 @@ export function LsrCard() {
     const here = selected.geometry.coordinates as [number, number];
     let best: { id: string; icao: string; km: number } | null = null;
     for (const s of sites) {
-      if (s.online === false) continue;
+      if (s.online === false || s.type === "TDWR") continue;
       const km = distanceKm(here, [s.lon, s.lat]);
       if (!best || km < best.km) best = { id: s.id, icao: s.icao, km };
     }

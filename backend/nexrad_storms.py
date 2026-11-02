@@ -41,6 +41,7 @@ from nexrad_core import (
     _latest_key,
     _scans_for_day,
     _utc_unix,
+    icao_for,
     key_time,
 )
 
@@ -189,7 +190,7 @@ def _cells(site: str, unix: Optional[int] = None,
         })
 
     meta = {
-        "site": f"K{site}",
+        "site": icao_for(site),
         "siteLat": site_lat,
         "siteLon": site_lon,
         "maxRangeKm": float(f.max_range),
@@ -300,14 +301,15 @@ def build_storms(site: str, unix: Optional[int] = None) -> dict:
     if not meta:
         # A frame with no storm scan within half an hour is a legitimate answer:
         # report it as empty rather than as an error, so playback keeps running.
-        if unix is not None:
-            out = {"meta": {"site": f"K{site}", "siteLat": None, "siteLon": None,
-                            "maxRangeKm": None, "validUnix": None, "key": None,
-                            "cellCount": 0, "mesoCount": 0, "attributedCount": 0},
-                   "cells": [], "mesos": []}
-            _CACHE[ck] = (now, out)
-            return out
-        raise RuntimeError(f"No recent storm-tracking scan for K{site}.")
+        # Live too: a quiet radar (no storms, no recent NST) is not a failure,
+        # and a 502 for it put a console error on every poll.
+        out = {"meta": {"site": icao_for(site), "siteLat": None, "siteLon": None,
+                        "maxRangeKm": None, "validUnix": None, "key": None,
+                        "cellCount": 0, "mesoCount": 0, "attributedCount": 0,
+                        "note": f"No recent storm-tracking scan for {icao_for(site)}."},
+               "cells": [], "mesos": []}
+        _CACHE[ck] = (now, out)
+        return out
     mesos = _mesos(site, cells, meta["siteLat"], meta["siteLon"], unix)
 
     # Hail and structure ride on a separate live feed, so this is best-effort:

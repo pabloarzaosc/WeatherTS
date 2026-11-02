@@ -23,7 +23,7 @@ import { SAT_IMAGE_SOURCE, satFrameOnScreen } from "../layers/modules/satelliteL
 import { useNexradStore } from "../store/useNexradStore";
 import { useObsStore } from "../store/useObsStore";
 import { selectSatProduct, selectSatRegion, selectSatSatellite, useSatStore } from "../store/useSatStore";
-import { usePaletteStore } from "../store/usePaletteStore";
+import { resolveTableText } from "./colorTables";
 import type { AnimFormat, AnimSubject, GifArea } from "../store/useGifStore";
 import { fhText, prefetchObsLoop, type ObsBar } from "./observations";
 import type { SatLegend } from "./satellite";
@@ -92,7 +92,7 @@ export interface AnimOptions {
 
 // ---- frame sinks: one per output format, same interface ----
 
-interface FrameSink {
+export interface FrameSink {
   add(canvas: HTMLCanvasElement, delayMs: number): Promise<void>;
   finish(): Promise<Blob>;
 }
@@ -188,7 +188,9 @@ class GifSink implements FrameSink {
 
 // Codecs to try, most-compatible first. Level 4.0+ so a ~1280x900 frame fits
 // (level 3.1 caps below that and configure would reject it).
-const MP4_CODECS = ["avc1.640028", "avc1.4d0028", "avc1.420028"];
+// Level 5.1 after them (export step): a 1920x1200 frame is past level 4.0's
+// 8192 macroblocks, and the encoder turns a level that small down.
+const MP4_CODECS = ["avc1.640028", "avc1.4d0028", "avc1.420028", "avc1.640033", "avc1.4d0033", "avc1.420033"];
 
 /** Friendly message when the browser has VideoEncoder but can't actually do H.264. */
 const MP4_UNAVAILABLE = "This browser can't encode MP4 (Firefox doesn't yet) — export as GIF instead.";
@@ -242,17 +244,28 @@ class Mp4Sink implements FrameSink {
     throw new Error(MP4_UNAVAILABLE);
   }
 
+  /** The first frame's hold: the loop's step. */
+  private stepMs = 0;
+
   async add(canvas: HTMLCanvasElement, delayMs: number): Promise<void> {
     if (this.err) throw this.err;
-    const dur = delayMs * 1000; // microseconds
-    const frame = new VideoFrame(canvas, { timestamp: this.ts, duration: dur });
-    this.ts += dur;
-    // A keyframe every ~2 s keeps seeking sane without bloating the file.
-    this.encoder.encode(frame, { keyFrame: this.n % 30 === 0 });
-    frame.close();
-    this.n += 1;
-    // Backpressure: don't queue frames faster than the encoder drains them.
-    while (this.encoder.encodeQueueSize > 2) await new Promise((r) => setTimeout(r, 4));
+    // A frame held longer than the step (the last one's hold) goes in as
+    // several samples of about one step: the muxer gives the file's last
+    // sample the step before it, so one long last sample lost its hold (an
+    // export's MP4 ran 3.5 s where 4.5 s were asked).
+    if (!this.stepMs) this.stepMs = delayMs;
+    const parts = delayMs > this.stepMs * 1.5 ? Math.max(1, Math.round(delayMs / this.stepMs)) : 1;
+    const dur = (delayMs * 1000) / parts; // microseconds
+    for (let k = 0; k < parts; k++) {
+      const frame = new VideoFrame(canvas, { timestamp: Math.round(this.ts), duration: Math.round(dur) });
+      this.ts += dur;
+      // A keyframe every ~2 s keeps seeking sane without bloating the file.
+      this.encoder.encode(frame, { keyFrame: this.n % 30 === 0 });
+      frame.close();
+      this.n += 1;
+      // Backpressure: don't queue frames faster than the encoder drains them.
+      while (this.encoder.encodeQueueSize > 2) await new Promise((r) => setTimeout(r, 4));
+    }
   }
 
   async finish(): Promise<Blob> {
@@ -315,7 +328,7 @@ function makeSink(format: AnimFormat, w: number, h: number, delayMs: number): Pr
 // ~1 s (and, after minutes hidden, ~1/min) when the tab isn't visible, which
 // would wedge the whole export; a MessageChannel round-trip is not clamped, so
 // all the waits below stay bounded even if the user tabs away mid-run.
-function macroYield(): Promise<void> {
+export function macroYield(): Promise<void> {
   return new Promise((resolve) => {
     const ch = new MessageChannel();
     ch.port1.onmessage = () => resolve();
@@ -324,7 +337,7 @@ function macroYield(): Promise<void> {
 }
 
 /** Sleep ~ms, using yields that keep ticking even when the tab is hidden. */
-async function sleepAwake(ms: number): Promise<void> {
+export async function sleepAwake(ms: number): Promise<void> {
   const end = Date.now() + ms;
   while (Date.now() < end) await macroYield();
 }
@@ -342,7 +355,7 @@ const SETTLE_MS = 20_000;
  * or not, and waiting on what the frame needs rather than on a paint also took
  * the fixed 0.9 s per frame out (idle seldom came, and the wait ran out).
  */
-async function settled(map: MapLibreMap, images: string[] = []): Promise<void> {
+export async function settled(map: MapLibreMap, images: string[] = []): Promise<void> {
   const end = Date.now() + SETTLE_MS;
   const loaded = () =>
     map.areTilesLoaded() &&
@@ -360,15 +373,13 @@ async function settled(map: MapLibreMap, images: string[] = []): Promise<void> {
 }
 
 /** The colour table for a product family, resolved the way the map resolves it. */
-function paletteFor(family: string): { table: PalTable; units: string; product: string; kind: string } | null {
+export function paletteFor(family: string): { table: PalTable; units: string; product: string; kind: string } | null {
   const s = useNexradStore.getState();
   const fam = s.grids.find((f) => f.id === family) ?? s.catalog.find((f) => f.id === family);
   if (!fam) return null;
 
-  const pid = s.kindDefaults[fam.kind] ?? "REF";
-  const { overrides, custom } = usePaletteStore.getState();
-  const mine = overrides[pid] ? custom.find((p) => p.id === overrides[pid]) : null;
-  const text = mine?.pal ?? s.palTables[pid]?.pal;
+  // The table the map draws with (chosen table, colour scale and offset).
+  const text = resolveTableText(s.kindDefaults[fam.kind] ?? "REF", s.palTables);
   if (!text) return null;
 
   const table = parsePal(text);
@@ -388,7 +399,7 @@ function fmtUtc(unix: number): { day: string; time: string } {
 
 /** The palette ramp, sampled straight from the LUT the map colours gates with.
  *  Hydrometeor classes get one block per class with its NWS code under it. */
-function paintScale(
+export function paintScale(
   ctx: CanvasRenderingContext2D,
   table: PalTable,
   x: number,
@@ -835,7 +846,7 @@ const MODEL_FRAME_TIMEOUT_MS = 120_000;
  * this zoom) -- so the export shows what the screen would, not the coarse
  * whole-domain picture under it.
  */
-async function modelFrame(map: MapLibreMap, i: number, want: string, cancel: GifCancel): Promise<void> {
+export async function modelFrame(map: MapLibreMap, i: number, want: string, cancel: GifCancel): Promise<void> {
   useObsStore.getState().setIndex(i);
   const end = Date.now() + MODEL_FRAME_TIMEOUT_MS;
   let asked = false;
@@ -1202,4 +1213,130 @@ export function downloadBlob(blob: Blob, name: string): void {
   a.download = name;
   a.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** An encoder for frames drawn elsewhere (the 3D view's loop): each canvas
+ *  of exactly w x h becomes one frame. */
+export function createFrameSink(
+  format: AnimFormat,
+  w: number,
+  h: number,
+  delayMs: number,
+): Promise<{ add(canvas: HTMLCanvasElement, delayMs: number): Promise<void>; finish(): Promise<Blob> }> {
+  return makeSink(format, even(w), even(h), delayMs);
+}
+
+// ---- video for the Export page: MP4 where WebCodecs has H.264, else WebM ----
+
+const WEBM_TYPES = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+
+/**
+ * WebM, for a browser with no H.264 encoder (Firefox). MediaRecorder films a
+ * canvas in real time, so the frames are kept as JPEG pictures while they are
+ * captured -- the capture's own pace is uneven -- and played back once at the
+ * export's speed while it records: each frame lasts what it should.
+ */
+class WebmSink implements FrameSink {
+  private frames: { blob: Blob; ms: number }[] = [];
+
+  constructor(private w: number, private h: number) {}
+
+  static type(): string | null {
+    if (typeof MediaRecorder !== "function" || typeof HTMLCanvasElement.prototype.captureStream !== "function") return null;
+    return WEBM_TYPES.find((t) => MediaRecorder.isTypeSupported(t)) ?? null;
+  }
+
+  async add(canvas: HTMLCanvasElement, delayMs: number): Promise<void> {
+    const blob = await new Promise<Blob | null>((done) => canvas.toBlob(done, "image/jpeg", 0.93));
+    if (!blob) throw new Error("A frame could not be kept for the video.");
+    this.frames.push({ blob, ms: delayMs });
+  }
+
+  async finish(): Promise<Blob> {
+    const type = WebmSink.type();
+    if (!type) throw new Error("This browser can't record video -- export a GIF instead.");
+    const cv = document.createElement("canvas");
+    cv.width = this.w;
+    cv.height = this.h;
+    const ctx = cv.getContext("2d");
+    if (!ctx) throw new Error("Canvas unavailable.");
+    const stream = cv.captureStream(0);
+    const track = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack | undefined;
+    const rec = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: Math.min(24_000_000, this.w * this.h * 8) });
+    const chunks: Blob[] = [];
+    rec.ondataavailable = (e) => {
+      if (e.data.size) chunks.push(e.data);
+    };
+    const stopped = new Promise<void>((done) => (rec.onstop = () => done()));
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    let bmp: ImageBitmap | null = null;
+    // Drawn again to send it again: an unchanged canvas sends no frame, and a
+    // recording ends at its last frame (the last frame's hold was lost).
+    const show = () => {
+      if (bmp) ctx.drawImage(bmp, 0, 0, this.w, this.h);
+      track?.requestFrame?.();
+    };
+    try {
+      if (this.frames.length) {
+        bmp = await createImageBitmap(this.frames[0].blob);
+        show();
+      }
+      rec.start();
+      for (let k = 0; k < this.frames.length; k++) {
+        if (k > 0) {
+          const next = await createImageBitmap(this.frames[k].blob);
+          bmp?.close();
+          bmp = next;
+          show();
+        }
+        let left = this.frames[k].ms;
+        while (left > 0) {
+          const d = Math.min(left, 250);
+          await wait(d);
+          left -= d;
+          if (left > 0) show();
+        }
+      }
+      show();
+      await wait(60);
+    } finally {
+      bmp?.close();
+      if (rec.state !== "inactive") rec.stop();
+    }
+    await stopped;
+    for (const t of stream.getTracks()) t.stop();
+    return new Blob(chunks, { type: "video/webm" });
+  }
+}
+
+/** The Export page's video sink: MP4 (H.264 through WebCodecs) where this
+ *  browser can encode it, else WebM. `prefer: "webm"` skips the MP4 try. */
+export async function createVideoSink(
+  w: number,
+  h: number,
+  delayMs: number,
+  prefer: "mp4" | "webm" = "mp4",
+): Promise<{ sink: FrameSink; ext: "mp4" | "webm" }> {
+  const W = even(w);
+  const H = even(h);
+  if (prefer === "mp4" && (await probeMp4Support())) {
+    try {
+      return { sink: await Mp4Sink.create(W, H, delayMs), ext: "mp4" };
+    } catch {
+      /* WebM below */
+    }
+  }
+  if (WebmSink.type()) return { sink: new WebmSink(W, H), ext: "webm" };
+  throw new Error("This browser can't record video -- export a GIF instead.");
+}
+
+/** What createVideoSink would make here, for the Export page's row. */
+export async function videoKind(): Promise<"mp4" | "webm" | null> {
+  if (await probeMp4Support()) return "mp4";
+  return WebmSink.type() ? "webm" : null;
+}
+
+/** The GIF sink, for the Export page. */
+export function createGifSink(w: number, h: number): FrameSink {
+  return new GifSink(even(w), even(h));
 }

@@ -6,6 +6,7 @@ import { beamHeightKm, XSECT_MOMENTS, type XsectData } from "../lib/xsect";
 import { useElementSize } from "../lib/useElementSize";
 import { useNexradStore } from "../store/useNexradStore";
 import { useXsectStore, type XsectUnits } from "../store/useXsectStore";
+import { AnalysisPlaceButton, useInPane } from "./PaneWindows";
 
 const KM_TO_MI = 0.621371;
 const KM_TO_KFT = 3.28084;
@@ -167,9 +168,14 @@ export function CrossSectionPanel() {
   const fam = useXsectStore((s) => s.fam);
   const topKm = useXsectStore((s) => s.topKm);
   const units = useXsectStore((s) => s.units);
+  // The volume behind the slice: a NEXRAD site's Level II, or a Brazilian
+  // radar's own volume (CEMADEN, DAEE/SAISP) -- labelled "NEXRAD" it read
+  // as US data.
+  const brazil = useXsectStore((s) => (s.site ?? "").toUpperCase().startsWith("BR-"));
   const canvas = useRef<HTMLCanvasElement>(null);
   const [plotRef, size] = useElementSize<HTMLDivElement>();
   const [expanded, setExpanded] = useState(false);
+  const inPane = useInPane();
   const [probe, setProbe] = useState<{ x: number; text: string } | null>(null);
 
   // The radar's own palette for the moment, custom tables included.
@@ -230,7 +236,7 @@ export function CrossSectionPanel() {
   };
 
   return (
-    <div className={`sv xsect-screen${expanded ? " is-expanded" : ""}`} role="dialog" aria-label="Radar cross section">
+    <div className={`sv xsect-screen${expanded && !inPane ? " is-expanded" : ""}`} role="dialog" aria-label="Radar cross section">
       <header className="sv__head">
         <div className="sv__title">
           <Layers size={16} />
@@ -241,18 +247,24 @@ export function CrossSectionPanel() {
                 ? `${meta.site} / ${hm(meta.scanUnix)}${meta.vcp ? ` / VCP ${meta.vcp}` : ""} / ${
                     units === "imperial" ? `${(meta.lengthKm * KM_TO_MI).toFixed(0)} mi` : `${meta.lengthKm.toFixed(0)} km`
                   } long / ${meta.elevations.length} tilts`
-                : "Reading the volume…"}
+                : error
+                  ? "Nothing to show"
+                  : "Reading the volume…"}
             </span>
           </div>
         </div>
-        <div className="sv__brand">NEXRAD Level II</div>
+        <div className="sv__brand">{brazil ? "Radar volume" : "NEXRAD Level II"}</div>
         <div className="sv__headbtns">
+          <AnalysisPlaceButton kind="xsect" />
           <button type="button" onClick={() => useXsectStore.getState().startDrawing()} title="Draw a new line on the map">
             <PenLine size={15} />
           </button>
-          <button type="button" onClick={() => setExpanded((v) => !v)} title={expanded ? "Restore" : "Expand"}>
-            {expanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-          </button>
+          {/* In a pane the pane's own Fullscreen (as a window) does this. */}
+          {!inPane && (
+            <button type="button" onClick={() => setExpanded((v) => !v)} title={expanded ? "Restore" : "Expand"}>
+              {expanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            </button>
+          )}
           <button type="button" onClick={() => useXsectStore.getState().close()} title="Close (Esc)">
             <X size={16} />
           </button>

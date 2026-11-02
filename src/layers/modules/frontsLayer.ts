@@ -4,6 +4,7 @@ import type { LayerModule } from "../types";
 import { FRONT_COLORS } from "../../lib/fronts";
 import { selectFrontFeatures, useFrontsStore } from "../../store/useFrontsStore";
 import { mapInk } from "../../map/mapInk";
+import { allMaps } from "../../map/mapInstance";
 
 const SRC = "fronts-src";
 const L_TROUGH = "fronts-trough";
@@ -321,7 +322,7 @@ export const frontsLayer: LayerModule = {
     st.start();
   },
 
-  removeFrom(map) {
+  removeFrom(map, styleSwap) {
     const st = state.get(map);
     if (st) {
       for (const id of [L_HIT, L_CENTRE, L_CENTRE_P]) {
@@ -332,8 +333,11 @@ export const frontsLayer: LayerModule = {
       st.unsub();
       state.delete(map);
     }
-    useFrontsStore.getState().stop();
-    useFrontsStore.getState().select(null);
+    // Another pane still draws the fronts (one pane closed, panes-layout).
+    if (!styleSwap && !allMaps().some((m) => m !== map && m.getSource(SRC))) {
+      useFrontsStore.getState().stop();
+      useFrontsStore.getState().select(null);
+    }
     for (const id of ALL) if (map.getLayer(id)) map.removeLayer(id);
     if (map.getSource(SRC)) map.removeSource(SRC);
   },

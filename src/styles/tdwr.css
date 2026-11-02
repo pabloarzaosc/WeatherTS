@@ -1,0 +1,20 @@
+/* TDWR airport radars: the words the radar panel and the product list add. */
+
+.siteinfo__tdwr {
+  margin-top: 5px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.rpp__tdwrnote {
+  flex: none;
+  padding: 7px 10px;
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.35;
+}

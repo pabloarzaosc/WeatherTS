@@ -9,6 +9,8 @@ import {
   Globe2,
   Grid2x2,
   Grid3x3,
+  LayoutPanelTop,
+  Rows2,
   Image as ImageIcon,
   Layers,
   LayoutGrid,
@@ -16,23 +18,32 @@ import {
   Map as MapIcon,
   Maximize,
   PenLine,
+  Radio,
   Ruler,
   Settings,
   Square,
   Video,
+  Keyboard,
+  PanelTopClose,
+  Tv,
 } from "lucide-react";
+import { useFeatureStore } from "../store/useFeatureStore";
+import { useShellStore } from "../store/useShellStore";
 
 import { useAppStore, type DataView } from "../store/useAppStore";
 import { selectRailOpen, useAlertStore } from "../store/useAlertStore";
 import { useGifStore } from "../store/useGifStore";
+import { useNowStore } from "../store/useNowStore";
 import { useDrawStore } from "../store/useDrawStore";
+import { usePaneStore } from "../store/usePaneStore";
+import { setLayout } from "../lib/paneOps";
 import { useAccountGate } from "../store/useAccountGate";
 import { useAuthStore } from "../store/useAuthStore";
 import { getMap } from "../map/mapInstance";
 import { INITIAL_VIEW } from "../map/mapStyle";
 import { flyToMyLocation } from "../lib/geolocate";
 import { toggleFullscreen } from "../lib/fullscreen";
-import { downloadBlob } from "../lib/gifExport";
+import { openExport } from "../store/useExportStore";
 import { BrandMark } from "./BrandMark";
 import { OutlookTopButton } from "./OutlookControls";
 import { AccountPanel } from "./auth/AccountPanel";
@@ -55,29 +66,6 @@ import { AccountPanel } from "./auth/AccountPanel";
  */
 
 type Fly = "view" | "map" | "export" | null;
-
-/** Save the focused pane's current view as a PNG. */
-function saveViewPng() {
-  const map = getMap();
-  if (!map) return;
-  // Force a fresh paint, then read the buffer two frames later (same rule the
-  // animation exporter uses: WebGL needs the paint to land before readback).
-  map.triggerRepaint();
-  requestAnimationFrame(() =>
-    requestAnimationFrame(() =>
-      map.getCanvas().toBlob((blob) => {
-        if (blob) {
-          const p = (n: number) => String(n).padStart(2, "0");
-          const d = new Date();
-          downloadBlob(
-            blob,
-            `radar_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}.png`,
-          );
-        }
-      }, "image/png"),
-    ),
-  );
-}
 
 const EDGE = 8;
 
@@ -105,6 +93,7 @@ function DockButton({
   on,
   expanded,
   badge,
+  badgeTone,
   disabled,
   quiet,
 }: {
@@ -116,6 +105,8 @@ function DockButton({
   /** The drawer or flyout this button opened is showing. */
   expanded?: boolean;
   badge?: number;
+  /** "alert": the badge in red, for the most serious items (Now). */
+  badgeTone?: "alert";
   disabled?: boolean;
   /** Suppress the hover label -- while this button's own flyout is open, the
    *  label would sit on top of it. */
@@ -133,7 +124,9 @@ function DockButton({
       disabled={disabled}
     >
       {icon}
-      {badge != null && badge > 0 && <span className="dock__badge">{badge > 99 ? "99+" : badge}</span>}
+      {badge != null && badge > 0 && (
+        <span className={`dock__badge${badgeTone === "alert" ? " dock__badge--alert" : ""}`}>{badge > 99 ? "99+" : badge}</span>
+      )}
     </button>
   );
 }
@@ -200,11 +193,15 @@ function AccountButton() {
   );
 }
 
+// Layouts: count, stacked (two panes one above the other), icon, name.
+// "Three" is two over one: the panel-top icon turned upside down.
 const PANES = [
-  [1, Square, "Single"],
-  [2, Columns2, "Two"],
-  [4, Grid2x2, "Four"],
-  [6, Grid3x3, "Six"],
+  [1, false, Square, "Single", ""],
+  [2, false, Columns2, "Two", ""],
+  [2, true, Rows2, "Stacked", ""],
+  [3, false, LayoutPanelTop, "Three", "dock__pane-icon--flip"],
+  [4, false, Grid2x2, "Four", ""],
+  [6, false, Grid3x3, "Six", ""],
 ] as const;
 
 export function Dock() {
@@ -218,17 +215,24 @@ export function Dock() {
   const drawActive = useDrawStore((s) => s.active);
   const setMeasureMode = useAppStore((s) => s.setMeasureMode);
   const paneCount = useAppStore((s) => s.paneCount);
-  const setPaneCount = useAppStore((s) => s.setPaneCount);
+  const stacked = usePaneStore((s) => s.stacked);
   const openAnim = useGifStore((s) => s.setOpen);
 
   const alertsActive = useAlertStore((s) => s.active);
   const railOpen = useAlertStore(selectRailOpen);
   const alertCount = useAlertStore((s) => s.features.length);
+  const nowBadge = useNowStore((s) => s.badge);
+  // The Now panel's warnings are polled from here: the badge needs them with
+  // the panel closed.
+  useEffect(() => useNowStore.getState().start(), []);
   const setListOpen = useAlertStore((s) => s.setListOpen);
   const selectAlert = useAlertStore((s) => s.select);
 
   const [fly, setFly] = useState<Fly>(null);
   const root = useRef<HTMLElement | null>(null);
+  // Settings > Features (ux-shell): a feature switched off loses its button.
+  const featuresOff = useFeatureStore((s) => s.off);
+  const feat = (id: string) => !featuresOff.includes(id);
 
   // A flyout is a moment, not a mode: it goes on any click outside the dock
   // and on Escape, the way every menu the user has ever used behaves.
@@ -316,6 +320,17 @@ export function Dock() {
         expanded={leftPanelOpen && dataView === "layers"}
         onClick={() => drawer("layers")}
       />
+      {feat("now") && (
+      <DockButton
+        icon={<Radio size={18} />}
+        label={nowBadge > 0 ? `Now · ${nowBadge} serious` : "Now"}
+        expanded={leftPanelOpen && dataView === "now"}
+        badge={nowBadge}
+        badgeTone="alert"
+        onClick={() => drawer("now")}
+      />
+      )}
+      {feat("alerts") && (
       <DockButton
         icon={<AlertTriangle size={18} />}
         label={alertsActive ? (railOpen ? "Hide alerts" : "Alerts") : "Alerts layer is off"}
@@ -334,12 +349,16 @@ export function Dock() {
           }
         }}
       />
+      )}
 
       <span className="dock__sep" />
 
+      {feat("outlooks") && (
       <div className="dock__outlook">
         <OutlookTopButton />
       </div>
+      )}
+      {feat("measure") && (
       <DockButton
         icon={<Ruler size={18} />}
         label="Measure"
@@ -350,6 +369,8 @@ export function Dock() {
           setMeasureMode(measureMode === "off" ? "distance" : "off");
         }}
       />
+      )}
+      {feat("draw") && (
       <DockButton
         icon={<PenLine size={18} />}
         label="Draw"
@@ -359,7 +380,9 @@ export function Dock() {
           useDrawStore.getState().setActive(!drawActive);
         }}
       />
+      )}
 
+      {feat("multiPane") && (
       <div className="dock__slot">
         <DockButton
           icon={<Columns2 size={18} />}
@@ -373,23 +396,27 @@ export function Dock() {
           <div className="dock__fly" role="menu" aria-label="Split view">
             <span className="dock__fly-title">Split view</span>
             <div className="dock__fly-row">
-              {PANES.map(([n, Icon, name]) => (
+              {PANES.map(([n, stack, Icon, name, iconCls]) => {
+                const on = paneCount === n && (n !== 2 || stacked === stack);
+                return (
                 <button
-                  key={n}
+                  key={name}
                   type="button"
                   role="menuitemradio"
-                  aria-checked={paneCount === n}
-                  className={`dock__pane${paneCount === n ? " is-on" : ""}`}
-                  onClick={done(() => setPaneCount(n))}
+                  aria-checked={on}
+                  className={`dock__pane${on ? " is-on" : ""}`}
+                  onClick={done(() => setLayout(n, stack))}
                 >
-                  <Icon size={16} />
+                  <Icon size={16} className={iconCls || undefined} />
                   <span>{name}</span>
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
       </div>
+      )}
 
       <div className="dock__slot">
         <DockButton
@@ -416,12 +443,19 @@ export function Dock() {
               onClick={done(toggleProjection)}
             />
             <FlyItem icon={<Maximize size={15} />} label="Fullscreen" onClick={done(() => void toggleFullscreen())} />
+            {/* ux-shell: the map without the app around it */}
+            <FlyItem icon={<PanelTopClose size={15} />} label="Minimal UI (Ctrl+\)" onClick={done(() => useShellStore.getState().setMode("minimal"))} />
+            {feat("broadcast") && (
+              <FlyItem icon={<Tv size={15} />} label="Broadcast mode" onClick={done(() => useShellStore.getState().setMode("broadcast"))} />
+            )}
+            <FlyItem icon={<Keyboard size={15} />} label="Keyboard shortcuts (?)" onClick={done(() => useShellStore.getState().setShortcutsOpen(true))} />
           </div>
         )}
       </div>
 
       <span className="dock__spacer" />
 
+      {feat("export") && (
       <div className="dock__slot">
         <DockButton
           icon={<Download size={18} />}
@@ -433,11 +467,12 @@ export function Dock() {
         {fly === "export" && (
           <div className="dock__fly dock__fly--up" role="menu" aria-label="Export">
             <span className="dock__fly-title">Export</span>
-            <FlyItem icon={<ImageIcon size={15} />} label="Save view as PNG" onClick={done(saveViewPng)} />
-            <FlyItem icon={<Video size={15} />} label="Animation (GIF / MP4)" onClick={done(() => openAnim(true))} />
+            <FlyItem icon={<ImageIcon size={15} />} label="Image, GIF or video…" onClick={done(() => openExport(null, true))} />
+            <FlyItem icon={<Video size={15} />} label="Custom animation (GIF / MP4)" onClick={done(() => openAnim(true))} />
           </div>
         )}
       </div>
+      )}
       <DockButton
         icon={<Settings size={18} />}
         label="Settings"

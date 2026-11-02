@@ -31,6 +31,8 @@ export const SKY_WORDS: Record<string, string> = {
   SKC: "Clear",
   CLR: "Clear",
   NCD: "Clear",
+  NSC: "No significant cloud",
+  CAVOK: "CAVOK",
   FEW: "Few",
   SCT: "Scattered",
   BKN: "Broken",
@@ -125,6 +127,10 @@ export function describeWx(codes: string | null | undefined): string[] {
   for (const token of String(codes).trim().split(/\s+/)) {
     if (!token) continue;
     let rest = token.toUpperCase();
+    if (rest === "NSW") {
+      out.push("No significant weather");
+      continue;
+    }
     const words: string[] = [];
     if (rest.startsWith("-") || rest.startsWith("+")) {
       words.push(WX_INTENSITY[rest[0]]);
@@ -134,13 +140,19 @@ export function describeWx(codes: string | null | undefined): string[] {
       words.push(WX_INTENSITY.VC);
       rest = rest.slice(2);
     }
-    while (rest.length >= 2) {
+    // A thunderstorm alone, with no precipitation named.
+    if (rest === "TS") words.push("thunderstorm");
+    else if (rest === "SH") words.push("showers");
+    // Several phenomena in one group ("RAGS") are rain and small hail.
+    const things: string[] = [];
+    while (rest.length >= 2 && rest !== "TS" && rest !== "SH") {
       const pair = rest.slice(0, 2);
-      if (WX_DESCRIPTOR[pair] && rest.length > 2) words.push(WX_DESCRIPTOR[pair]);
-      else if (WX_PHENOMENA[pair]) words.push(WX_PHENOMENA[pair]);
-      else words.push(pair.toLowerCase());
+      if (WX_DESCRIPTOR[pair] && rest.length > 2 && !things.length) words.push(WX_DESCRIPTOR[pair]);
+      else if (WX_PHENOMENA[pair]) things.push(WX_PHENOMENA[pair]);
+      else things.push(pair.toLowerCase());
       rest = rest.slice(2);
     }
+    if (things.length) words.push(things.length > 1 ? `${things.slice(0, -1).join(", ")} and ${things[things.length - 1]}` : things[0]);
     const text = words.filter(Boolean).join(" ").trim();
     if (text) out.push(text.charAt(0).toUpperCase() + text.slice(1));
   }

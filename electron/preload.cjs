@@ -5,7 +5,7 @@
 // consumers fail soft -- apiConfig uses `?.` and the update banner does
 // `if (!a) return` -- so nothing surfaced the breakage while the update banner
 // silently never appeared. Keep this file CJS.
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   isElectron: true,
@@ -32,9 +32,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // PKCE verifier, so the URL has to be handed to it to be worth anything.
   onAuthCallback: (cb) => ipcRenderer.on('auth:callback', (_e, url) => cb(url)),
 
+  // Links to a moment on the same protocol (weatherts://view?...): live ones,
+  // and the one the app was launched by, pulled once the page is ready.
+  onOpenLink: (cb) => ipcRenderer.on('link:open', (_e, url) => cb(url)),
+  getPendingLink: () => ipcRenderer.invoke('link:pending'),
+
   getVersion: () => ipcRenderer.invoke('app:version'),
   getBackendPort: () => ipcRenderer.invoke('backend:port'),
 
   // Keep drawing at full pace while hidden, for the length of an animation export.
   keepRendering: (on) => ipcRenderer.send('render:keep', !!on),
+
+  // The Export page: save through a dialog (Downloads by default) and show
+  // the saved file in its folder. saveExport resolves to the path, or null.
+  saveExport: (name, bytes) => ipcRenderer.invoke('export:save', String(name), bytes),
+  showInFolder: (filePath) => ipcRenderer.invoke('export:reveal', String(filePath)),
+
+  // Settings > Interface size (src/lib/uiScale.ts): the window's own zoom, so
+  // the map stays sharp and viewport units stay exact. Clamped to 75-125%.
+  setZoomFactor: (f) => {
+    const z = Number(f);
+    if (Number.isFinite(z)) webFrame.setZoomFactor(Math.min(1.25, Math.max(0.75, z)));
+  },
 });

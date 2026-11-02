@@ -396,7 +396,7 @@ function makeLayer(def: Def, meta: Omit<LayerModule, "addTo" | "removeFrom" | "s
         unwatch = def.watch?.(() => void refresh()) ?? null;
       } else if (current[def.slot]) apply(map, current[def.slot]);
     },
-    removeFrom(map) {
+    removeFrom(map, styleSwap) {
       maps.delete(map);
       if (map.getLayer(def.layer)) map.removeLayer(def.layer);
       if (map.getSource(def.src)) map.removeSource(def.src);
@@ -405,8 +405,11 @@ function makeLayer(def: Def, meta: Omit<LayerModule, "addTo" | "removeFrom" | "s
         unwatch?.();
         unwatch = null;
         seq++;
-        current[def.slot] = null;
-        useSpaceStore.getState().setValid(def.slot === "aurora" ? "auroraValid" : "fieldValid", null);
+        // A style swap: back on at once, on the picture already here.
+        if (!styleSwap) {
+          current[def.slot] = null;
+          useSpaceStore.getState().setValid(def.slot === "aurora" ? "auroraValid" : "fieldValid", null);
+        }
       }
     },
     setOpacity(map, o) {

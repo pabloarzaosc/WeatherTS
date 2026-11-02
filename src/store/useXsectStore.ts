@@ -1,7 +1,10 @@
 import { create } from "zustand";
 
 import { fetchXsect, type XsectData } from "../lib/xsect";
+import { TDWR_VOLUME_NOTE } from "../lib/nexrad";
+import { isTdwrId } from "./useNexradStore";
 import { describe } from "../lib/patience";
+import { onRadarOptionsChange } from "../lib/radarOptions";
 
 /**
  * The radar cross-section: the line drawn on the map, the moment shown, and
@@ -123,6 +126,12 @@ export const useXsectStore = create<XsectState>((set, get) => ({
   load: async () => {
     const { a, b, site, fam, at, key, topKm } = get();
     if (!a || !b || !site) return;
+    // The panel stays, and says why: the radar moved to an airport radar.
+    if (isTdwrId(site)) {
+      controller?.abort();
+      set({ data: null, busy: false, error: TDWR_VOLUME_NOTE });
+      return;
+    }
     // One at a time: a loop stepping through volumes must not cancel each
     // section before it arrives; the newest frame's follows the one in flight.
     if (inFlight) {
@@ -157,3 +166,10 @@ export const useXsectStore = create<XsectState>((set, get) => ({
     }, 80);
   },
 }));
+
+// The velocity options (Settings > Radar > Velocity) change what velocity and
+// SRV show: an open section of either is asked again.
+onRadarOptionsChange(() => {
+  const s = useXsectStore.getState();
+  if (s.a && s.b && (s.fam === "G" || s.fam === "S")) s.reload();
+});

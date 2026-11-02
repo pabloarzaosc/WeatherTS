@@ -1,0 +1,139 @@
+/* archive-l2: the Archive panel's "Open NEXRAD archive" list and the radars
+   in the loop. Hairline outlines and theme tokens only, like .sfx around it. */
+
+.arl2__pick { display: grid; grid-template-columns: 1fr 132px; gap: 6px; align-items: stretch; }
+.arl2__pick .sfcobs__field input { width: 100%; }
+
+.arl2__bar { display: flex; align-items: center; gap: 4px; min-height: 18px; }
+.arl2__link {
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 10.5px;
+}
+.arl2__link:hover:not(:disabled) { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.arl2__link:disabled { opacity: 0.45; }
+.arl2__sum {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.arl2__list {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  overscroll-behavior: contain;
+}
+.arl2__hour + .arl2__hour { border-top: 1px solid var(--border); }
+.arl2__hourhead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 8px;
+  /* --panel-2 is a translucent wash: lay it over the opaque panel so rows
+     scrolling under the sticky header do not show through. */
+  background: var(--panel-solid);
+  box-shadow: inset 0 0 0 100vmax var(--panel-2);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.arl2__hourhead span {
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.arl2__hourhead em {
+  margin-left: auto;
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+.arl2__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 8px 3px 22px;
+  cursor: pointer;
+  user-select: none;
+}
+.arl2__row:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.arl2__row.is-on { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.arl2__row.is-frag { cursor: default; opacity: 0.5; }
+.arl2__row.is-frag:hover { background: transparent; }
+.arl2__row input, .arl2__hourhead input { margin: 0; accent-color: var(--accent); pointer-events: none; }
+.arl2__hourhead input { pointer-events: auto; }
+.arl2__time {
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 11px;
+  color: var(--text);
+}
+.arl2__size {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.arl2__go .sfx__chip { flex: 1 1 0; text-align: center; border-radius: var(--radius); padding: 7px 10px; }
+.arl2__go .sfx__chip:disabled { opacity: 0.45; }
+
+.arl2__radars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.arl2__radars li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.arl2__radars b {
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 11px;
+  color: var(--text);
+}
+.arl2__x {
+  margin-left: auto;
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-faint);
+}
+.arl2__x:hover { color: var(--text); border-color: var(--border); }
+.arl2__add { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: stretch; }
+.arl2__add .sfx__chip { display: inline-flex; align-items: center; gap: 4px; border-radius: var(--radius); }
+.arl2__add .sfx__chip:disabled { opacity: 0.45; }
+
+/* The pane header names its radar once more than one is in the loop. */
+.panehead__site {
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--text);
+}

@@ -1,10 +1,12 @@
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore, type CSSProperties } from "react";
 import maplibregl from "maplibre-gl";
 
 import { INITIAL_VIEW } from "./mapStyle";
 import { noteView, savedView } from "../lib/session";
 import { buildBasemapStyle } from "./basemaps";
-import { registerMap, setActivePane, allMaps, subscribeMaps, getActivePaneId, PRIMARY_PANE } from "./mapInstance";
+import { registerMap, setActivePane, allMaps, subscribeMaps, getActivePaneId, paneIdOf, PRIMARY_PANE } from "./mapInstance";
+import { PaneChrome } from "../ui/PaneChrome";
+import { paneLayerState, usePaneStore } from "../store/usePaneStore";
 import { LayerManager } from "../layers/manager";
 import { attachSettings } from "../settings/mapStyle";
 import { useSettingsStore } from "../settings/useSettingsStore";
@@ -12,6 +14,12 @@ import { useAppStore } from "../store/useAppStore";
 import { useNexradStore } from "../store/useNexradStore";
 import { ObsColorBar } from "../ui/ObsColorBar";
 import { RadarColorBar } from "../ui/RadarColorBar";
+import { RadarLiveNote } from "../ui/RadarLiveNote";
+import { PaneConnNote } from "../ui/ConnectionBadge";
+import { BroadcastCaption } from "../ui/BroadcastCaption";
+import { PaneCompare } from "../ui/PaneCompare";
+import { useCompareStore } from "../store/useCompareStore";
+import { raise } from "../lib/paneWindows";
 
 // One split-screen pane: a full MapLibre map with the whole layer stack, so a
 // pane is a real workspace (alerts, sounding clicks, tools) and not a
@@ -43,20 +51,37 @@ function flushSync() {
     bearing: src.getBearing(),
     pitch: src.getPitch(),
   };
-  for (const m of allMaps()) if (m !== src) m.jumpTo(view);
+  // Only the panes with Sync camera on move together (panes-layout).
+  for (const m of allMaps()) if (m !== src && cameraShared(m)) m.jumpTo(view);
   syncing = false;
 }
 
+function cameraShared(m: maplibregl.Map): boolean {
+  const id = paneIdOf(m);
+  return !id || usePaneStore.getState().syncOf(id).camera;
+}
+
 function syncFrom(src: maplibregl.Map) {
-  if (syncing) return;
+  if (syncing || !cameraShared(src)) return;
   pending = src;
   if (!frame) frame = requestAnimationFrame(flushSync);
 }
 
-export function MapPane({ id }: { id: string }) {
+/** panes-compare: where MapView puts the pane -- a grid cell, or a floating
+ *  window's box (the same element either way, so the map never remounts). */
+export interface PanePlace {
+  style?: CSSProperties;
+  floating?: boolean;
+}
+
+export function MapPane({ id, place }: { id: string; place?: PanePlace }) {
   const host = useRef<HTMLDivElement | null>(null);
   const primary = id === PRIMARY_PANE;
   const focused = useSyncExternalStore(subscribeMaps, getActivePaneId) === id;
+  // The product was taken off this pane ("Select product"): no radar scale.
+  const empty = useNexradStore((s) => !!s.paneRadar[id]?.empty);
+  // Compare (panes-compare): where the divider is, for the two scales.
+  const cmpSplit = useCompareStore((s) => s.slots[id]?.split);
 
   useEffect(() => {
     if (!host.current) return;
@@ -142,7 +167,7 @@ export function MapPane({ id }: { id: string }) {
     let pendingSync = false;
     const syncLayers = () => {
       if (styleReady) {
-        void manager.sync(store.getState());
+        void manager.sync(paneLayerState(store.getState(), id));
         return;
       }
       if (pendingSync) return;
@@ -150,7 +175,7 @@ export function MapPane({ id }: { id: string }) {
       map.once("style.load", () => {
         pendingSync = false;
         styleReady = true;
-        void manager.sync(store.getState());
+        void manager.sync(paneLayerState(store.getState(), id));
       });
     };
 
@@ -193,16 +218,18 @@ export function MapPane({ id }: { id: string }) {
       if (styleSync) return;
       styleSync = setTimeout(() => {
         styleSync = 0;
-        void manager.sync(store.getState());
+        void manager.sync(paneLayerState(store.getState(), id));
       }, 0);
     };
     map.on("styledata", onStyleData);
 
-    // Only the primary pane drives the status-bar readout; every pane shares
-    // the camera, so the numbers would be identical anyway.
-    const onMouseMove = (e: maplibregl.MapMouseEvent) =>
-      store.getState().setReadout(e.lngLat.lng, e.lngLat.lat, map.getZoom());
-    if (primary) map.on("mousemove", onMouseMove);
+    // Every pane drives the readout and says which one it is: the value under the
+    // pointer is that pane's product. The zoom stays the primary's, like setZoom.
+    const onMouseMove = (e: maplibregl.MapMouseEvent) => {
+      const app = store.getState();
+      app.setReadout(e.lngLat.lng, e.lngLat.lat, primary ? map.getZoom() : app.zoom, id);
+    };
+    map.on("mousemove", onMouseMove);
 
     const onMove = () => {
       if (primary) store.getState().setZoom(map.getZoom());
@@ -236,6 +263,8 @@ export function MapPane({ id }: { id: string }) {
     // Fill strengths in Settings are part of each module's opacity, which the
     // manager pushes on every reconcile.
     const unsubSettings = useSettingsStore.subscribe((s) => s.values, syncLayers);
+    // Overlays taken off this pane (its chips' x), panes-layout.
+    const unsubHidden = usePaneStore.subscribe((s, p) => s.hidden[id] !== p.hidden[id] && syncLayers());
     const unsubProjection = store.subscribe(
       (s) => s.projection,
       (projection) => map.setProjection({ type: projection }),
@@ -255,7 +284,7 @@ export function MapPane({ id }: { id: string }) {
         map.once("style.load", () => {
           styleReady = true;
           map.setProjection({ type: store.getState().projection });
-          manager.reset();
+          manager.reset(paneLayerState(store.getState(), id));
           syncLayers();
         });
       },
@@ -269,12 +298,13 @@ export function MapPane({ id }: { id: string }) {
       unsubLayers();
       unsubOrder();
       unsubSettings();
+      unsubHidden();
       unsubProjection();
       unsubBasemap();
       map.off("move", onMove);
       map.off("mousedown", focus);
       map.off("touchstart", focus);
-      if (primary) map.off("mousemove", onMouseMove);
+      map.off("mousemove", onMouseMove);
       useNexradStore.getState().dropPane(id);
       registerMap(id, null);
       // Before remove(), not after: the modules unsubscribe from their stores
@@ -287,66 +317,34 @@ export function MapPane({ id }: { id: string }) {
 
   return (
     <div
-      className={`mappane${focused ? " is-focused" : ""}`}
+      className={`mappane${focused ? " is-focused" : ""}${place?.floating ? " is-floating" : ""}`}
       data-pane={id}
+      data-empty={empty ? "" : undefined}
+      data-compare={cmpSplit != null && !empty ? "" : undefined}
+      style={{ ...place?.style, ...(cmpSplit != null ? ({ "--cmp-split": String(cmpSplit) } as CSSProperties) : {}) }}
       onMouseDown={() => {
         setActivePane(id);
         useNexradStore.getState().focusPane(id);
       }}
+      onPointerDown={() => place?.floating && raise(id)}
     >
       <div ref={host} className="mappane__canvas" />
-      <PaneHeader id={id} />
+      <PaneChrome id={id} />
+      <PaneCompare id={id} />
+      {/* broadcast mode: "KTLX REF 0.5°" + scan time, top-left (ux-shell) */}
+      <BroadcastCaption paneId={id} />
       {/* each pane carries its own scale -- one shared bar across six different
           products was meaningless, and it spanned the panes it didn't describe */}
       <div className="mappane__cbar">
+        {/* Streaming line + "isn't scanned yet" notes, just above the scale:
+            the top-left corner belongs to the search box and the pane header. */}
+        <PaneConnNote paneId={id} />
+        <RadarLiveNote paneId={id} />
         <RadarColorBar paneId={id} />
         <ObsColorBar />
         {/* The mosaic is not a per-pane product -- one grid covers the app --
             so its scale is drawn once, under the pane that owns the tools. */}
       </div>
-    </div>
-  );
-}
-
-/**
- * The pane's title bar: what this window is showing, and the way to aim the
- * product picker at it.
- *
- * The picker itself is a single panel top-right (there is no room for a full
- * product list per pane), so the header is what makes "which pane am I editing"
- * answerable: clicking it focuses this pane, and the focused pane is marked.
- */
-function PaneHeader({ id }: { id: string }) {
-  const pane = useNexradStore((s) => s.paneRadar[id]);
-  const grids = useNexradStore((s) => s.grids);
-  const site = useNexradStore((s) => s.site);
-  const paneCount = useNexradStore((s) => Object.keys(s.paneRadar).length);
-  const active = useSyncExternalStore(subscribeMaps, getActivePaneId);
-
-  if (!pane || !site || grids.length === 0) return null;
-  const fam = grids.find((f) => f.id === pane.family);
-  const isActive = active === id;
-
-  return (
-    <div className={`panehead${isActive ? " is-active" : ""}`}>
-      <button
-        type="button"
-        className="panehead__focus"
-        onClick={() => {
-          setActivePane(id);
-          useNexradStore.getState().focusPane(id);
-        }}
-        title={isActive ? "This pane has the product picker" : "Edit this pane"}
-      >
-        <span className="panehead__name">
-          {fam?.source === "level2" && <span className="panehead__l2">L2</span>}
-          {fam?.label ?? pane.family}
-        </span>
-        <span className="panehead__tilt">
-          {pane.scan?.meta.elevation != null ? `${pane.scan.meta.elevation.toFixed(1)}°` : ""}
-        </span>
-      </button>
-      {paneCount > 1 && !isActive && <span className="panehead__hint">click to edit</span>}
     </div>
   );
 }

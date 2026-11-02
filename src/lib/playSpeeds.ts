@@ -1,11 +1,13 @@
 /**
- * The playback speeds the timeline offers, from 1x to 80x.
+ * The playback speeds the timeline offers, from 0.2x to 80x.
  *
  * Fine steps low down, where one notch is easy to see (half steps to 3x, then
  * whole ones to 10x), wider ones on the way up. Pablo asked for 80x reached
  * gradually (2026-10-03); the old list jumped 1, 2, 4, 8 and stopped at 20.
  */
 export const PLAY_SPEEDS: readonly number[] = [
+  // Below 1x for stepping through a storm's evolution slowly (NUXRAD parity).
+  0.2, 0.5,
   1, 1.5, 2, 2.5, 3, 4, 5, 6, 7, 8, 9, 10,
   12, 14, 16, 18, 20, 24, 28, 32, 36, 40,
   45, 50, 55, 60, 65, 70, 75, 80,

@@ -1,6 +1,6 @@
 import type maplibregl from "maplibre-gl";
 
-import { buildLut, lookup, parsePal } from "./pal";
+import { buildLut, lookup, LUT_STEPS, parsePal } from "./pal";
 
 // Turns a polar radar scan into a coloured triangle mesh for a MapLibre custom
 // layer. Technique adapted from SparkRadar (c) Tyler G (@tgranz), used with
@@ -38,6 +38,42 @@ export interface PolarScan {
     mode?: string;
     /** A product published empty -- "No precipitation detected since ..." */
     note?: string;
+    /** Sweep and antenna details for the Shift readout / product info. */
+    nyquistKt?: number;
+    unambRangeKm?: number;
+    beamWidthDeg?: number;
+    freqMHz?: number;
+    band?: string;
+    siteAmslM?: number;
+    feedhornM?: number;
+    sweepUnix?: number;
+    /** The gate code meaning "range folded" (its lut entry is NaN). */
+    rfCode?: number;
+    derivedFrom?: string;
+    /** How a derived Level II velocity was unfolded: region | vad | off. */
+    dealias?: string;
+    /** Computed from a Level II volume (backend/radar_derived.py). */
+    derived?: boolean;
+    stormMotionKt?: number;
+    stormMotionDeg?: number;
+    source?: string;
+    superRes?: boolean;
+    /** Live Level II (backend/level2_live.py): a tilt of the volume being
+     *  written that the radar has not reached yet -- never drawn. */
+    pending?: boolean;
+    partial?: boolean;
+    /** Which scan of its tilt this frame is (SAILS / MRLE), of how many. */
+    rep?: number;
+    reps?: number;
+    elevations?: { elev: number; actual?: number }[];
+    /** Set by the radar store on what a pane shows instead (radarFrames.ts):
+     *  "1.3° isn't scanned yet" / Hold elevation's substitute. */
+    pendingNote?: string;
+    holdNote?: string;
+    /** Display transforms (radarDisplay.ts): the maximum value trail over this
+     *  many frames, and the reflectivity gate filter that hid gates. */
+    trailFrames?: number;
+    gateFiltered?: [number, number];
   };
 }
 
@@ -124,7 +160,7 @@ export function sampleScan(scan: PolarScan, lat: number, lon: number): GateSampl
  * walks the bins and compares each one's span with the wrap folded in, rather
  * than assuming edges[i] <= edges[i+1].
  */
-function findAzBin(edges: Float32Array, nAz: number, deg: number): number {
+export function findAzBin(edges: Float32Array, nAz: number, deg: number): number {
   for (let a = 0; a < nAz; a++) {
     const lo = edges[a];
     let span = edges[a + 1] - lo;
@@ -156,7 +192,8 @@ export function buildMesh(
 ): RadarMesh {
   const { az, lut, codes, meta } = scan;
   const { nAz, nGates, siteLat, siteLon, rangeStartKm, gateWidthKm } = meta;
-  const pal = buildLut(parsePal(palText));
+  const parsedPal = parsePal(palText);
+  const pal = buildLut(parsedPal, LUT_STEPS, meta.kind === "hca");
   const doSmooth = !!opts.smooth && meta.kind !== "hca";
   const threshold = opts.threshold ?? null;
 
@@ -221,7 +258,8 @@ export function buildMesh(
   }
 
   if (doSmooth) {
-    return buildSmoothMesh(scan, pal, gv, gvSrc, sinAz, cosAz, kmPerDegLon, mx, my);
+    return withRangeFolded(buildSmoothMesh(scan, pal, gv, gvSrc, sinAz, cosAz, kmPerDegLon, mx, my),
+      scan, parsedPal.rf, sinAz, cosAz, kmPerDegLon, mx, my);
   }
 
   // Flat gates. Count first so the typed arrays are allocated once
@@ -280,7 +318,80 @@ export function buildMesh(
     }
   }
 
-  return { positions, colors, values: vertValues, lut, vertexCount: verts };
+  return withRangeFolded({ positions, colors, values: vertValues, lut, vertexCount: verts },
+    scan, parsedPal.rf, sinAz, cosAz, kmPerDegLon, mx, my);
+}
+
+/** The per-vertex value of a range-folded gate: recolor keeps it on the RF colour. */
+export const RF_VALUE = -Infinity;
+
+/**
+ * Range-folded gates (meta.rfCode; their lut entry is NaN, so the echo mesh
+ * skips them) appended as flat quads in the palette's RF colour. No RF colour
+ * in the palette -- the app takes it out when "Show range folded" is off -- or
+ * no folded gates: the mesh as it was. Flat in the smoothed mesh too: folding
+ * has no value to blend.
+ */
+function withRangeFolded(
+  mesh: RadarMesh,
+  scan: PolarScan,
+  rf: { r: number; g: number; b: number; a: number } | null,
+  sinAz: Float64Array,
+  cosAz: Float64Array,
+  kmPerDegLon: number,
+  mx: (lon: number) => number,
+  my: (lat: number) => number,
+): RadarMesh {
+  const { codes, meta } = scan;
+  const rfCode = meta.rfCode;
+  if (!rf || rfCode == null || rfCode === 0) return mesh;
+  let n = 0;
+  for (let i = 0; i < codes.length; i++) if (codes[i] === rfCode) n++;
+  if (!n) return mesh;
+  const { nAz, nGates, siteLat, siteLon, rangeStartKm, gateWidthKm } = meta;
+  const base = mesh.vertexCount;
+  const verts = base + n * 6;
+  const positions = new Float32Array(verts * 2);
+  const colors = new Uint8Array(verts * 4);
+  const values = new Float32Array(verts);
+  positions.set(mesh.positions.subarray(0, base * 2));
+  colors.set(mesh.colors.subarray(0, base * 4));
+  values.set(mesh.values.subarray(0, base));
+  let p = base * 2;
+  let c = base * 4;
+  let vi = base;
+  const emit = (x: number, y: number) => {
+    positions[p++] = x;
+    positions[p++] = y;
+    colors[c++] = rf.r;
+    colors[c++] = rf.g;
+    colors[c++] = rf.b;
+    colors[c++] = rf.a;
+    values[vi++] = RF_VALUE;
+  };
+  for (let a = 0; a < nAz; a++) {
+    const row = a * nGates;
+    for (let g = 0; g < nGates; g++) {
+      if (codes[row + g] !== rfCode) continue;
+      const r0 = rangeStartKm + g * gateWidthKm;
+      const r1 = r0 + gateWidthKm;
+      const x00 = mx(siteLon + (r0 * sinAz[a]) / kmPerDegLon);
+      const y00 = my(siteLat + (r0 * cosAz[a]) / KM_PER_DEG_LAT);
+      const x10 = mx(siteLon + (r1 * sinAz[a]) / kmPerDegLon);
+      const y10 = my(siteLat + (r1 * cosAz[a]) / KM_PER_DEG_LAT);
+      const x11 = mx(siteLon + (r1 * sinAz[a + 1]) / kmPerDegLon);
+      const y11 = my(siteLat + (r1 * cosAz[a + 1]) / KM_PER_DEG_LAT);
+      const x01 = mx(siteLon + (r0 * sinAz[a + 1]) / kmPerDegLon);
+      const y01 = my(siteLat + (r0 * cosAz[a + 1]) / KM_PER_DEG_LAT);
+      emit(x00, y00);
+      emit(x10, y10);
+      emit(x11, y11);
+      emit(x00, y00);
+      emit(x11, y11);
+      emit(x01, y01);
+    }
+  }
+  return { positions, colors, values, lut: mesh.lut, vertexCount: verts };
 }
 
 // Marching squares, per cell mask (bit i = corner i has data): how many
@@ -531,12 +642,19 @@ function buildSmoothMesh(
 }
 
 /** Swap the palette without touching geometry — the instant path. */
-export function recolor(mesh: RadarMesh, palText: string): void {
-  const pal = buildLut(parsePal(palText));
+export function recolor(mesh: RadarMesh, palText: string, kind?: string): void {
+  const parsed = parsePal(palText);
+  const pal = buildLut(parsed, LUT_STEPS, kind === "hca");
   const { colors, values, vertexCount } = mesh;
   const rgba = new Uint8Array(4);
+  const rf = parsed.rf;
   for (let i = 0; i < vertexCount; i++) {
-    lookup(pal, values[i], rgba);
+    if (values[i] === RF_VALUE) {
+      rgba[0] = rf?.r ?? 0;
+      rgba[1] = rf?.g ?? 0;
+      rgba[2] = rf?.b ?? 0;
+      rgba[3] = rf?.a ?? 0;
+    } else lookup(pal, values[i], rgba);
     const o = i * 4;
     colors[o] = rgba[0];
     colors[o + 1] = rgba[1];

@@ -3,19 +3,25 @@ import type { GeoJSONSource } from "maplibre-gl";
 
 import { allMaps } from "../map/mapInstance";
 import { useAlertStore } from "../store/useAlertStore";
+import { backgroundAllows, setBackgroundKeeper } from "../lib/appActivity";
+import { alertMapData, alertMotionData } from "../lib/alertStyle";
+import { getSetting, useSettingsStore } from "../settings/useSettingsStore";
 import {
-  alertsToFeatureCollection,
   alertWindow,
   applyCachedZoneGeometries,
   enrichAlertZoneGeometries,
   fetchActiveAlerts,
   fetchAlertsIssued,
+  fetchArchivedWarnings,
   ISSUE_LOOKBACK_S,
+  NWS_ARCHIVE_S,
   type AlertFeature,
 } from "../lib/nwsAlerts";
-import { ALERT_SOURCE } from "../layers/modules/alertsLayer";
+import { ALERT_MOTION_SOURCE, ALERT_SOURCE } from "../layers/modules/alertsLayer";
 
 const POLL_MS = 180_000; // refresh active alerts every 3 min
+/** With alert sounds on, every minute: a warning should sound when it is new. */
+const POLL_SOUNDS_MS = 60_000;
 const PRUNE_MS = 15_000; // drop expired alerts every 15 s
 
 /** Inside this of now, the live feed already answers correctly and is cheaper
@@ -56,6 +62,8 @@ interface Stretch {
   /** Whether it ended before it was read: nothing more can be issued in it. */
   closed: boolean;
   loading: boolean;
+  /** Failed reads in a row: each waits twice as long before the next try. */
+  fails: number;
 }
 
 /**
@@ -68,6 +76,7 @@ interface Stretch {
 export function AlertController() {
   useEffect(() => {
     let liveCtrl: AbortController | null = null;
+    let lastLoad = 0;
     let life = new AbortController();
     let live: AlertFeature[] = [];
     let liveRead = false;
@@ -112,12 +121,31 @@ export function AlertController() {
     // last clicked was getting new alerts, and a warning issued after the split
     // showed on one side of the screen and not the other.
     const draw = () => {
-      const data = alertsToFeatureCollection(useAlertStore.getState().features);
+      const features = useAlertStore.getState().features;
+      const data = alertMapData(features);
+      const motion = alertMotionData(features);
       for (const map of allMaps()) {
-        const src = map.getSource(ALERT_SOURCE) as GeoJSONSource | undefined;
-        src?.setData(data);
+        (map.getSource(ALERT_SOURCE) as GeoJSONSource | undefined)?.setData(data);
+        (map.getSource(ALERT_MOTION_SOURCE) as GeoJSONSource | undefined)?.setData(motion);
       }
     };
+    // A colour, tier, outline, fill or flash colour edited in Settings is baked
+    // onto the features: draw again, once the edit settles (a colour picker
+    // being dragged sends a value per mouse move).
+    let restyleTimer = 0;
+    const styleSig = (v: Record<string, unknown>) =>
+      Object.keys(v)
+        .filter((k) => /^alerts\.(color|tier)\.|^alerts\.type\..*\.(line|border|fill|flashColor)$/.test(k))
+        .sort()
+        .map((k) => `${k}=${String(v[k])}`)
+        .join(";");
+    const unsubStyle = useSettingsStore.subscribe(
+      (s) => styleSig(s.values),
+      () => {
+        window.clearTimeout(restyleTimer);
+        restyleTimer = window.setTimeout(draw, 150);
+      },
+    );
 
     /** Put on the map what the timeline's instant needs: the live set now or
      *  ahead of now; the stretches around it (and the live set, for anything
@@ -152,6 +180,7 @@ export function AlertController() {
     };
 
     const load = async () => {
+      lastLoad = Date.now();
       liveCtrl?.abort();
       liveCtrl = new AbortController();
       const signal = liveCtrl.signal;
@@ -194,17 +223,23 @@ export function AlertController() {
      */
     const readStretch = async (w: number) => {
       const signal = life.signal;
-      const entry = stretches.get(w) ?? { features: [], readAt: 0, closed: false, loading: false };
+      const entry = stretches.get(w) ?? { features: [], readAt: 0, closed: false, loading: false, fails: 0 };
       entry.loading = true;
       stretches.set(w, entry);
       const end = (w + 1) * WINDOW_S;
       const asked = now();
+      // api.weather.gov keeps about a week; older than that it answers an
+      // empty list, so an archive day's warnings come from IEM instead.
+      const archived = end < asked - NWS_ARCHIVE_S;
       try {
-        const raw = await fetchAlertsIssued(w * WINDOW_S, Math.min(end, asked), signal);
+        const raw = archived
+          ? await fetchArchivedWarnings(w * WINDOW_S, end, signal)
+          : await fetchAlertsIssued(w * WINDOW_S, Math.min(end, asked), signal);
         if (signal.aborted) return;
         entry.features = applyCachedZoneGeometries(raw);
         entry.readAt = asked;
         entry.closed = end <= asked;
+        entry.fails = 0;
         epoch++;
         compose();
         const enriched = await enrichAlertZoneGeometries(raw, signal);
@@ -214,8 +249,10 @@ export function AlertController() {
         compose();
       } catch (err) {
         if ((err as Error).name === "AbortError") return;
-        // Tried: not again until the stretch would be read again anyway.
-        entry.readAt = entry.readAt || asked;
+        // Tried: again only after a wait that doubles with each failure (see
+        // want), not on every move of the timeline.
+        entry.readAt = asked;
+        entry.fails++;
         epoch++;
         compose();
       } finally {
@@ -238,7 +275,8 @@ export function AlertController() {
     const want = (w: number, first: boolean) => {
       const e = stretches.get(w);
       if (e?.loading) return;
-      if (e && e.readAt && (e.closed || now() - e.readAt < OPEN_WINDOW_TTL_S)) return;
+      if (e && e.fails > 0 && now() - e.readAt < OPEN_WINDOW_TTL_S * 2 ** Math.min(e.fails, 4)) return;
+      if (e && e.readAt && !e.fails && (e.closed || now() - e.readAt < OPEN_WINDOW_TTL_S)) return;
       const at = queue.indexOf(w);
       if (at >= 0) {
         if (!first) return;
@@ -249,19 +287,36 @@ export function AlertController() {
     };
 
     /** The stretches the instant on screen needs, first; then the rest of the
-     *  timeline's span, so a play finds them here. */
+     *  timeline's span, so a play finds them here. Only those: what is still
+     *  queued for a span the timeline has left goes, or a wrong span once on
+     *  screen (a loop from 2013 to today, for a moment) went on reading IEM six
+     *  hours at a time, for as long as the app stayed open. And a span longer
+     *  than what is kept is not read ahead at all: each frame reads its own. */
     const fetchPast = () => {
       const s = useAlertStore.getState();
       if (!s.active) return;
       const t = s.timeFilter;
       const range = s.timeRange;
+      const needed = new Set<number>();
       if (range && range[0] < now() - LIVE_SLACK_S) {
-        const last = Math.min(range[1], now());
-        for (let w = Math.floor((range[0] - ISSUE_LOOKBACK_S) / WINDOW_S); w <= Math.floor(last / WINDOW_S); w++) {
-          want(w, false);
+        const first = Math.floor((range[0] - ISSUE_LOOKBACK_S) / WINDOW_S);
+        const last = Math.floor(Math.min(range[1], now()) / WINDOW_S);
+        if (last - first < MAX_WINDOWS) {
+          for (let w = first; w <= last; w++) {
+            needed.add(w);
+            want(w, false);
+          }
         }
       }
-      if (isPast(t)) for (const w of stretchesFor(t).reverse()) want(w, true);
+      if (isPast(t)) {
+        for (const w of stretchesFor(t).reverse()) {
+          needed.add(w);
+          want(w, true);
+        }
+      }
+      for (let i = queue.length - 1; i >= 0; i--) {
+        if (!needed.has(queue[i])) queue.splice(i, 1);
+      }
       pump();
       // Only a span's worth of history is kept.
       if (stretches.size > MAX_WINDOWS) {
@@ -336,12 +391,27 @@ export function AlertController() {
     const unsubTime = useAlertStore.subscribe((s) => s.timeFilter, onTime);
     const unsubRange = useAlertStore.subscribe((s) => s.timeRange, fetchPast);
 
+    // Alert sounds keep the checks going with the window hidden.
+    setBackgroundKeeper("alerts", () => getSetting<boolean>("alerts.sounds"));
     const pollTimer = window.setInterval(() => {
       // The live set goes stale; so does the stretch reaching to now.
       if (!useAlertStore.getState().active) return;
+      // Hidden over a minute: skip, unless a keeper (alert sounds) wants the
+      // checks to go on -- appActivity.setBackgroundKeeper("alerts", ...).
+      if (!backgroundAllows("alerts")) return;
+      // Every minute with sounds on, every three without.
+      const every = getSetting<boolean>("alerts.sounds") ? POLL_SOUNDS_MS : POLL_MS;
+      if (Date.now() - lastLoad < every - 5_000) return;
       void load();
       fetchPast();
-    }, POLL_MS);
+    }, POLL_SOUNDS_MS);
+    // Back from the background or from offline: the alerts missed, now.
+    const onCatchUp = () => {
+      if (!useAlertStore.getState().active) return;
+      void load();
+      fetchPast();
+    };
+    window.addEventListener("weatherts:catchup", onCatchUp);
     const pruneTimer = window.setInterval(prune, PRUNE_MS);
 
     if (useAlertStore.getState().active) start(); // layer already on at mount
@@ -351,8 +421,12 @@ export function AlertController() {
       unsubFeatures();
       unsubTime();
       unsubRange();
+      unsubStyle();
+      window.clearTimeout(restyleTimer);
+      setBackgroundKeeper("alerts", null);
       window.clearInterval(pollTimer);
       window.clearInterval(pruneTimer);
+      window.removeEventListener("weatherts:catchup", onCatchUp);
       liveCtrl?.abort();
       life.abort();
     };

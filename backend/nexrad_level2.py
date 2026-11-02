@@ -33,7 +33,7 @@ import time
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
 import threading
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from typing import Any, Optional
 
 import numpy as np
@@ -124,15 +124,24 @@ _VOL_HINT: dict[str, int] = {}
 _WHOLE: dict[str, dict[int, dict]] = {}
 # The elevation ladder per decoded volume, so every extracted grid can carry it.
 _VOL_ELEVS: dict[tuple, list[dict]] = {}
+# Chunk key -> its S3 LastModified (ISO), from every listing.
+_CHUNK_TIMES: "OrderedDict[str, str]" = OrderedDict()
 
 
 def _chunks_for(site: str, vol: int) -> list[tuple[str, int]]:
     r = _SESSION.get(f"{CHUNKS}?list-type=2&prefix={site}/{vol}/&max-keys=400", timeout=10)
     root = ET.fromstring(r.text)
-    return [
-        (c.find("s3:Key", _NS).text, int(c.find("s3:Size", _NS).text))
-        for c in root.findall(".//s3:Contents", _NS)
-    ]
+    out = []
+    for c in root.findall(".//s3:Contents", _NS):
+        key = c.find("s3:Key", _NS).text
+        out.append((key, int(c.find("s3:Size", _NS).text)))
+        # When each chunk landed: level2_live times the SAILS rescans with it.
+        lm = c.find("s3:LastModified", _NS)
+        if lm is not None and lm.text:
+            _CHUNK_TIMES[key] = lm.text
+    while len(_CHUNK_TIMES) > 60000:
+        _CHUNK_TIMES.popitem(last=False)
+    return out
 
 
 def _stamp(keys: list[tuple[str, int]]) -> str:
@@ -257,7 +266,7 @@ def list_volumes(site: str, limit: int = 30, start: Optional[int] = None) -> lis
     # -- so a refresh asks about the newest few, not forty.
     cands = [((newest - 1 - i) % 999) + 1 for i in range(limit + 8)]
     known = _WHOLE.setdefault(site, {})
-    cutoff = now - 6 * 3600
+    cutoff = now - 10 * 3600  # an 8 h loop's volumes stay known
     for v in [v for v, e in known.items() if e["time"] < cutoff]:
         known.pop(v, None)
         _CHUNK_LISTS.pop((site, v), None)
@@ -284,7 +293,10 @@ def list_volumes(site: str, limit: int = 30, start: Optional[int] = None) -> lis
 # volume is far too big to keep, but with these another tilt of the same frame
 # costs a decode, a couple of seconds, instead of the whole download again.
 _RAW: "OrderedDict[tuple, bytes]" = OrderedDict()
-_RAW_BUDGET = 96 * 1024 * 1024
+# Room for a 30-frame Level II loop of 8-12 MB volumes: the storm detections,
+# derived products and 3D view read the loop's volumes again, and at 96 MB
+# each of those downloaded them a second time (6.4 s a volume at Moore).
+_RAW_BUDGET = 384 * 1024 * 1024
 _RAW_LOCK = threading.Lock()
 
 
@@ -347,6 +359,8 @@ _CHUNK_LOCK = threading.Lock()
 # Chunks being fetched, so a tilt asked for while the rest of its volume is
 # being filled in waits for the same download instead of starting another.
 _INFLIGHT: dict[tuple, "Future[bytes]"] = {}
+# Keys whose in-flight future belongs to a background fill (pool=_REST).
+_INFLIGHT_BG: set[tuple] = set()
 # Chunk listings of whole volumes, as list_volumes found them.
 _CHUNK_LISTS: dict[tuple, list[tuple[str, int]]] = {}
 # The scan strategy of each volume: [(angle, radials)] per elevation number.
@@ -376,15 +390,30 @@ def _get_chunks(site: str, vol: int, stamp: str, ch: list[tuple[str, int]], nums
             # A chunk already on its way is waited for, not fetched twice --
             # unless it is only queued behind the rest of a volume being filled
             # in: then it is taken off that queue and fetched now.
+            # Only a background fill's future is taken off its queue: one queued
+            # on the foreground pool has a request waiting on it, which got a
+            # CancelledError (a 502 with no detail on SAILS rescans in a loop).
             fut = _INFLIGHT.get(key)
-            if fut is not None and not fut.running() and not fut.done() and pool is None and fut.cancel():
+            if (fut is not None and pool is None and key in _INFLIGHT_BG and not fut.running()
+                    and not fut.done() and fut.cancel()):
                 fut = None
             if fut is None:
                 fut = (pool or _POOL).submit(_fetch_chunk, key, CHUNKS + by_num[n])
                 _INFLIGHT[key] = fut
+                if pool is not None:
+                    _INFLIGHT_BG.add(key)
+                else:
+                    _INFLIGHT_BG.discard(key)
             waits[n] = fut
     for n, fut in waits.items():
-        out[n] = fut.result()
+        try:
+            out[n] = fut.result()
+        except CancelledError:
+            # A background fill's chunk this request also wanted, moved to the
+            # foreground by another: wait for that fetch (or the kept bytes).
+            if pool is not None:
+                raise
+            out[n] = _get_chunks(site, vol, stamp, ch, [n])[0]
     return [out[n] for n in nums]
 
 
@@ -403,6 +432,7 @@ def _fetch_chunk(key: tuple, url: str) -> bytes:
     finally:
         with _CHUNK_LOCK:
             _INFLIGHT.pop(key, None)
+            _INFLIGHT_BG.discard(key)
 
 
 # The rest of the volume on screen, fetched behind it on connections of their
@@ -502,6 +532,30 @@ def _ladder(angles: list[float]) -> list[dict]:
     return out
 
 
+def _moments(r: Any) -> dict:
+    """A radial's moments. Message 31, the format since 2008, holds them in its
+    fifth field; the legacy message 1 (reflectivity, velocity and width only,
+    1991-2008) in its second, named in text ("REF") rather than bytes."""
+    if len(r) > 4:
+        return r[4]
+    return {k.encode() if isinstance(k, str) else k: v for k, v in r[1].items()}
+
+
+def _site_of(r: Any, site: str) -> tuple[float, float, Optional[int]]:
+    """The radar's latitude, longitude and scan strategy: message 31 carries
+    them in its volume block; a legacy volume has no position at all, so it
+    comes from the site list (which keeps radars since retired)."""
+    if len(r) > 4:
+        v = r[1]
+        return float(v.lat), float(v.lon), int(getattr(v, "vcp", 0)) or None
+    from nexrad_core import _iem_sites
+    want = site_id(site)
+    s = next((x for x in _iem_sites() if x["id"] == want), None)
+    if s is None:
+        raise RuntimeError(f"No position known for the radar {icao_for(site)}")
+    return float(s["lat"]), float(s["lon"]), int(getattr(r[0], "vcp", 0)) or None
+
+
 def _sweep_angle(f: Any, sweep: list) -> float:
     """The elevation a sweep was commanded to fly, from the scan strategy.
 
@@ -525,9 +579,9 @@ def _sweeps_with(f: Any, src: bytes) -> list[tuple[int, float, int, int]]:
     """
     out = []
     for i, sw in enumerate(f.sweeps):
-        if not sw or src not in sw[0][4]:
+        if not sw or src not in _moments(sw[0]):
             continue
-        blk = sw[0][4][src][0]
+        blk = _moments(sw[0])[src][0]
         out.append((i, _sweep_angle(f, sw), len(sw), int(blk.num_gates)))
     return out
 
@@ -591,7 +645,7 @@ def _extract(f: Any, fam: str, slot: str, site: str, stamp: str,
     # Radials arrive in scan order and can wrap past 360; sort so the azimuth
     # edges the renderer builds are monotonic.
     radials = sorted(sweep, key=lambda r: float(r[0].az_angle))
-    hdr0 = radials[0][4][spec["src"]][0]
+    hdr0 = _moments(radials[0])[spec["src"]][0]
     ngates = int(hdr0.num_gates)
     first_km = float(hdr0.first_gate)
     width_km = float(hdr0.gate_width)
@@ -600,13 +654,19 @@ def _extract(f: Any, fam: str, slot: str, site: str, stamp: str,
     az = np.empty(len(radials) + 1, dtype=np.float32)
     for i, r in enumerate(radials):
         az[i] = float(r[0].az_angle)
-        blk = r[4].get(spec["src"])
+        blk = _moments(r).get(spec["src"])
         if blk is None:
             continue
         d = np.asarray(blk[1], dtype=np.float32)
         n = min(d.size, ngates)
         vals[i, :n] = d[:n]
     az[-1] = az[0] + 360.0
+    vals, az = _fill_az_gaps(vals, az)
+
+    # Range-folded gates (see _L2RF) leave the data here and travel as their
+    # own code, so the readout can say "RF" where the scan is not just empty.
+    rf = vals <= _RF_SENTINEL / 10
+    vals[rf] = np.nan
 
     if spec.get("kt"):
         vals *= _MS_TO_KT
@@ -627,18 +687,29 @@ def _extract(f: Any, fam: str, slot: str, site: str, stamp: str,
     t = (vals - vmin) / ((vmax - vmin) or 1.0)
     codes = np.clip(np.rint(t * 254.0) + 1.0, 1, 255)
     codes[~np.isfinite(vals)] = 0
+    rf_code = None
+    if rf.any():
+        # The top code carries "range folded" (no value, so nothing is drawn);
+        # a gate at the very top of the scale moves down one step for it.
+        codes[codes == 255] = 254
+        codes[rf] = 255
+        lut[255] = np.nan
+        rf_code = 255
     codes = codes.astype(np.uint8)
 
     unix = _stamp_unix(stamp)
-    vol_hdr = radials[0][1]
+    site_lat, site_lon, vcp = _site_of(radials[0], site)
+    probe = _sweep_consts(f, radials)
+    if rf_code is not None:
+        probe["rfCode"] = rf_code
     out = {
         "az": az,
         "lut": lut,
         "codes": codes,
         "meta": {
             "site": icao_for(site),
-            "siteLat": float(vol_hdr.lat),
-            "siteLon": float(vol_hdr.lon),
+            "siteLat": site_lat,
+            "siteLon": site_lon,
             "product": f"L2{fam}{slot}",
             "productLabel": spec["label"],
             "units": spec["units"],
@@ -659,13 +730,87 @@ def _extract(f: Any, fam: str, slot: str, site: str, stamp: str,
             "key": f"L2:{stamp}",
             "source": "level2",
             "superRes": int(codes.shape[0]) >= 720,
-            "vcp": int(getattr(vol_hdr, "vcp", 0)) or None,
+            "vcp": vcp,
             "elevations": _VOL_ELEVS.get((site, stamp), []),
+            **probe,
         },
     }
     if motion:
         out["meta"]["stormMotionKt"] = motion[0]
         out["meta"]["stormMotionDeg"] = motion[1]
+    return out
+
+
+def _fill_az_gaps(vals: np.ndarray, az: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """An empty radial over each hole in a sweep (archive-l2).
+
+    Each radial is drawn from its azimuth to the next one's, so the radial
+    before a hole was stretched across it as a wedge. Archive volumes that begin
+    mid-sweep after an outage have such holes: KTLX 1999-05-03 23:16:33 flew
+    0.5 deg with 315 of 367 radials, and the Bridge Creek storm sat under the
+    smear. A hole is wider than four radials (and 3 deg).
+    """
+    n = vals.shape[0]
+    if n < 3:
+        return vals, az
+    d = np.diff(az)
+    step = float(np.median(d[:-1]))
+    holes = np.where(d > max(4.0 * step, 3.0))[0]
+    if not holes.size:
+        return vals, az
+    rows = np.insert(vals, holes + 1, np.nan, axis=0)
+    edges = np.insert(az, holes + 1, (az[holes] + step).astype(az.dtype))
+    return rows, edges
+
+
+# MetPy writes range-folded gates as NaN, the same as empty ones. This subclass
+# gives them a value no moment can have, so _extract can tell them apart.
+_RF_SENTINEL = -1.0e9
+
+
+class _L2RF(Level2File):
+    RANGE_FOLD = _RF_SENTINEL
+
+
+# The WSR-88D's nominal antenna: a 0.95 deg beam at S band. Used when the
+# volume has no RDA adaptation data (message 18) -- a live volume read a tilt at
+# a time does not carry it.
+_WSR88D_BEAM_DEG = 0.95
+
+
+def _sweep_consts(f: Any, radials: list) -> dict:
+    """What the readout and the product info panel say about one sweep: the
+    Nyquist velocity and unambiguous range, when the sweep started, the beam
+    width and transmitter frequency, and the antenna's height."""
+    out: dict[str, Any] = {"band": "S", "beamWidthDeg": _WSR88D_BEAM_DEG}
+    mid = radials[len(radials) // 2]
+    try:
+        rc = mid[3] if len(mid) > 4 else mid[0]
+        nyq = float(getattr(rc, "nyq_vel", 0.0) or 0.0)
+        if nyq > 0:
+            out["nyquistKt"] = round(nyq * _MS_TO_KT, 1)
+        unamb = float(getattr(rc, "unamb_range", 0.0) or 0.0)
+        if unamb > 0:
+            out["unambRangeKm"] = round(unamb, 1)
+    except Exception:  # noqa: BLE001 - optional detail
+        pass
+    try:
+        h = radials[0][0]
+        out["sweepUnix"] = round((int(h.date) - 1) * 86400 + float(h.time_ms) / 1000.0, 1)
+    except Exception:  # noqa: BLE001
+        pass
+    if len(radials[0]) > 4 and radials[0][1] is not None:
+        v = radials[0][1]
+        out["siteAmslM"] = float(getattr(v, "site_amsl", 0.0) or 0.0)
+        out["feedhornM"] = float(getattr(v, "feedhorn_agl", 0.0) or 0.0)
+    rda = getattr(f, "rda", None)
+    if isinstance(rda, dict):
+        bw = rda.get("BEAMWIDTH")
+        if isinstance(bw, (int, float)) and 0.2 < float(bw) < 3.0:
+            out["beamWidthDeg"] = round(float(bw), 3)
+        fq = rda.get("TFREQ_MHZ")
+        if isinstance(fq, (int, float)) and 1000 < float(fq) < 12000:
+            out["freqMHz"] = int(fq)
     return out
 
 
@@ -681,6 +826,19 @@ def polar_data_l2(site: str, product: str, key: str = "") -> dict:
     Scrubbing a 30-frame CC loop and then switching to ZDR costs no new traffic.
     """
     site = site_id(site)
+    # Products computed from the volume (CREF, ET, VIL, DVIL, VROT, PTDS) and
+    # velocity unfolded / storm-relative: radar_derived.py (raw velocity is
+    # `L2G<slot>_D0`, which stays here).
+    import radar_derived  # noqa: PLC0415 - it imports this module
+
+    if radar_derived.handles(product):
+        return radar_derived.polar(site, product, key)
+    # The volume still being written ("L2P:") and a tilt's later SAILS / MRLE
+    # scans (":c<k>"): level2_live.py.
+    if key.startswith("L2P:") or re.search(r":c\d+$", key):
+        import level2_live  # noqa: PLC0415 - it imports this module
+
+        return level2_live.polar(site, product, key)
     if not product.startswith("L2") or len(product) < 4:
         raise RuntimeError(f"Not a Level II product: {product}")
     fam, slot = product[2], product[3]
@@ -741,13 +899,13 @@ def polar_data_l2(site: str, product: str, key: str = "") -> dict:
         if hit is not None:
             _GRID_CACHE.move_to_end(cache_key)
             return hit
-        f = Level2File(io.BytesIO(raw))
+        f = _L2RF(io.BytesIO(raw))
         if cuts is not None and els:
             # Each fetched cut whole (120 radials a chunk), or the full volume.
             flown = {int(sw[0][0].el_num): len(sw) for sw in f.sweeps if sw}
             if any(el not in flown for el in els):
                 raw, stamp = _volume_raw(icao_for(site), vol)
-                f = Level2File(io.BytesIO(raw))
+                f = _L2RF(io.BytesIO(raw))
                 cuts = None
         _VOL_ELEVS[(site, stamp)] = _ladder(cuts) if cuts is not None else volume_elevations(f)
         while len(_VOL_ELEVS) > 8:
@@ -785,7 +943,7 @@ def _not_scanned(f: Any, fam: str, slot: str, site: str, stamp: str) -> dict:
     spec = L2_MOMENTS[fam]
     pid = _KIND_DEFAULT_PALETTE.get(spec["kind"], "REF")
     _, vmin, vmax = get_cmap(pid)
-    vcp = int(getattr(first[1], "vcp", 0)) or None
+    site_lat, site_lon, vcp = _site_of(first, site)
     unix = _stamp_unix(stamp)
     return {
         "az": np.linspace(0, 360, 361, dtype=np.float32),
@@ -793,8 +951,8 @@ def _not_scanned(f: Any, fam: str, slot: str, site: str, stamp: str) -> dict:
         "codes": np.zeros((360, 1), dtype=np.uint8),
         "meta": {
             "site": icao_for(site),
-            "siteLat": float(first[1].lat),
-            "siteLon": float(first[1].lon),
+            "siteLat": site_lat,
+            "siteLon": site_lon,
             "product": f"L2{fam}{slot}",
             "productLabel": spec["label"],
             "units": spec["units"],
@@ -904,18 +1062,10 @@ def archive_volumes(site: str, limit: int, start: int) -> list[dict]:
         day = t0.date() + _dt.timedelta(days=d)
         if day > today:
             break
-        params = {"list-type": "2", "prefix": f"{day:%Y/%m/%d}/{icao}/"}
-        if d == 0:
-            params["start-after"] = f"{day:%Y/%m/%d}/{icao}/{icao}{t0:%Y%m%d_%H%M%S}"
-        r = _SESSION.get(ARCHIVE, params=params, timeout=_TIMEOUT)
-        r.raise_for_status()
-        for key in re.findall(r"<Key>([^<]+)</Key>", r.text):
-            m = _ARCHIVE_NAME.search(key)
-            if not m:
-                continue  # the _MDM metadata files
-            stamp = f"{m.group(2)}-{m.group(3)}"
-            out.append({"vol": None, "stamp": stamp, "time": _stamp_unix(stamp),
-                        "key": f"L2A:{key.rsplit('/', 1)[1]}"})
+        after = f"{day:%Y/%m/%d}/{icao}/{icao}{t0:%Y%m%d_%H%M%S}" if d == 0 else None
+        # Fragments (a 9 KB file of one partial sweep) are not loop frames.
+        out += [v for v in _archive_rows(_archive_listing(f"{day:%Y/%m/%d}/{icao}/", after))
+                if not v["partial"]]
         if len(out) >= limit:
             break
     out = out[:limit]
@@ -923,6 +1073,120 @@ def archive_volumes(site: str, limit: int, start: int) -> list[dict]:
     while len(_ARCHIVE_LISTS) > 16:
         _ARCHIVE_LISTS.popitem(last=False)
     return out
+
+
+# --- archive-l2: whole days of the archive, back to 1991 -------------------
+# File names over the years: KTLX19990503_231633.gz (1991-2007, the legacy
+# message 1 inside a gzip of the whole file), KBMX20110427_000826_V03.gz and
+# KTLX20150601_000434_V06.gz (message 31, gzipped), KTLX20160601_235004_V06
+# from mid-2016 (no gzip; the bzip2 records are the compression), and next to
+# those the _MDM metadata files. Days on the change-over hold both forms of a
+# volume, and older days hold fragments: 1999-05-03 has a 9 KB file at
+# 23:00:52 that is one partial sweep.
+_PARTIAL_BYTES = 120_000
+_DAY_LISTS: "OrderedDict[tuple, tuple[float, list[dict]]]" = OrderedDict()
+# A past day of the archive does not change; today's does.
+_DAY_TTL_PAST = 3600.0
+_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
+
+
+def _archive_listing(prefix: str, start_after: Optional[str] = None) -> list[dict]:
+    """Every object under `prefix`, oldest first, as {path, size}; follows the
+    listing's pages (a day is one page of up to 1000 keys, but not always)."""
+    out: list[dict] = []
+    token: Optional[str] = None
+    for _ in range(8):
+        params = {"list-type": "2", "prefix": prefix}
+        if token:
+            params["continuation-token"] = token
+        elif start_after:
+            params["start-after"] = start_after
+        r = _SESSION.get(ARCHIVE, params=params, timeout=_TIMEOUT)
+        r.raise_for_status()
+        for block in re.findall(r"<Contents>(.*?)</Contents>", r.text, re.S):
+            key = re.search(r"<Key>([^<]+)</Key>", block)
+            size = re.search(r"<Size>(\d+)</Size>", block)
+            if key:
+                out.append({"path": key.group(1), "size": int(size.group(1)) if size else 0})
+        m = re.search(r"<NextContinuationToken>([^<]+)</NextContinuationToken>", r.text)
+        if not m:
+            break
+        token = m.group(1)
+    return out
+
+
+def _archive_rows(listing: list[dict]) -> list[dict]:
+    """Volumes from a listing: one per start time (a change-over day's .gz and
+    plain copies are one volume; the plain one is kept), fragments marked."""
+    by_stamp: dict[str, dict] = {}
+    for obj in listing:
+        m = _ARCHIVE_NAME.search("/" + obj["path"].rsplit("/", 1)[-1])
+        if not m:
+            continue  # the _MDM metadata files
+        stamp = f"{m.group(2)}-{m.group(3)}"
+        name = obj["path"].rsplit("/", 1)[-1]
+        row = {"vol": None, "stamp": stamp, "time": _stamp_unix(stamp), "key": f"L2A:{name}",
+               "size": int(obj["size"]), "partial": int(obj["size"]) < _PARTIAL_BYTES}
+        was = by_stamp.get(stamp)
+        if was is None or (was["key"].endswith(".gz") and not name.endswith(".gz")):
+            by_stamp[stamp] = row
+    return sorted(by_stamp.values(), key=lambda v: v["time"])
+
+
+def archive_day(site: str, date: str) -> list[dict]:
+    """Every volume of one UTC day ("YYYY-MM-DD") in the Level II archive, oldest
+    first: {key, time, stamp, size, partial}. Fragments are listed, marked."""
+    import datetime as _dt
+
+    m = _DATE.match(date or "")
+    if not m:
+        raise ValueError(f"Not a date: {date!r} (YYYY-MM-DD)")
+    day = _dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    today = _dt.datetime.now(_dt.timezone.utc).date()
+    if day > today:
+        return []
+    icao = icao_for(site)
+    ck = (icao, date)
+    hit = _DAY_LISTS.get(ck)
+    ttl = _LIST_TTL if day >= today - _dt.timedelta(days=1) else _DAY_TTL_PAST
+    if hit and time.time() - hit[0] < ttl:
+        return hit[1]
+    out = _archive_rows(_archive_listing(f"{day:%Y/%m/%d}/{icao}/"))
+    _DAY_LISTS[ck] = (time.time(), out)
+    while len(_DAY_LISTS) > 32:
+        _DAY_LISTS.popitem(last=False)
+    return out
+
+
+def _cuts_from_volume(site: str, f: Any, volume: str, unix: Optional[int]) -> dict:
+    """`_cuts_summary` for a volume read whole: the cuts it flew and the moments
+    each one carries, from its sweeps -- a legacy volume (message 1, before
+    2008) has no scan strategy record at all, and a 2008-2010 one says nothing
+    of dual-pol it did not have."""
+    cuts = [round(float(g["actual"]), 2) for g in volume_elevations(f)]
+    if not cuts:
+        raise RuntimeError(f"{site}'s volume {volume} has no sweeps.")
+    moments: dict[float, set[str]] = {c: set() for c in cuts}
+    for sw in f.sweeps:
+        if not sw:
+            continue
+        a = _sweep_angle(f, sw)
+        cut = min(cuts, key=lambda c: abs(c - a))
+        have = _moments(sw[0])
+        moments[cut] |= {fam for fam, spec in L2_MOMENTS.items() if fam != "S" and spec["src"] in have}
+    low = dict(slots_for_cuts(cuts)).get("L")
+    vcp = getattr(f, "vcp_info", None)
+    return {
+        "site": site,
+        "cuts": [round(a, 1) for a in cuts],
+        "exact": cuts,
+        "low": None if low is None else round(low, 1),
+        "volume": volume,
+        "volumeUnix": unix,
+        "moments": {str(c): "".join(sorted(m)) for c, m in moments.items()},
+        "elevationsFlown": len(cuts),
+        "elevationsPlanned": len(vcp.els) if vcp is not None else len(cuts),
+    }
 
 
 def _archive_get(path: str) -> bytes:
@@ -996,6 +1260,14 @@ def _archive_cuts(site: str, at: int) -> dict:
     hit = _ARCHIVE_CUTS.get(name)
     if hit is not None:
         return hit
+    if name.endswith(".gz"):
+        # Gzipped whole (to 2016): its two ends cannot be read apart, so the
+        # volume comes down -- 0.5-3 MB before 2011, and the frame about to be
+        # shown is this volume, so the download is not wasted.
+        f, _ = _decode_archive(name)
+        out = _cuts_from_volume(site, f, vols[0]["key"], vols[0]["time"])
+        _ARCHIVE_CUTS[name] = out
+        return out
     vcp, flown = _archive_ends(_archive_path(name))
     if vcp is None:
         raise RuntimeError(f"{site}'s volume {name} carries no scan strategy.")
@@ -1226,6 +1498,7 @@ def _l3_family(fam: dict) -> dict:
 # everything else is the plain Level III id.
 _MERGED: list[tuple[str, str]] = [
     ("B", "level3"),    # Reflectivity
+    ("TZL", "level3"),  # Long-range reflectivity -- a TDWR's own, hidden elsewhere
     ("G", "level3"),    # Velocity
     ("S", "level3"),    # Storm-relative velocity (derived, L3 only)
     ("R", "level3"),    # Normalized rotation (derived from velocity, L3 only)
@@ -1288,6 +1561,10 @@ def merged_catalog(l3: list[dict]) -> list[dict]:
     for fam in l3:
         if fam["id"] not in seen:
             out.append(_l3_family(fam))
+    # The products computed from a Level II volume (group "derived").
+    import radar_derived  # noqa: PLC0415 - it imports this module
+
+    out += radar_derived.catalog()
     return out
 
 

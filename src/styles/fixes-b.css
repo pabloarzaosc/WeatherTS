@@ -1,0 +1,39 @@
+/* ---------- Batch B review fixes ---------- */
+
+/* The floating search box sits over the top-left corner of the map, which is
+   always the top-left corner of the FIRST pane (the grid fills row by row).
+   That pane's header -- product name, radar, event chip -- used to sit under
+   it, so in a single-pane layout the event name never showed. Its header now
+   starts to the right of the search box, centred on it. */
+.map-canvas > .mappane:first-child .panehead {
+  padding-top: 14px;
+  padding-left: calc(14px + min(320px, 100vw - var(--map-left) - var(--map-right) - 24px) + 10px);
+}
+/* A pane too narrow for both side by side (MapPane marks it under 520px):
+   the header goes under the search box and the basemap button instead (they
+   end about 90px down). */
+.map-canvas > .mappane:first-child .panehead[data-narrow] {
+  padding-top: 96px;
+  padding-left: 14px;
+}
+@media (max-width: 820px), (max-height: 500px) {
+  .map-canvas > .mappane:first-child .panehead {
+    padding-top: 96px;
+    padding-left: 10px;
+  }
+}
+
+/* Product info: never tall enough to reach the pane's bottom strip, where the
+   streaming line, the "isn't scanned yet" and offline notes and the colour
+   scale live. The card scrolls instead. */
+.pinfo {
+  max-height: calc(100vh - 98px - var(--dock-h) - 132px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.pinfo__head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel-solid);
+}

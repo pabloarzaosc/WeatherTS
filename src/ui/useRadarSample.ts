@@ -1,7 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 import { sampleScan } from "../lib/radarMesh";
+import { getActivePaneId, getMap, getMapById, subscribeMaps } from "../map/mapInstance";
 import { useAppStore } from "../store/useAppStore";
+import { useCompareStore } from "../store/useCompareStore";
 import { useNexradStore } from "../store/useNexradStore";
 import { HCA_CLASSES } from "../lib/hca";
 import { formatValue } from "../lib/radarUnits";
@@ -54,9 +56,26 @@ export interface RadarSample {
 export function useRadarSample(): RadarSample | null {
   const radarUnits = useAppStore((st) => st.radarUnits);
   const cursor = useAppStore((s) => s.cursor);
-  const scan = useNexradStore((s) => s.scan);
   const threshold = useNexradStore((s) => s.threshold);
   const visible = useAppStore((s) => s.layers["nexrad"]?.visible ?? false);
+  // The pane under the pointer, which need not be the focused one: the top level
+  // mirrors the focused pane only, and each pane has its own product and scan.
+  const activeId = useSyncExternalStore(subscribeMaps, getActivePaneId);
+  const paneId = cursor?.pane ?? activeId;
+  const leftScan = useNexradStore((s) => {
+    const pane = paneId ? s.paneRadar[paneId] : undefined;
+    return pane && paneId !== activeId ? pane.scan : s.scan;
+  });
+  // panes-compare: right of a compare divider the pane draws its second
+  // product, so the value under the pointer is that product's.
+  const cmpSplit = useCompareStore((s) => (paneId && s.slots[paneId] ? s.slots[paneId].split : null));
+  const cmpScan = useCompareStore((s) => (paneId && s.slots[paneId] ? s.views[paneId]?.scan ?? null : null));
+  let scan = leftScan;
+  if (cmpScan && cmpSplit != null && cursor) {
+    const map = paneId ? getMapById(paneId) : getMap();
+    const w = map?.getCanvas().clientWidth ?? 0;
+    if (map && w > 0 && map.project([cursor.lng, cursor.lat]).x / w > cmpSplit) scan = cmpScan;
+  }
 
   return useMemo(() => {
     if (!visible || !scan || !cursor) return null;

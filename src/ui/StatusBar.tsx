@@ -3,6 +3,7 @@ import type { CoordFormat } from "../store/useAppStore";
 import { useChaserStore } from "../store/useChaserStore";
 import { useRadarSample } from "./useRadarSample";
 import { basemapInfo } from "../map/basemaps";
+import { ConnectionBadge } from "./ConnectionBadge";
 
 function decimal(value: number, axis: "lat" | "lng"): string {
   const hemisphere = axis === "lat" ? (value >= 0 ? "N" : "S") : value >= 0 ? "E" : "W";
@@ -69,6 +70,8 @@ export function StatusBar() {
         )}
       </div>
       <div className="status__meta">
+        {/* "OFFLINE" / "WEAK CONNECTION" while the data cannot be reached */}
+        <ConnectionBadge />
         {/* Never let a location broadcast run without something on screen
             saying so, and make that thing the way to stop it. */}
         {sharing && (

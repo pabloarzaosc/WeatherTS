@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { getMap, subscribeMaps } from "../map/mapInstance";
+import { getMap, getMapById, subscribeMaps } from "../map/mapInstance";
 import { useAppStore } from "../store/useAppStore";
 import { useNexradStore } from "../store/useNexradStore";
 import { useObsStore } from "../store/useObsStore";
@@ -30,7 +30,7 @@ export function ObsReadout() {
       return;
     }
     const update = () => {
-      const map = getMap();
+      const map = (cursor.pane ? getMapById(cursor.pane) : null) ?? getMap();
       if (!map) return;
       const rect = map.getCanvas().getBoundingClientRect();
       const p = map.project([cursor.lng, cursor.lat]);

@@ -35,6 +35,8 @@ from metpy.io import Level3File
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+import tdwr
+
 S3 = "https://unidata-nexrad-level3.s3.amazonaws.com/"
 IEM_SITES = "https://mesonet.agron.iastate.edu/geojson/network/NEXRAD.geojson"
 
@@ -129,7 +131,9 @@ def _build_products() -> dict[str, dict[str, Any]]:
     return out
 
 
-PRODUCTS: dict[str, dict[str, Any]] = _build_products()
+# The FAA's airport radars publish under their own codes (tdwr.py). They answer
+# to the same families in the picker: reflectivity is reflectivity.
+PRODUCTS: dict[str, dict[str, Any]] = {**_build_products(), **tdwr.PRODUCTS}
 DEFAULT_PRODUCT = "N0B"
 
 
@@ -154,6 +158,8 @@ def product_catalog() -> list[dict[str, Any]]:
             "kind": spec["kind"],
             "tilts": [{"code": code, "tilt": None, "elev": None}],
         })
+    # Long-range reflectivity: only a TDWR has it (hidden elsewhere).
+    cat.append(dict(tdwr.CATALOG_FAMILY))
     return cat
 
 # ---------------------------------------------------------------------------
@@ -169,30 +175,63 @@ def parse_pal(pal: str) -> list[tuple[float, tuple[float, float, float, float]]]
 
     Alpha is optional; 0..1 is taken as a fraction, >1 as 0..255. Comments after
     ';' and blank lines are ignored.
+
+    Segment rules (the same as pal.ts): `Color:` carries r g b and `Color4:`
+    r g b a; either may name a SECOND colour, which the segment up to the next
+    stop ramps to (a hard break at the next stop). `SolidColor(4):` holds its
+    colour flat up to the next stop. Both become an extra stop just below the
+    next value. Alpha is read only from the 4-number forms: a two-colour
+    `Color:` line's second red used to be taken as the alpha, which made those
+    segments transparent. `Step:`, `Scale:`, `Offset:`, `RF:`, `Label:`,
+    `Decimals:` and the rest carry no stop and are skipped.
     """
-    stops: list[tuple[float, tuple[float, float, float, float]]] = []
+    def colour(nums: list[float], at: int, stride: int) -> tuple[float, float, float, float]:
+        r, g, b = nums[at], nums[at + 1], nums[at + 2]
+        a = nums[at + 3] if stride == 4 else 255.0
+        if a <= 1.0:
+            a *= 255.0
+        return (r / 255.0, g / 255.0, b / 255.0, a / 255.0)
+
+    entries: list[tuple[float, tuple, Optional[tuple], bool]] = []
     for raw in pal.splitlines():
         line = raw.split(";")[0].strip()
         if not line:
             continue
+        key = ""
         if ":" in line:
-            key, _, rest = line.partition(":")
-            if not key.strip().lower().startswith(("color", "solidcolor")):
-                continue  # Product:/Units:/Step:/... -- no stop here
+            k, _, rest = line.partition(":")
+            key = k.strip().lower()
+            if not key.startswith(("color", "solidcolor")):
+                continue  # Product:/Units:/Step:/Scale:/RF:/... -- no stop here
             line = rest.strip()
-        parts = line.split()
         try:
-            nums = [float(p) for p in parts[:5]]
+            nums = [float(p) for p in line.replace(",", " ").split()]
         except ValueError:
             continue
-        if len(nums) < 4:
+        if key:
+            stride = 4 if key.endswith("4") else 3
+            solid = key.startswith("solidcolor")
+        else:  # bare shorthand: value r g b [a]
+            stride = 4 if len(nums) >= 5 else 3
+            solid = False
+        if len(nums) < 1 + stride:
             continue
-        val, r, g, b = nums[0], nums[1], nums[2], nums[3]
-        a = nums[4] if len(nums) >= 5 else 255.0
-        if a <= 1.0:
-            a *= 255.0
-        stops.append((val, (r / 255.0, g / 255.0, b / 255.0, a / 255.0)))
-    stops.sort(key=lambda s: s[0])
+        c1 = colour(nums, 1, stride)
+        c2 = colour(nums, 1 + stride, stride) if key and not solid and len(nums) >= 1 + 2 * stride else None
+        entries.append((nums[0], c1, c2, solid))
+    entries.sort(key=lambda e: e[0])
+
+    stops: list[tuple[float, tuple[float, float, float, float]]] = []
+    for i, (val, c1, c2, solid) in enumerate(entries):
+        stops.append((val, c1))
+        if i + 1 == len(entries):
+            if c2 is not None:
+                stops[-1] = (val, c2)  # past the last stop the segment's end colour holds
+            continue
+        nxt = entries[i + 1][0]
+        end = c1 if solid else c2
+        if end is not None and nxt > val:
+            stops.append((nxt - (nxt - val) * 1e-6, end))
     return stops
 
 
@@ -274,9 +313,20 @@ PALETTES: dict[str, dict[str, Any]] = {
     "PHI": {"label": "Differential Phase", "pal": PAL_TABLES["PHI"]},
     "CFP": {"label": "Clutter Filter Power", "pal": PAL_TABLES["CFP"]},
     "NROT": {"label": "Normalized Rotation", "pal": PAL_TABLES["NROT"]},
+    # The Brazilian radars' volume products (brazil_radar.py).
+    "MEHS": {"label": "Max. Expected Hail Size", "pal": PAL_TABLES["MEHS"]},
+    "POSH": {"label": "Prob. of Severe Hail", "pal": PAL_TABLES["POSH"]},
+    "RATE": {"label": "Rain Rate", "pal": PAL_TABLES["RATE"]},
     "EET": {"label": "Echo Tops (legacy)", "pal": PAL_TABLES["EET"]},
     "DAA": {"label": "1-hr Precip Accum (legacy)", "pal": PAL_TABLES["DAA"]},
     "DTA": {"label": "Storm Total Accum (legacy)", "pal": PAL_TABLES["DTA"]},
+    # Computed from Level II volumes (radar_derived.py).
+    "DVIL": {"label": "VIL Density", "pal": PAL_TABLES["DVIL"]},
+    "VROT": {"label": "Rotational Velocity", "pal": PAL_TABLES["VROT"]},
+    "PTDS": {"label": "Tornado Debris Score", "pal": PAL_TABLES["PTDS"]},
+    # Alternates offered by the colour table menu (src/lib/colorTables.ts).
+    "REF_WINTER": {"label": "Winter", "pal": PAL_TABLES["REF_WINTER"]},
+    "PTDS_STEPS": {"label": "Steps", "pal": PAL_TABLES["PTDS_STEPS"]},
 }
 
 # Table a product kind uses. VIL used to borrow the storm-total table, which
@@ -285,6 +335,8 @@ _KIND_DEFAULT_PALETTE = {
     "ref": "FILE_DR", "vel": "FILE_amixof2BV", "srv": "FILE_SRV", "cc": "CC", "zdr": "FILE_ZDR",
     "kdp": "FILE_KDP", "hca": "FILE_HC", "sw": "FILE_SW", "tops": "FILE_ET_steep", "vil": "FILE_VIL",
     "precip": "FILE_OHP", "storm_precip": "FILE_STP", "phi": "PHI", "cfp": "CFP", "nrot": "NROT",
+    "mehs": "MEHS", "posh": "POSH", "rate": "RATE",
+    "dvil": "DVIL", "vrot": "VROT", "ptds": "PTDS",
 }
 
 # One palette per product in the picker: the one that product actually uses.
@@ -343,7 +395,7 @@ def list_sites() -> list[dict]:
     today or yesterday is online, one in the last ninety days is a radar that
     is down, and none in ninety days is a radar that is not there any more.
     """
-    sites = [dict(s) for s in _iem_sites()]
+    sites = [dict(s) for s in _iem_sites()] + tdwr.sites()
     status = _site_status([s["id"] for s in sites])
     if not status:
         # Not worked out yet (a first run, still probing): the ones known gone.
@@ -378,9 +430,15 @@ _STATUS: dict[str, Any] = {"at": 0.0, "last": {}}
 _STATUS_TTL = 6 * 3600
 _STATUS_LOCK = threading.Lock()
 _STATUS_BUSY = {"on": False}
+_STATUS_ASKED: set[str] = set()
 # Days back to look, sparsely: a radar down for maintenance is back within
 # weeks; one silent for three months has been taken down.
 _LOOK_BACK_DAYS = (0, 1, 3, 7, 14, 30, 60, 90)
+
+
+def live_code(sid: str) -> str:
+    """The product whose newest scan says a radar is alive: its lowest reflectivity."""
+    return "TZ0" if tdwr.is_tdwr(sid) else "N0B"
 
 
 def newest_scan_unix(sid: str, code: str = "N0B") -> Optional[int]:
@@ -398,9 +456,10 @@ def newest_scan_unix(sid: str, code: str = "N0B") -> Optional[int]:
 
 def _newest_scan_day(sid: str) -> Optional[str]:
     today = datetime.now(timezone.utc)
+    code = live_code(sid)
     for back in _LOOK_BACK_DAYS:
         day = today - timedelta(days=back)
-        r = _PROBE_SESSION.get(S3, params={"list-type": "2", "prefix": f"{sid}_N0B_{day:%Y_%m_%d}", "max-keys": "1"},
+        r = _PROBE_SESSION.get(S3, params={"list-type": "2", "prefix": f"{sid}_{code}_{day:%Y_%m_%d}", "max-keys": "1"},
                                timeout=_HTTP_TIMEOUT)
         if "<Key>" in r.text:
             return day.strftime("%Y-%m-%d")
@@ -446,11 +505,16 @@ def _site_status(ids: list[str]) -> dict[str, Optional[str]]:
             except (OSError, ValueError):
                 pass
         known, age = dict(_STATUS["last"]), time.time() - float(_STATUS["at"])
-        start = not _STATUS_BUSY["on"] and (not known or age > _STATUS_TTL)
+        # A radar the saved answer has never seen is looked up once now, not in
+        # six hours (a file written before the TDWRs joined the list).
+        fresh = [i for i in ids if i not in known and i not in _STATUS_ASKED]
+        whole = not known or age > _STATUS_TTL
+        start = not _STATUS_BUSY["on"] and (whole or bool(fresh))
         if start:
             _STATUS_BUSY["on"] = True
+            _STATUS_ASKED.update(ids)
     if start:
-        threading.Thread(target=_work_out_status, args=(ids,), daemon=True, name="radar-status").start()
+        threading.Thread(target=_work_out_status, args=(ids if whole else fresh,), daemon=True, name="radar-status").start()
     return known
 
 
@@ -458,7 +522,7 @@ def warm_site_status() -> None:
     """Work out which radars are live in the background at start-up."""
     def run() -> None:
         try:
-            _site_status([s["id"] for s in _iem_sites()])
+            _site_status([s["id"] for s in _iem_sites()] + sorted(tdwr.IDS))
         except Exception:  # noqa: BLE001 - the site list asks again
             pass
     threading.Thread(target=run, daemon=True, name="radar-status-warm").start()
@@ -485,6 +549,8 @@ def icao_for(site: str) -> str:
     Level II bucket's own top-level names.
     """
     sid = site_id(site)
+    if tdwr.is_tdwr(sid):
+        return f"T{sid}"
     if time.time() - float(_ICAO["at"]) > 86400:
         try:
             r = _SESSION.get(CHUNKS_BUCKET, params={"list-type": "2", "delimiter": "/"}, timeout=_HTTP_TIMEOUT)
@@ -527,14 +593,50 @@ def l3_elevation(key: str) -> Optional[float]:
     return _struct.unpack(">h", b[pdb + 40:pdb + 42])[0] / 10.0
 
 
+NWS_RADAR_STATIONS = "https://api.weather.gov/radar/stations?stationType=WSR-88D"
+
+
+def _nws_sites() -> list[dict]:
+    """The WSR-88Ds from api.weather.gov, shaped like IEM's list: the fallback
+    when IEM does not answer (2026-10-25: 25-73 s, then 502). No retired radars
+    in it; whether each one is up still comes from the archive (_site_status)."""
+    r = _SESSION.get(NWS_RADAR_STATIONS, timeout=_HTTP_TIMEOUT, headers={"Accept": "application/geo+json"})
+    r.raise_for_status()
+    sites: list[dict] = []
+    for f in r.json().get("features", []):
+        p = f.get("properties") or {}
+        icao = str(p.get("id") or "").strip().upper()
+        lon, lat = (f.get("geometry") or {}).get("coordinates", [None, None])
+        if len(icao) != 4 or lat is None or lon is None or icao.startswith("R"):
+            continue  # RKSG / RKJK / RODN: no NEXRAD archive under a 3-letter id
+        sid = icao[1:]
+        sites.append({
+            "id": sid,
+            "icao": icao_for(sid),
+            "name": p.get("name") or sid,
+            "lat": round(float(lat), 4),
+            "lon": round(float(lon), 4),
+            "country": "US",
+            "online": True,
+            "elev": ((p.get("elevation") or {}).get("value") if isinstance(p.get("elevation"), dict) else None),
+        })
+    return sites
+
+
 def _iem_sites() -> list[dict]:
     """NEXRAD sites (3-letter id matches the S3 key prefix)."""
     global _SITES_CACHE
     now = time.time()
     if _SITES_CACHE and now - _SITES_CACHE[0] < 86400:
         return _SITES_CACHE[1]
-    r = _SESSION.get(IEM_SITES, timeout=_HTTP_TIMEOUT)
-    r.raise_for_status()
+    try:
+        r = _SESSION.get(IEM_SITES, timeout=_HTTP_TIMEOUT)
+        r.raise_for_status()
+    except Exception:  # noqa: BLE001 - IEM down or crawling: the NWS list instead
+        sites = _nws_sites()
+        # kept an hour, not a day, so IEM's fuller list (retired radars too) comes back
+        _SITES_CACHE = (now - 86400 + 3600, sites)
+        return sites
     sites: list[dict] = []
     for f in r.json().get("features", []):
         p = f.get("properties") or {}
@@ -550,6 +652,11 @@ def _iem_sites() -> list[dict]:
             "lon": round(float(lon), 4),
             "country": p.get("country"),
             "online": bool(p.get("online")),
+            # for the site list and the radar's own panel (radar-sites)
+            "state": (str(p.get("state") or "").strip() or None),
+            "wfo": (str(p.get("wfo") or "").strip() or None),
+            "elev": p.get("elevation"),
+            "tz": p.get("tzname"),
         })
     _SITES_CACHE = (now, sites)
     return sites
@@ -563,6 +670,7 @@ _SCANS_CACHE: dict[tuple, tuple[float, list[dict]]] = {}
 
 # The Unidata archive starts ~2022-03; every day since has ~180-385 scans/product.
 ARCHIVE_START = "2022-03-01"
+ARCHIVE_START_UNIX = 1646092800  # the same day, 00Z: before it, Level II's archive is the only one
 
 
 def _utc_unix(dt) -> Optional[int]:
@@ -587,13 +695,106 @@ def key_time(key: str) -> Optional[int]:
     return int(datetime(y, mo, d, h, mi, s, tzinfo=timezone.utc).timestamp())
 
 
+def _list_pages(prefix: str, pages: int = 3) -> list[str]:
+    """Each page of an S3 listing as text. A page holds 1000 keys, and a TDWR in
+    hazardous mode scans its lowest tilt every minute: 1440 keys a day."""
+    out: list[str] = []
+    params = {"list-type": "2", "max-keys": "1000", "prefix": prefix}
+    for _ in range(pages):
+        r = _SESSION.get(S3, params=params, timeout=_HTTP_TIMEOUT)
+        if not r.ok:
+            break
+        out.append(r.text)
+        token = re.search(r"<NextContinuationToken>([^<]+)</NextContinuationToken>", r.text)
+        if "<IsTruncated>true</IsTruncated>" not in r.text or not token:
+            break
+        params = {"list-type": "2", "max-keys": "1000", "prefix": prefix, "continuation-token": token.group(1)}
+    return out
+
+
 def _list_keys(site: str, product: str, day: str) -> list[str]:
     """All S3 keys for site+product on a UTC day ('YYYY_MM_DD')."""
-    prefix = f"{site}_{product}_{day}"
-    r = _SESSION.get(S3, params={"list-type": "2", "max-keys": "1000", "prefix": prefix}, timeout=_HTTP_TIMEOUT)
-    if not r.ok:
-        return []
-    return re.findall(r"<Key>([^<]+)</Key>", r.text)
+    prefix = f"{tdwr.archive_id(site, day)}_{product}_{day}"
+    keys = [k for page in _list_pages(prefix) for k in re.findall(r"<Key>([^<]+)</Key>", page)]
+    if not keys and product in tdwr.FEED_DIRS and tdwr.is_tdwr(site):
+        return [k for k in feed_keys(site, product) if k.startswith(prefix)]
+    return keys
+
+
+# A product the bucket stopped keeping (a TDWR's echo tops, 2023) comes from the
+# NWS feed: its directory holds the last 250 scans, about a day, one file each,
+# named by slot (sn.0123) and rewritten round the ring.
+_FEED_LIST: dict[tuple[str, str], tuple[float, list[str]]] = {}
+_FEED_URL: dict[str, str] = {}
+_FEED_TTL = 30.0
+_FEED_ROW = re.compile(r'href="(sn\.\d{4})">[^<]*</a></td>\s*<td[^>]*>\s*(\d{2}-[A-Za-z]{3}-\d{4} \d{2}:\d{2})')
+
+
+def parse_feed_listing(html: str, site: str, product: str, base: str) -> dict[str, str]:
+    """A feed directory's page -> {key: file url}, keys shaped like the bucket's,
+    timed by when each file came in (a minute's precision, oldest first)."""
+    rows = []
+    for name, stamp in _FEED_ROW.findall(html or ""):
+        try:
+            when = datetime.strptime(stamp, "%d-%b-%Y %H:%M")
+        except ValueError:
+            continue
+        rows.append((when, name))
+    rows.sort()
+    return {f"{site}_{product}_{when:%Y_%m_%d_%H_%M_%S}": f"{base}{name}" for when, name in rows}
+
+
+def feed_keys(site: str, product: str) -> list[str]:
+    """The keys of a product in the NWS feed, oldest first."""
+    ck = (site, product)
+    now = time.time()
+    hit = _FEED_LIST.get(ck)
+    if hit and now - hit[0] < _FEED_TTL:
+        return hit[1]
+    base = f"{tdwr.FEED_BASE}{tdwr.FEED_DIRS[product]}/SI.t{site.lower()}/"
+    try:
+        r = _SESSION.get(base, timeout=_HTTP_TIMEOUT)
+        r.raise_for_status()
+    except Exception:  # noqa: BLE001 - the feed being down is an empty list, kept briefly
+        keys = hit[1] if hit else []
+        _FEED_LIST[ck] = (now, keys)
+        return keys
+    found = parse_feed_listing(r.text, site, product, base)
+    _FEED_URL.update(found)
+    keys = list(found)
+    _FEED_LIST[ck] = (now, keys)
+    while len(_FEED_URL) > 4096:
+        _FEED_URL.pop(next(iter(_FEED_URL)))
+    return keys
+
+
+def scan_url(key: str) -> str:
+    """Where a Level III key's file is: the bucket, or a slot of the NWS feed."""
+    url = _FEED_URL.get(key)
+    if url:
+        return url
+    parts = key.split("_")
+    if len(parts) > 2 and parts[1] in tdwr.FEED_DIRS and tdwr.is_tdwr(parts[0]) and (key_time(key) or 0) > tdwr.FEED_NEWER_THAN:
+        feed_keys(parts[0], parts[1])
+        return _FEED_URL.get(key) or S3 + key
+    return S3 + key
+
+
+def tdwr_day(site: str, date: str) -> list[dict]:
+    """A TDWR's lowest reflectivity scans of one UTC day ("YYYY-MM-DD") as the
+    Archive panel's rows: key, time, bytes."""
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date or ""):
+        raise ValueError(f"Not a date: {date!r} (YYYY-MM-DD)")
+    sid = site_id(site)
+    day = date.replace("-", "_")
+    out = []
+    for page in _list_pages(f"{tdwr.archive_id(sid, day)}_TZ0_{day}"):
+        for key, size in re.findall(r"<Key>([^<]+)</Key>.*?<Size>(\d+)</Size>", page, re.S):
+            unix = key_time(key)
+            if unix is not None:
+                out.append({"key": key, "time": unix, "size": int(size), "partial": False})
+    out.sort(key=lambda v: v["time"])
+    return out
 
 
 def _scans_for_day(site: str, product: str, day: str) -> list[dict]:
@@ -633,7 +834,7 @@ def list_scans(site: str, product: str, date: Optional[str] = None, limit: int =
     from datetime import datetime, timedelta, timezone
 
     site = (site or "").upper().strip()
-    product = (product or DEFAULT_PRODUCT).upper().strip()
+    product = tdwr.for_site(site, (product or DEFAULT_PRODUCT).upper().strip())
     # SRV and NROT frames are velocity frames -- list the source cut so scrubbing the loop
     # hands polar_data a key it can actually decode.
     product = _DERIVED_SOURCE.get(product, product)
@@ -714,7 +915,8 @@ def _decode(raw: bytes, product: str = ""):
     else:
         data = np.ma.masked_invalid(np.asarray(f.map_data(datadict["data"]), dtype=float))
     az = np.array(datadict["start_az"] + [datadict["end_az"][-1]], dtype=float)
-    rng = np.linspace(0, f.max_range, data.shape[-1] + 1)
+    gate = tdwr.gate_km(product)
+    rng = np.linspace(0, gate * data.shape[-1] if gate else f.max_range, data.shape[-1] + 1)
     return f, az, rng, data
 
 
@@ -744,6 +946,27 @@ _TTL = 120.0
 # -- it just needs a bound. ~1.4 MB each; 60 covers a full day's animation.
 _POLAR_CACHE: "OrderedDict[tuple, dict]" = OrderedDict()
 _POLAR_CACHE_MAX = 60
+
+
+def _l3_antenna(f: "Level3File", site: str = "") -> dict:
+    """The antenna, for the readout and the product info panel: the WSR-88D's
+    nominal 0.95 deg S-band beam (a TDWR's 0.55 deg C-band one), and its height
+    (Level III gives feet above sea level). Level III carries no Nyquist velocity."""
+    out: dict = {"band": tdwr.BAND, "beamWidthDeg": tdwr.BEAM_WIDTH_DEG} if tdwr.is_tdwr(site) else {"band": "S", "beamWidthDeg": 0.95}
+    try:
+        out["siteAmslM"] = round(float(f.height) * 0.3048, 1)
+    except Exception:  # noqa: BLE001 - optional detail
+        pass
+    return out
+
+
+def _scan_mode(f: "Level3File", site: str = "") -> str:
+    """The radar's mode as its scan names it: a WSR-88D's Clear Air or
+    Precipitation, a TDWR's Monitor or Hazardous (its header says Precipitation
+    in both, so the VCP decides)."""
+    if tdwr.is_tdwr(site) and int(f.prod_desc.vcp) in tdwr.VCP_MODES:
+        return tdwr.VCP_MODES[int(f.prod_desc.vcp)]
+    return _OP_MODES.get(int(f.prod_desc.op_mode), f"Mode {f.prod_desc.op_mode}")
 
 
 def _value_lut(f: "Level3File", product: str) -> np.ndarray:
@@ -882,6 +1105,12 @@ def _srv_polar(site: str, product: str, src_product: str, key: Optional[str]) ->
     t = (srv - vmin) / (vmax - vmin or 1.0)
     q = np.clip(np.rint(t * 254.0) + 1.0, 1, 255)
     q[~np.isfinite(srv)] = 0
+    # Range-folded gates keep their own code (255, no value), as Level II does.
+    srv_rf = (codes == 1) & ~np.isfinite(vals)
+    if srv_rf.any():
+        q[q == 255] = 254
+        q[srv_rf] = 255
+        lut[255] = np.nan
     out_codes = q.astype(np.uint8)
 
     spec = PRODUCTS[product]
@@ -917,6 +1146,8 @@ def _srv_polar(site: str, product: str, src_product: str, key: Optional[str]) ->
             "derivedFrom": src_product,
             "vcp": int(f.prod_desc.vcp),
             "mode": _OP_MODES.get(int(f.prod_desc.op_mode), f"Mode {f.prod_desc.op_mode}"),
+            **_l3_antenna(f),
+            **({"rfCode": 255} if srv_rf.any() else {}),
         },
     }
     _POLAR_CACHE[cache_key] = out
@@ -1065,6 +1296,7 @@ def _nrot_polar(site: str, product: str, src_product: str, key: Optional[str]) -
             "derivedFrom": src_product,
             "vcp": int(f.prod_desc.vcp),
             "mode": _OP_MODES.get(int(f.prod_desc.op_mode), f"Mode {f.prod_desc.op_mode}"),
+            **_l3_antenna(f),
         },
     }
     _POLAR_CACHE[cache_key] = out
@@ -1084,7 +1316,7 @@ def _null_scan(site: str, product: str, key: str, f: "Level3File") -> dict:
     spec = PRODUCTS[product]
     pid = _resolve_palette(product, None)
     _, vmin, vmax = get_cmap(pid)
-    texts = [str(p.get("text")).strip() for layer in (f.sym_block or []) for p in layer
+    texts = [str(p.get("text")).strip() for layer in (getattr(f, "sym_block", None) or []) for p in layer
              if isinstance(p, dict) and p.get("text")]
     note = texts[0] if texts else "Nothing to show in this product right now"
     lut = np.full(256, np.nan, dtype=np.float32)
@@ -1116,9 +1348,35 @@ def _null_scan(site: str, product: str, key: str, f: "Level3File") -> dict:
             "key": key,
             "note": note,
             "vcp": int(f.prod_desc.vcp),
-            "mode": _OP_MODES.get(int(f.prod_desc.op_mode), f"Mode {f.prod_desc.op_mode}"),
+            "mode": _scan_mode(f, site),
         },
     }
+
+
+_RASTER_GATE_KM = 1.0
+
+
+def _raster_to_polar(grid: Any, cell_km: float, max_range_km: float) -> tuple[np.ndarray, np.ndarray]:
+    """A raster product on radials, 1 deg x 1 km, nearest cell: the viewer draws
+    radials, and a 4 km cell is much coarser than either, so its square edges
+    survive. The grid is centred on the radar, first row north, first column
+    west (checked against the same volume's reflectivity)."""
+    g = np.asarray(grid, dtype=np.uint8)
+    ny, nx = g.shape
+    n_gates = int(round(max_range_km / _RASTER_GATE_KM))
+    az = np.linspace(0.0, 360.0, 361, dtype=np.float32)
+    a = np.deg2rad(az[:-1] + 0.5)[:, None]
+    r = (np.arange(n_gates) + 0.5)[None, :] * _RASTER_GATE_KM
+    col = np.floor(r * np.sin(a) / cell_km + nx / 2.0).astype(int)
+    row = np.floor(ny / 2.0 - r * np.cos(a) / cell_km).astype(int)
+    inside = (col >= 0) & (col < nx) & (row >= 0) & (row < ny)
+    codes = np.zeros((360, n_gates), dtype=np.uint8)
+    codes[inside] = g[row[inside], col[inside]]
+    return codes, az
+
+
+class UndecodableScan(RuntimeError):
+    """A radar file that was fetched whole but cannot be decoded: permanent."""
 
 
 def polar_data(site: str, product: str, key: Optional[str] = None) -> dict:
@@ -1135,8 +1393,11 @@ def polar_data(site: str, product: str, key: Optional[str] = None) -> dict:
     """
     site = (site or "").upper().strip()
     product = (product or DEFAULT_PRODUCT).upper().strip()
+    # Before the check: a Level II code is not in PRODUCTS, and at a TDWR it must
+    # be mapped or refused there, not turned into reflectivity here.
+    product = tdwr.for_site(site, product)
     if product not in PRODUCTS:
-        product = DEFAULT_PRODUCT
+        product = tdwr.for_site(site, DEFAULT_PRODUCT)
 
     # SRV and NROT are derived from the matching super-res velocity cut, not fetched.
     src = _SRV_SOURCE.get(product)
@@ -1149,7 +1410,7 @@ def polar_data(site: str, product: str, key: Optional[str] = None) -> dict:
     if not key:
         key = _latest_key(site, product)
     if not key:
-        raise RuntimeError(f"No recent {PRODUCTS[product]['label']} scan for K{site}.")
+        raise RuntimeError(f"No recent {PRODUCTS[product]['label']} scan for {icao_for(site)}.")
 
     cache_key = (site, product, key)
     hit = _POLAR_CACHE.get(cache_key)
@@ -1157,23 +1418,42 @@ def polar_data(site: str, product: str, key: Optional[str] = None) -> dict:
         _POLAR_CACHE.move_to_end(cache_key)
         return hit
 
-    raw = _SESSION.get(f"{S3}{key}", timeout=_HTTP_TIMEOUT).content
-    f = Level3File(io.BytesIO(raw))
-    datadict = f.sym_block[0][0] if f.sym_block and f.sym_block[0] else {}
+    resp = _SESSION.get(scan_url(key), timeout=_HTTP_TIMEOUT)
+    if resp.status_code != 200:
+        raise RuntimeError(f"Level III file {key} not available (HTTP {resp.status_code}).")
+    raw = resp.content
+    try:
+        f = Level3File(io.BytesIO(raw))
+    except Exception as exc:  # noqa: BLE001 -- MetPy raises anything on a bad file
+        # A file that downloaded whole but does not parse (TBW N0B 2024-10-09
+        # 22:58:07: "Bad divider for symbology block") stays that way: say so,
+        # so the app drops the frame instead of retrying it forever.
+        raise UndecodableScan(f"This Level III file is damaged and cannot be read ({exc}).") from exc
+    # A product with nothing to draw has no symbology block at all, not an empty one.
+    block = getattr(f, "sym_block", None)
+    datadict = block[0][0] if block and block[0] else {}
     if "data" not in datadict:
         out = _null_scan(site, product, key, f)
         _POLAR_CACHE[cache_key] = out
         return out
-    codes = np.asarray(datadict["data"], dtype=np.uint8)
-    az = np.array(datadict["start_az"] + [datadict["end_az"][-1]], dtype=np.float32)
-    rng = np.linspace(0, f.max_range, codes.shape[-1] + 1)
+    radial = "start_az" in datadict
+    if radial:
+        codes = np.asarray(datadict["data"], dtype=np.uint8)
+        az = np.array(datadict["start_az"] + [datadict["end_az"][-1]], dtype=np.float32)
+    else:
+        # A raster product (a TDWR's VIL and echo tops), sampled onto radials.
+        codes, az = _raster_to_polar(datadict["data"], tdwr.RASTER_CELL_KM.get(product, 4.0), float(f.max_range))
+    # A TDWR's gates are 150 or 300 m exactly (tdwr.py); MetPy's range is rounded.
+    gate = tdwr.gate_km(product) if radial else _RASTER_GATE_KM
+    rng = np.linspace(0, gate * codes.shape[-1] if gate else f.max_range, codes.shape[-1] + 1)
 
     spec = PRODUCTS[product]
     pid = _resolve_palette(product, None)
     _, vmin, vmax = get_cmap(pid)
+    out_lut = _value_lut(f, product)
     out = {
         "az": az,                                     # naz + 1 edges (deg from N)
-        "lut": _value_lut(f, product),                # 256 floats
+        "lut": out_lut,                               # 256 floats
         "codes": codes,                               # naz x ngates, uint8
         "meta": {
             "site": icao_for(site),
@@ -1186,7 +1466,8 @@ def polar_data(site: str, product: str, key: Optional[str] = None) -> dict:
             "family": spec.get("family"),
             "tilt": spec.get("tilt"),
             # the cut this scan was actually taken at, not the VCP nominal
-            "elevation": float(f.metadata.get("el_angle")) if f.metadata.get("el_angle") is not None else None,
+            # (MetPy's 0.1 steps come out as 0.30000000000000004)
+            "elevation": round(float(f.metadata.get("el_angle")), 2) if radial and f.metadata.get("el_angle") is not None else None,
             "defaultPalette": pid,
             "vmin": vmin,
             "vmax": vmax,
@@ -1194,12 +1475,15 @@ def polar_data(site: str, product: str, key: Optional[str] = None) -> dict:
             "nGates": int(codes.shape[1]),
             "rangeStartKm": float(rng[0]),
             "gateWidthKm": float(rng[1] - rng[0]),
-            "maxRangeKm": float(f.max_range),
+            "maxRangeKm": float(rng[-1]),
             "validUnix": _utc_unix(f.metadata.get("prod_time")) or key_time(key),
             "scanUnix": key_time(key),
             "key": key,
             "vcp": int(f.prod_desc.vcp),
-            "mode": _OP_MODES.get(int(f.prod_desc.op_mode), f"Mode {f.prod_desc.op_mode}"),
+            "mode": _scan_mode(f, site),
+            **_l3_antenna(f, site),
+            # Digital velocity / width: level 1 is "range folded" (no value).
+            **({"rfCode": 1} if spec["kind"] in ("vel", "sw") and not np.isfinite(out_lut[1]) else {}),
         },
     }
 
@@ -1213,8 +1497,11 @@ def render(site: str, product: str, palette: Optional[str] = None, key: Optional
     """Render a scan: `key` for a specific (historical) scan, else the newest."""
     site = (site or "").upper().strip()
     product = (product or DEFAULT_PRODUCT).upper().strip()
+    # Before the check: a Level II code is not in PRODUCTS, and at a TDWR it must
+    # be mapped or refused there, not turned into reflectivity here.
+    product = tdwr.for_site(site, product)
     if product not in PRODUCTS:
-        product = DEFAULT_PRODUCT
+        product = tdwr.for_site(site, DEFAULT_PRODUCT)
 
     cache_key = (site, product, palette or "auto", key or "latest")
     now = time.time()
@@ -1226,7 +1513,7 @@ def render(site: str, product: str, palette: Optional[str] = None, key: Optional
     if not key:
         key = _latest_key(site, product)
     if not key:
-        raise RuntimeError(f"No recent {PRODUCTS[product]['label']} scan for K{site}.")
+        raise RuntimeError(f"No recent {PRODUCTS[product]['label']} scan for {icao_for(site)}.")
 
     raw = _SESSION.get(f"{S3}{key}", timeout=_HTTP_TIMEOUT).content
     f, az, rng, data = _decode(raw, product)

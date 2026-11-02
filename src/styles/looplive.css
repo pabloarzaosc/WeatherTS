@@ -1,0 +1,170 @@
+/* Live Level II and the loop: the per-frame status line under the timeline's
+   scrubber, the panes' streaming line and notes, the SAILS badge on a tilt
+   button, the loop delay in the speed picker. Theme tokens, hairlines; the
+   frame-state colours are their own tokens, light and dark. */
+
+:root {
+  --ll-idle: #4a4a4a;
+  --ll-down: #e3bd4a;
+  --ll-decode: #5ec4d9;
+  --ll-ready: var(--accent);
+  --ll-failed: var(--danger);
+  --ll-hatch-a: #e3bd4a;
+  --ll-hatch-b: rgba(227, 189, 74, 0.18);
+  --ll-tick: rgba(236, 236, 236, 0.42);
+}
+:root[data-theme="light"] {
+  --ll-idle: #b7c3d2;
+  --ll-down: #b98a07;
+  --ll-decode: #16849f;
+  --ll-hatch-a: #b98a07;
+  --ll-hatch-b: rgba(185, 138, 7, 0.16);
+  --ll-tick: rgba(11, 21, 34, 0.38);
+}
+
+/* -- the scrubber and its status line ------------------------------------- */
+.maptimeline__scrubwrap {
+  flex: 1;
+  min-width: 120px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+}
+.maptimeline__scrubwrap > .maptimeline__scrub {
+  flex: 1;
+  min-width: 0;
+}
+/* Inset by the thumb's half width (7 px), so frame i sits under the thumb. */
+.ll-strip {
+  position: absolute;
+  left: 7px;
+  right: 7px;
+  bottom: 4px;
+  width: calc(100% - 14px);
+  height: 10px;
+  pointer-events: none;
+  overflow: visible;
+}
+.ll-seg--idle {
+  fill: var(--ll-idle);
+}
+.ll-seg--down {
+  fill: var(--ll-down);
+}
+.ll-seg--decode {
+  fill: var(--ll-decode);
+}
+.ll-seg--ready {
+  fill: var(--ll-ready);
+}
+.ll-seg--failed {
+  fill: var(--ll-failed);
+}
+.ll-hatch__bg {
+  fill: var(--ll-hatch-b);
+}
+.ll-hatch__fg {
+  fill: var(--ll-hatch-a);
+}
+.ll-tick {
+  fill: var(--ll-tick);
+}
+.ll-tick.is-rescan {
+  fill: var(--text-faint);
+}
+
+/* -- per pane: streaming line, "1.3° isn't scanned yet" ------------------- */
+/* Inside .mappane__cbar, stacked just above the pane's colour scale. */
+.ll-pane {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: 100%;
+  margin-bottom: 6px;
+  pointer-events: none;
+}
+.ll-pane__stream,
+.ll-pane__note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10.5px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  pointer-events: auto;
+}
+.ll-pane__note {
+  font-family: inherit;
+  color: var(--text);
+}
+.ll-pane__note.is-pending {
+  border-color: var(--ll-down);
+}
+.ll-pane__dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ll-down);
+  animation: ll-pulse 1.6s ease-in-out infinite;
+}
+@keyframes ll-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ll-pane__dot {
+    animation: none;
+  }
+}
+:root[data-reduce-motion="true"] .ll-pane__dot {
+  animation: none;
+}
+
+/* -- SAILS badge beside the active tilt ----------------------------------- */
+.rpp__cut {
+  padding: 2px 5px;
+  margin-left: -2px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent-ring);
+  background: transparent;
+  color: var(--accent-text);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10px;
+  cursor: pointer;
+}
+.rpp__cut:hover {
+  background: var(--accent-soft);
+}
+
+/* -- Radar panel: loop length cost ---------------------------------------- */
+.ll-size {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+/* -- speed picker: 0.5x chip, loop delay ---------------------------------- */
+.speedpick__quick {
+  grid-template-columns: repeat(4, 1fr);
+}
+.speedpick__head--delay {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}

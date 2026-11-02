@@ -1,0 +1,648 @@
+/* ---------- colour tables: in-pane editor, import, scale/offset ---------- */
+
+:root {
+  --ctab-warn: #e3ac45;
+  --ctab-check: rgba(var(--wash-rgb), 0.14);
+}
+:root[data-theme="light"] {
+  --ctab-warn: #8f5c06;
+}
+
+/* A pane's colour bar opens its table: say so with the pointer. */
+.mappane__cbar .cbar__bar,
+.cbar__bar {
+  cursor: pointer;
+}
+
+/* ---- the editor, in place of the pane's colour bar ---- */
+.cted {
+  position: relative;
+  pointer-events: auto;
+  padding: 7px 10px 6px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+  outline: none;
+  animation: fade-up var(--t) var(--ease-out) both;
+}
+.cted:focus-visible {
+  border-color: var(--accent-ring);
+}
+.cted__head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+  min-height: 26px;
+}
+.cted__product {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.cted__table {
+  min-width: 120px;
+  max-width: 200px;
+  height: 24px;
+  font-size: 11.5px;
+}
+.cted__dirty,
+.cted__adj {
+  padding: 1px 5px;
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.cted__dirty {
+  border-color: var(--accent-ring);
+  color: var(--accent);
+}
+.cted__grow {
+  flex: 1 1 auto;
+}
+.cted__tools,
+.cted__naming {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.cted__icon {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.cted__icon:hover:not(:disabled) {
+  border-color: var(--border);
+  color: var(--text);
+}
+.cted__icon:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.cted__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cted__btn:hover:not(:disabled) {
+  border-color: var(--accent-ring);
+  color: var(--accent);
+}
+.cted__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.cted__btn--main {
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.cted__btn--danger:hover:not(:disabled) {
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+.cted__name {
+  width: 170px;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--accent-ring);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+}
+
+/* stop markers above the ramp */
+.cted__lane {
+  position: relative;
+  height: 15px;
+  margin: 0 0 1px;
+}
+.cted__stop {
+  position: absolute;
+  bottom: 0;
+  width: 12px;
+  height: 15px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  transform: translateX(-50%);
+  cursor: ew-resize;
+  touch-action: none;
+}
+.cted__stop i {
+  position: absolute;
+  left: 1px;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px var(--border-strong);
+  background-color: var(--panel);
+}
+/* the pin's point, down onto the stop's value */
+.cted__stop::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 1px;
+  height: 5px;
+  background: var(--text-dim);
+  transform: translateX(-50%);
+}
+.cted__stop.is-hidden i {
+  box-shadow: 0 0 0 1px var(--text-faint);
+  opacity: 0.55;
+}
+.cted__stop.is-sel i {
+  box-shadow: 0 0 0 1px var(--panel-solid), 0 0 0 2px var(--accent);
+}
+.cted__stop.is-sel::after {
+  background: var(--accent);
+  width: 2px;
+}
+
+/* the ramp: click to add a stop. Transparent bands show over a faint check. */
+.cted__bar {
+  position: relative;
+  height: 16px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background-color: var(--panel);
+  background-image: repeating-conic-gradient(var(--ctab-check) 0 25%, transparent 0 50%);
+  background-size: 8px 8px;
+  box-shadow: inset 0 0 0 1px rgba(var(--wash-rgb), 0.12);
+  cursor: copy;
+}
+.cted__ramp {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+.cted__ticks {
+  position: relative;
+  height: 13px;
+  margin-top: 2px;
+}
+.cted__tick {
+  position: absolute;
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 9px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.cted__unit {
+  position: absolute;
+  right: 0;
+  top: 12px;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 9px;
+  color: var(--text-faint);
+}
+.cted__foot {
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cted__foot kbd {
+  padding: 0 3px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 9px;
+}
+
+/* a stop's popup, above its marker */
+.cted__pop {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  z-index: 4;
+  width: 230px;
+  padding: 8px 9px;
+  transform: translateX(-50%);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+}
+.cted__pophead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-size: 11.5px;
+  color: var(--text);
+}
+.cted__row {
+  display: grid;
+  grid-template-columns: 46px 1fr auto;
+  align-items: center;
+  gap: 7px;
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.cted__row input[type="color"] {
+  width: 100%;
+  height: 22px;
+  padding: 0 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+.cted__row input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.cted__row code,
+.cted__row em {
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-style: normal;
+  font-size: 10px;
+  color: var(--text-faint);
+  min-width: 34px;
+  text-align: right;
+}
+.cted__num {
+  width: 100%;
+  height: 22px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 11px;
+}
+.cted__row--acts {
+  grid-template-columns: 1fr auto;
+  margin-top: 8px;
+}
+.cted__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.cted__check input {
+  accent-color: var(--accent);
+}
+
+/* ---- import: a drop over the window, the dialog ---- */
+.ctab-drop {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+}
+.ctab-drop__card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 22px;
+  border: 1px dashed var(--accent-ring);
+  border-radius: var(--radius);
+  background: var(--panel-solid);
+  color: var(--text);
+  font-size: 13px;
+}
+.ctab-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  pointer-events: auto;
+}
+.ctab-imp {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  max-height: min(84vh, 820px);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+  animation: fade-up var(--t) var(--ease-out) both;
+}
+.ctab-imp__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px 9px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--accent);
+}
+.ctab-imp__title {
+  color: var(--text);
+  font-size: 13px;
+}
+.ctab-imp__count {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.ctab-imp__body {
+  overflow: auto;
+  padding: 2px 12px 8px;
+}
+.ctab-imp__group h4 {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 12px 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.ctab-imp__group h4 span {
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  color: var(--text-faint);
+}
+.ctab-imp__group h4 em {
+  font-style: normal;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-faint);
+}
+.ctab-imp__group--check h4 {
+  color: var(--ctab-warn);
+}
+.ctab-imp__group--bad h4 {
+  color: var(--danger);
+}
+.ctab-imp__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--border);
+}
+.ctab-imp__room {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.ctab-imp__err {
+  color: var(--danger);
+  font-size: 11px;
+}
+.ctab-row {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.ctab-row > input {
+  margin-top: 5px;
+  accent-color: var(--accent);
+}
+.ctab-row.is-off .ctab-row__name,
+.ctab-row.is-off .ctab-row__strip {
+  opacity: 0.55;
+}
+.ctab-row__main {
+  min-width: 0;
+}
+.ctab-row__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ctab-row__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  color: var(--text);
+}
+.ctab-row__prod {
+  width: 200px;
+  height: 26px;
+  font-size: 11.5px;
+}
+.ctab-row__strip {
+  position: relative;
+  height: 11px;
+  margin-top: 5px;
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px rgba(var(--wash-rgb), 0.12);
+}
+.ctab-row__strip span {
+  position: absolute;
+  right: 0;
+  top: 13px;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+.ctab-row__meta {
+  display: flex;
+  gap: 10px;
+  min-height: 14px;
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.ctab-row__dup {
+  color: var(--text-dim);
+}
+.ctab-row__err {
+  color: var(--danger);
+}
+.ctab-row__warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ctab-warn);
+}
+.ctab-row__warn svg {
+  flex: none;
+  margin-top: 2px;
+}
+.ctab-row__fix {
+  margin-top: 5px;
+}
+.ctab-row__ok {
+  font-size: 11px;
+  color: var(--accent);
+}
+
+/* Settings › Palettes drop zone */
+.ctab-zone {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.ctab-zone.is-over {
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
+}
+.ctab-zone .btn-reset {
+  margin-top: 0;
+}
+
+/* ---- colour scale and offset ---- */
+.ctab-scale {
+  position: fixed;
+  z-index: 95;
+  width: 320px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+  animation: fade-up var(--t) var(--ease-out) both;
+}
+.ctab-scale .ctab-imp__head {
+  padding: 7px 8px 7px 11px;
+}
+.ctab-scale__sub {
+  padding: 7px 11px 0;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.ctab-scale__row {
+  display: grid;
+  grid-template-columns: 46px 1fr 64px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 11px 0;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.ctab-scale__row input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.ctab-scale__strip {
+  height: 12px;
+  margin: 10px 11px 0;
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px rgba(var(--wash-rgb), 0.12);
+}
+.ctab-scale__range {
+  display: flex;
+  justify-content: space-between;
+  margin: 2px 11px 0;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+.ctab-scale__hint {
+  margin: 6px 11px 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+.ctab-scale__acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 11px 10px;
+}
+.ctab-scale .ctab-imp__err {
+  padding: 0 11px 9px;
+}
+.ctab-menuhint {
+  max-width: 92px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- ] / [ note ---- */
+.ctab-note {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--dock-h) + 64px);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  transform: translateX(-50%);
+  border: 1px solid var(--accent-ring);
+  border-radius: var(--radius);
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: fade-up var(--t) var(--ease-out) both;
+}
+.ctab-note svg {
+  color: var(--accent);
+}
+
+/* The editor is taller than the colour bar it replaces, and the zoom stack
+   (which sits just clear of the bar) covered its toolbar and the top stops.
+   Moved up it went under the product picker instead, so it steps aside while
+   the editor is open: the wheel still zooms. */
+body:has(.cted) .zoom {
+  opacity: 0;
+  pointer-events: none;
+}
+body:has(.cted) .ctab-note {
+  bottom: calc(var(--dock-h) + 200px);
+}

@@ -8,13 +8,13 @@ import { requireAccount } from "./useAccountGate";
 
 export type Projection = "mercator" | "globe";
 /** Left data-panel tabs. */
-export type DataView = "catalog" | "layers" | "settings";
+export type DataView = "catalog" | "layers" | "settings" | "now";
 /** Catalog sub-tabs (only "default" is populated in Phase 1). */
 export type CatalogTab = "default" | "my" | "favorite" | "advanced";
 export type CoordFormat = "decimal" | "dms";
 
 function coerceDataView(value: unknown): DataView {
-  return value === "layers" || value === "settings" ? value : "catalog";
+  return value === "layers" || value === "settings" || value === "now" ? value : "catalog";
 }
 
 export interface LayerUIState {
@@ -34,7 +34,7 @@ interface AppState {
   catalogTab: CatalogTab;
   measureMode: MeasureMode;
   /** Split-screen: how many map panes are on screen. */
-  paneCount: 1 | 2 | 4 | 6;
+  paneCount: 1 | 2 | 3 | 4 | 6;
 
   // ---- product catalog (model + variable selection) ----------------------
   selectedModel: string | null;
@@ -48,7 +48,8 @@ interface AppState {
   radarUnits: Record<string, string>;
 
   // ---- live map readout --------------------------------------------------
-  cursor: { lng: number; lat: number } | null;
+  /** `pane`: the pane the pointer is over (unset: the focused one). */
+  cursor: { lng: number; lat: number; pane?: string } | null;
   zoom: number;
 
   // ---- layer system ------------------------------------------------------
@@ -65,11 +66,11 @@ interface AppState {
   setSelectedModel: (id: string | null) => void;
   setSelectedVariable: (id: string | null) => void;
   setMeasureMode: (mode: MeasureMode) => void;
-  setPaneCount: (n: 1 | 2 | 4 | 6) => void;
+  setPaneCount: (n: 1 | 2 | 3 | 4 | 6) => void;
   setReduceMotion: (reduceMotion: boolean) => void;
   setCoordFormat: (coordFormat: CoordFormat) => void;
   setRadarUnit: (kind: string, unit: string) => void;
-  setReadout: (lng: number, lat: number, zoom: number) => void;
+  setReadout: (lng: number, lat: number, zoom: number, pane?: string) => void;
   setZoom: (zoom: number) => void;
   initLayers: () => void;
   toggleLayer: (id: string) => void;
@@ -147,7 +148,7 @@ export const useAppStore = create<AppState>()(
         setRadarUnit: (kind, unit) =>
           set({ radarUnits: { ...get().radarUnits, [kind]: unit } }),
 
-        setReadout: (lng, lat, zoom) => set({ cursor: { lng, lat }, zoom }),
+        setReadout: (lng, lat, zoom, pane) => set({ cursor: { lng, lat, pane }, zoom }),
         setZoom: (zoom) => set({ zoom }),
 
         initLayers: () => {

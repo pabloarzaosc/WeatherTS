@@ -1,6 +1,7 @@
 /** Live alerts from the US National Weather Service (api.weather.gov, public domain). */
 
 import { simplifyGeometry } from "./simplify";
+import { motionText, parseStormMotion } from "./alertTiers";
 
 export type AlertParameters = Record<string, string[] | undefined>;
 
@@ -269,6 +270,84 @@ export async function fetchAlertsIssued(
  *  instead of 86, for one extra page of results. */
 export const ISSUE_LOOKBACK_S = 12 * 3600;
 const MAX_ARCHIVE_PAGES = 6;
+
+/** How far back api.weather.gov's alert archive answers: about a week.
+ *  Measured 2026-10-12: alerts issued on 10-06 came back, 10-05 and anything
+ *  older came back as an empty collection (200, no error) -- so an archive
+ *  radar day read nothing and asked again every few minutes. Older than this,
+ *  the warnings come from the IEM archive instead (fetchArchivedWarnings). */
+export const NWS_ARCHIVE_S = 6 * 86400;
+
+const IEM_SBW_URL = "https://mesonet.agron.iastate.edu/api/1/vtec/sbw_interval.geojson";
+
+/** VTEC phenomena whose warnings read as Extreme / Severe on the map. */
+const IEM_EXTREME = new Set(["TO"]);
+const IEM_SEVERE = new Set(["SV", "FF", "EW", "SQ", "DS", "MA"]);
+
+/**
+ * The storm-based warnings (polygons) of a stretch of the past, from the Iowa
+ * Environmental Mesonet's VTEC archive -- for the times api.weather.gov no
+ * longer holds. Each polygon of an event (the first, then each update) is its
+ * own alert, in force from its begin to its end, so the shape follows the
+ * storm as the warning was updated; under the NWS event name, so the map
+ * colours, filters and lists it like a live one. Watches and zone-based
+ * advisories are not in this set.
+ */
+export async function fetchArchivedWarnings(
+  startUnix: number,
+  endUnix: number,
+  signal?: AbortSignal,
+): Promise<AlertFeature[]> {
+  const iso = (t: number) => new Date(t * 1000).toISOString().slice(0, 16) + "Z";
+  // only_new=false: every polygon of each event, not just the first -- with
+  // the first alone a warning ended at its first update (the Rolling Fork
+  // tornado warning ran 00:53-00:59Z instead of to 01:37Z).
+  const url = `${IEM_SBW_URL}?begints=${iso(startUnix)}&endts=${iso(endUnix)}&only_new=false`;
+  const res = await fetch(url, { signal, headers: { Accept: "application/geo+json" } });
+  if (!res.ok) throw new Error(`IEM ${res.status}`);
+  const data = (await res.json()) as { features?: RawFeature[] };
+  const out: AlertFeature[] = [];
+  for (const f of data.features ?? []) {
+    const p = (f.properties ?? {}) as Record<string, unknown>;
+    const event = str(p.event_label);
+    const begin = str(p.utc_polygon_begin) || str(p.utc_issue);
+    let end = str(p.utc_polygon_end) || str(p.utc_expire);
+    // A few carry a polygon end before its begin (river flood warnings): the
+    // event's own expiry is the end then.
+    if (!begin || !event) continue;
+    if (!end || Date.parse(end) < Date.parse(begin)) end = str(p.utc_expire) || begin;
+    const phen = str(p.phenomena);
+    const status = str(p.status);
+    const wfo = str(p.wfo);
+    out.push({
+      alert: {
+        id: `iem:${wfo}.${str(p.ph_sig)}.${String(p.eventid ?? "")}.${String(p.year ?? "")}:${begin}`,
+        areaDesc: str(p.locations),
+        sent: begin,
+        effective: begin,
+        onset: begin,
+        expires: end,
+        ends: end,
+        status: "Actual",
+        messageType: status === "NEW" ? "Alert" : status === "CAN" || status === "EXP" ? "Cancel" : "Update",
+        category: "Met",
+        severity: IEM_EXTREME.has(phen) ? "Extreme" : IEM_SEVERE.has(phen) ? "Severe" : "Moderate",
+        certainty: "Observed",
+        urgency: "Immediate",
+        event,
+        senderName: wfo ? `NWS ${wfo}` : "NWS",
+        headline: wfo ? `${event} issued by NWS ${wfo}` : event,
+        description: "",
+        instruction: null,
+        response: "",
+        parameters: {},
+        affectedZones: [],
+      },
+      geometry: f.geometry ?? null,
+    });
+  }
+  return dedupeById(out);
+}
 
 function parseAlertFeatures(features: RawFeature[] | undefined): AlertFeature[] {
   // The requests already ask for status=actual; this holds if a proxy or a
@@ -1007,8 +1086,13 @@ export function setEventColorResolver(fn: (normalizedEvent: string) => string | 
 
 export function eventColor(event: string): string {
   const normalized = event.trim().replace(/\s+/g, " ").toLowerCase();
+  return eventColorResolver?.(normalized) ?? defaultEventColor(event);
+}
+
+/** A product's colour before Settings: the defaults of the per-type colours. */
+export function defaultEventColor(event: string): string {
+  const normalized = event.trim().replace(/\s+/g, " ").toLowerCase();
   return (
-    eventColorResolver?.(normalized) ??
     EXACT_EVENT_COLORS[normalized] ??
     EVENT_PATTERNS.find(([pattern]) => pattern.test(event))?.[1] ??
     hashColor(event || "Alert")
@@ -1192,14 +1276,16 @@ function compassFromDegrees(degrees: number): string {
 }
 
 function formatMotion(raw: string): string {
+  // "Southeast (130°) at 6 kt" -- the same words the map's motion arrows use.
+  const m = parseStormMotion(raw);
+  if (m) return motionText(m);
   const parts = raw.match(/\.\.\.[a-z]+\.\.\.(\d+)DEG\.\.\.(\d+)KT/i);
   if (!parts) return raw;
   const fromDegrees = Number(parts[1]);
   const kt = Number(parts[2]);
   if (!Number.isFinite(fromDegrees) || !Number.isFinite(kt)) return raw;
   const toward = compassFromDegrees((fromDegrees + 180) % 360);
-  const mph = Math.round(kt * 1.15078);
-  return `Moving ${toward} at ${mph} mph`;
+  return `${toward} at ${Math.round(kt)} kt`;
 }
 
 function formatDateTime(raw: string): string {
@@ -1356,6 +1442,14 @@ export function formatTimeLeft(ms: number): string {
   return `${h}h ${m}m`;
 }
 
+/** "in 12 minutes", "in under a minute", or "now" once the time has come --
+ *  never "in now". */
+export function timeLeftPhrase(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return "now";
+  if (ms < 60000) return "in under a minute";
+  return `in ${formatTimeLeft(ms)}`;
+}
+
 export function alertSummaryFacts(alert: NwsAlert, now = Date.now()): HumanAlertParameter[] {
   const rows: HumanAlertParameter[] = [];
   const add = (key: string, label: string, value?: string) => {
@@ -1402,7 +1496,8 @@ export function alertSummaryFacts(alert: NwsAlert, now = Date.now()): HumanAlert
   addSectionFact(rows, sections, "IMPACTS", "Impacts");
   addSectionFact(rows, sections, "IMPACT", "Impact");
   addSectionFact(rows, sections, "ADDITIONAL DETAILS", "Details");
-  add("expires", "Expires", Number.isNaN(expires) ? undefined : `in ${formatTimeLeft(expires - now)}`);
+  // Agrees with the panel's badge: "Expired" once past, not "in now".
+  add("expires", "Expires", Number.isNaN(expires) ? undefined : expires <= now ? "Expired" : timeLeftPhrase(expires - now));
   return rows;
 }
 

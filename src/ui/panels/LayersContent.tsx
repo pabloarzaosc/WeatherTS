@@ -3,6 +3,7 @@ import { ChevronRight, Eye, EyeOff } from "lucide-react";
 
 import { useAppStore } from "../../store/useAppStore";
 import { getLayerModules } from "../../layers/registry";
+import { layerAllowed, useFeatureStore } from "../../store/useFeatureStore";
 import { LAYER_CATEGORIES, type LayerModule } from "../../layers/types";
 
 /**
@@ -23,7 +24,9 @@ export function LayersContent() {
   const moveLayer = useAppStore((s) => s.moveLayer);
   const setLayerVisibilityBatch = useAppStore((s) => s.setLayerVisibilityBatch);
 
-  const modules = getLayerModules();
+  // Settings > Features (ux-shell): a switched-off feature's layers are not listed.
+  const featuresOff = useFeatureStore((s) => s.off);
+  const modules = getLayerModules().filter((m) => layerAllowed(m.id, m.category, featuresOff));
   const groups = LAYER_CATEGORIES.map((cat) => ({
     cat,
     items: modules

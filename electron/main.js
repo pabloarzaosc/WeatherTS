@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import path from 'path';
 import { spawn, execFile, exec } from 'child_process';
 import fs from 'fs';
@@ -43,8 +43,36 @@ function authUrlFrom(argv) {
   return (argv || []).find((a) => typeof a === 'string' && a.startsWith(`${AUTH_PROTOCOL}://`)) || null;
 }
 
+// Links to a moment (weatherts://view?site=KTLX&datetime=...): the same
+// protocol as the sign-in callback, handed to the page on their own channel.
+// One that arrives before the page listens waits to be asked for (link:pending).
+let pendingViewUrl = null;
+function isViewUrl(url) {
+  try {
+    return new URL(url).host === 'view';
+  } catch (_) {
+    return false;
+  }
+}
+
+function deliverViewUrl(url) {
+  if (mainWindow && !mainWindow.webContents.isLoading()) {
+    mainWindow.webContents.send('link:open', url);
+  } else {
+    pendingViewUrl = url;
+  }
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+}
+
 function deliverAuthUrl(url) {
   if (!url) return;
+  if (isViewUrl(url)) {
+    deliverViewUrl(url);
+    return;
+  }
   if (mainWindow && !mainWindow.webContents.isLoading()) {
     mainWindow.webContents.send('auth:callback', url);
   } else {
@@ -84,6 +112,10 @@ app.on('open-url', (event, url) => {
 
 // A cold start launched BY the link: the URL is in this process's own argv.
 pendingAuthUrl = authUrlFrom(process.argv);
+if (pendingAuthUrl && isViewUrl(pendingAuthUrl)) {
+  pendingViewUrl = pendingAuthUrl;
+  pendingAuthUrl = null;
+}
 
 function getFreePort(preferredPort) {
   return new Promise((resolve, reject) => {
@@ -201,7 +233,10 @@ function createWindow() {
     title: 'WeatherTS — Geo Workstation',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
-      webSecurity: false
+      webSecurity: false,
+      // Alert sounds (src/lib/alertSounds.ts) have to play for a warning that
+      // arrives while the window sits hidden, before anything was clicked.
+      autoplayPolicy: 'no-user-gesture-required'
     }
   });
 
@@ -337,6 +372,13 @@ function setupAutoUpdater() {
     return pendingUpdateInfo;
   });
 
+  // A view link that came before the page was listening, handed over once.
+  ipcMain.handle('link:pending', () => {
+    const url = pendingViewUrl;
+    pendingViewUrl = null;
+    return url;
+  });
+
   // IPC: get current version
   ipcMain.handle('app:version', () => {
     return app.getVersion();
@@ -348,6 +390,30 @@ function setupAutoUpdater() {
   ipcMain.on('render:keep', (_e, on) => {
     mainWindow?.webContents.setBackgroundThrottling(!on);
   });
+
+  // The Export page (src/lib/viewExport.ts): a save dialog that opens on the
+  // Downloads folder with the export's name filled in, then "Show in folder"
+  // for what was saved -- only paths this session wrote can be shown.
+  const exportedPaths = new Set();
+  ipcMain.handle('export:save', async (_e, name, bytes) => {
+    const safe = path.basename(String(name || 'weatherts-export')).replace(/[<>:"/\\|?*\x00-\x1f]/g, '-');
+    const ext = path.extname(safe).slice(1).toLowerCase();
+    const res = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save export',
+      defaultPath: path.join(app.getPath('downloads'), safe),
+      filters: ext ? [{ name: ext.toUpperCase(), extensions: [ext] }, { name: 'All files', extensions: ['*'] }] : [],
+    });
+    if (res.canceled || !res.filePath) return null;
+    await fs.promises.writeFile(res.filePath, Buffer.from(bytes));
+    exportedPaths.add(res.filePath);
+    return res.filePath;
+  });
+  ipcMain.handle('export:reveal', (_e, filePath) => {
+    if (typeof filePath !== 'string' || !exportedPaths.has(filePath)) return false;
+    shell.showItemInFolder(filePath);
+    return true;
+  });
+
 }
 
 app.whenReady().then(async () => {

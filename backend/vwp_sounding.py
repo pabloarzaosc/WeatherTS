@@ -20,6 +20,7 @@ import base64
 import math
 from typing import Any, Optional
 
+from nexrad_core import icao_for
 import nexrad_vwp
 import sounding_core
 
@@ -76,12 +77,12 @@ def build_vwp_sounding(
     vwp = nexrad_vwp.build_vwp(site, columns=1)
     cols = vwp.get("columns") or []
     if not cols:
-        raise NoProfileError(f"No VAD wind profile available for K{site.upper()}.")
+        raise NoProfileError(f"No VAD wind profile available for {icao_for(site)}.")
     latest = cols[-1]
     points = _vad_points(latest.get("levels") or [])
     if len(points) < 3:
         raise NoProfileError(
-            f"K{site.upper()} published a VAD but it carried fewer than three usable "
+            f"{icao_for(site)} published a VAD but it carried fewer than three usable "
             "wind levels, which is not enough to build a profile."
         )
 

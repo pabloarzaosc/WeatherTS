@@ -1537,7 +1537,7 @@ export const obsLayer: LayerModule = {
     await draw(map);
   },
 
-  removeFrom(map) {
+  removeFrom(map, styleSwap) {
     const st = state.get(map);
     if (st) {
       st.seq += 1;
@@ -1553,7 +1553,8 @@ export const obsLayer: LayerModule = {
       state.delete(map);
       panes = Math.max(0, panes - 1);
     }
-    if (panes === 0) {
+    // A style swap puts it straight back on: the loop being made stays.
+    if (panes === 0 && !styleSwap) {
       if (refreshTimer != null) window.clearInterval(refreshTimer);
       refreshTimer = null;
       useObsStore.getState().dropLoop(true);
@@ -1564,7 +1565,7 @@ export const obsLayer: LayerModule = {
     for (const id of [SRC, DETAIL_SRC, EDGE_SRC, OUTLINE_SRC, BARBS_SRC, BORDER_SRC, ISO_SRC, CENTRE_SRC, ...TRACK_SRCS]) {
       if (map.getSource(id)) map.removeSource(id);
     }
-    useObsStore.getState().setStatus({ busy: false, error: null, valid: null });
+    if (!styleSwap) useObsStore.getState().setStatus({ busy: false, error: null, valid: null });
   },
 
   setOpacity(map, opacity) {

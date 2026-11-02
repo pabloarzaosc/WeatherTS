@@ -4224,7 +4224,10 @@ html[data-reduce-motion="true"] *::after {
   align-items: center;
   gap: 8px;
   padding: 5px 8px;
-  background: linear-gradient(to bottom, rgba(6, 9, 14, 0.9), rgba(6, 9, 14, 0));
+  /* No band across the map: the name sits on its own hairline chip
+     (.panehead__focus), in theme colours -- the old dark fade made the names
+     unreadable over the light basemap. */
+  background: none;
   pointer-events: none; /* the map keeps the drag; only the picker is clickable */
 }
 .panehead__name {
@@ -4235,7 +4238,6 @@ html[data-reduce-motion="true"] *::after {
   font-size: 12px;
   font-weight: 600;
   color: var(--text);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4255,7 +4257,6 @@ html[data-reduce-motion="true"] *::after {
   font-variation-settings: var(--mono-axes);
   font-size: 10.5px;
   color: var(--accent);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
 /* Clicking the title aims the top-right product picker at this pane. */
 .panehead__focus {
@@ -4265,19 +4266,22 @@ html[data-reduce-motion="true"] *::after {
   gap: 8px;
   min-width: 0;
   padding: 3px 7px;
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: transparent;
+  background: var(--panel);
   transition: background var(--t-fast), border-color var(--t-fast);
 }
 .panehead__focus:hover {
-  background: rgba(6, 9, 14, 0.75);
+  background: var(--panel-solid);
   border-color: var(--border-strong);
 }
 .panehead__hint {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
   font-size: 10px;
-  color: var(--text-faint);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  color: var(--text-dim);
   opacity: 0;
   transition: opacity var(--t-fast);
 }
@@ -4825,6 +4829,9 @@ html[data-reduce-motion="true"] *::after {
   color: var(--text);
 }
 .sfx__chip--wide { width: 100%; border-radius: var(--radius); padding: 7px 10px; text-align: center; }
+
+/* The Archive panel's moment: the day and the time beside it, both UTC. */
+.archv__when { display: grid; grid-template-columns: 1fr 76px 70px; gap: 6px; align-items: stretch; }
 
 /* The mesoanalysis archive's notable days: one row each, name over place and hour. */
 .mesoev {

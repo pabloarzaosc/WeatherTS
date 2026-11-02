@@ -1,0 +1,515 @@
+/* Aviation: the panel, the map cards and the airport page. The airport page
+   borrows the station page's frame (stn__*); what is its own is here. */
+
+/* ---- The Aviation panel ------------------------------------------------- */
+.avn__legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 10.5px; color: var(--text-dim); }
+.avn__legend span { display: inline-flex; align-items: center; gap: 5px; }
+.avn__legend i { width: 9px; height: 9px; border-radius: 50%; }
+.avn__sw { display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 2px; vertical-align: 0; }
+.avn__range { width: 100%; accent-color: var(--accent); }
+
+.avn__hits {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.avn__hit {
+  display: grid;
+  grid-template-columns: 8px 58px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 7px;
+  align-items: center;
+  padding: 6px 9px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  text-align: left;
+  cursor: pointer;
+}
+.avn__hit:last-child { border-bottom: 0; }
+.avn__hit:hover { background: rgba(var(--wash-rgb), 0.05); color: var(--text); }
+.avn__hit i { grid-row: 1 / span 2; width: 8px; height: 8px; border-radius: 50%; }
+.avn__hit b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-variation-settings: var(--mono-axes); font-size: 12px; color: var(--text); }
+.avn__hit span { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avn__hit em {
+  grid-column: 2 / span 2;
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+
+/* ---- Map cards ---------------------------------------------------------- */
+.avnpopwrap .maplibregl-popup-content {
+  padding: 0;
+  overflow: hidden;
+  min-width: 250px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--panel-solid);
+  color: var(--text);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.42);
+}
+.avnpopwrap .maplibregl-popup-tip { display: none; }
+.avnpopwrap .maplibregl-popup-close-button { width: 24px; height: 24px; color: var(--text-dim); font-size: 17px; }
+.avnpop { display: flex; flex-direction: column; gap: 4px; padding: 9px 11px 10px; font-size: 11.5px; }
+.avnpop__head { display: flex; align-items: flex-start; gap: 8px; padding-right: 18px; margin-bottom: 3px; }
+.avnpop__head i { flex: 0 0 auto; width: 10px; height: 10px; margin-top: 3px; border-radius: 2px; }
+.avnpop__head b { display: block; font-size: 12.5px; }
+.avnpop__head span {
+  display: block;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10px;
+}
+.avnpop__row { display: flex; justify-content: space-between; gap: 12px; color: var(--text-dim); }
+.avnpop__row b { font-family: var(--mono); font-variation-settings: var(--mono-axes); font-size: 11px; color: var(--text); text-align: right; }
+.avnpop__text { color: var(--text-dim); line-height: 1.4; }
+.avnpop__raw {
+  max-height: 150px;
+  margin: 5px 0 0;
+  padding: 6px 7px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(var(--wash-rgb), 0.03);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- The airport page --------------------------------------------------- */
+.apt__panel { width: min(1260px, 100%); max-height: 92vh; }
+.apt .stn__body { grid-template-columns: 300px minmax(0, 1fr); }
+.apt__raw {
+  display: block;
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(var(--wash-rgb), 0.03);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  word-break: break-word;
+}
+.apt__raw--taf { white-space: pre-wrap; margin-top: 2px; }
+.apt__none { padding: 8px 0; font-size: 11.5px; color: var(--text-faint); }
+.apt__note { margin-top: 6px; font-size: 10.5px; color: var(--text-faint); }
+.apt__badge {
+  margin-left: 5px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-style: normal;
+  font-size: 9.5px;
+}
+.apt__units { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; margin-top: 9px; }
+.apt__units span { margin-left: 8px; font-size: 10.5px; color: var(--text-faint); }
+.apt__reports { max-height: 520px; }
+.apt__pirep code b { color: var(--text); font-weight: 600; }
+
+/* Runways and wind */
+.apt__rwy { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.apt__rose { fill: none; stroke: var(--border); stroke-width: 1; }
+.apt__rosel { fill: var(--text-faint); font-size: 9px; font-family: var(--mono); text-anchor: middle; }
+.apt__strip { stroke: color-mix(in srgb, var(--text) 45%, transparent); stroke-width: 7; stroke-linecap: butt; }
+.apt__strip.is-best { stroke: color-mix(in srgb, #4ade80 75%, var(--text)); }
+.apt__rnum { fill: var(--text-dim); font-size: 9px; font-weight: 700; font-family: var(--mono); text-anchor: middle; paint-order: stroke; stroke: var(--panel-solid); stroke-width: 3px; }
+.apt__rnum.is-best { fill: #4ade80; }
+.apt__windarrow line { stroke: #38bdf8; stroke-width: 2.4; }
+.apt__windarrow path { fill: #38bdf8; }
+.apt__windtxt { margin-top: -4px; font-family: var(--mono); font-variation-settings: var(--mono-axes); font-size: 12px; font-weight: 650; color: var(--text); }
+.apt__comp { display: flex; flex-direction: column; width: 100%; font-size: 11.5px; }
+.apt__comphead,
+.apt__comprow { display: grid; grid-template-columns: 1.4fr 0.8fr 1fr; gap: 6px; padding: 3px 6px; border-radius: var(--radius); }
+.apt__comphead { font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); }
+.apt__comprow { color: var(--text-dim); }
+.apt__comprow:nth-child(odd) { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.apt__comprow b { font-family: var(--mono); color: var(--text); }
+.apt__comprow em { margin-left: 5px; font-style: normal; font-size: 10px; color: var(--text-faint); }
+.apt__comprow > span:not(:first-child) { font-family: var(--mono); font-variation-settings: var(--mono-axes); }
+.apt__comprow.is-best { outline: 1px solid color-mix(in srgb, #4ade80 55%, transparent); }
+.apt__comprow .is-tail { color: #f87171; }
+.apt__comprow .is-warn { color: #f59e0b; }
+.apt__comprow .is-bad { color: #ef4444; }
+.apt__compnote { margin-top: 4px; font-size: 9.5px; color: var(--text-faint); text-align: center; }
+
+/* Tables: TAF groups, winds aloft */
+.apt__table { display: flex; flex-direction: column; margin-top: 8px; font-size: 11px; }
+.apt__trow {
+  display: grid;
+  grid-template-columns: 94px 52px 52px 108px 64px minmax(0, 1fr) minmax(0, 1.3fr) 58px;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 6px;
+  border-radius: var(--radius);
+  color: var(--text-dim);
+}
+.apt__trow:nth-child(odd):not(.apt__trow--head) { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.apt__trow--head { font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); }
+.apt__trow > span:nth-child(2),
+.apt__trow > span:nth-child(3),
+.apt__trow > span:nth-child(4),
+.apt__trow > span:nth-child(5) { font-family: var(--mono); font-variation-settings: var(--mono-axes); }
+.apt__trow.is-temp { color: var(--text-faint); font-style: italic; }
+.apt__catdot { display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; }
+.apt__table--fb .apt__trow { grid-template-columns: 90px repeat(3, minmax(0, 1fr)); }
+.apt__table--fb .apt__trow > span { font-family: var(--mono); font-variation-settings: var(--mono-axes); }
+.apt__table--fb em { font-style: normal; color: #f87171; }
+.apt__table--fb em.is-cold { color: #60a5fa; }
+
+/* Advisories over the field */
+.apt__advs { display: flex; flex-direction: column; gap: 4px; }
+.apt__adv { border: 1px solid color-mix(in srgb, var(--hz) 40%, var(--border)); border-radius: var(--radius); }
+.apt__adv summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  font-size: 11.5px;
+  cursor: pointer;
+  list-style: none;
+}
+.apt__adv summary::-webkit-details-marker { display: none; }
+.apt__adv summary i { width: 9px; height: 9px; border-radius: 2px; background: var(--hz); }
+.apt__adv summary b { color: var(--text); }
+.apt__adv summary span { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--text-faint); }
+.apt__adv pre {
+  margin: 0;
+  padding: 6px 9px 8px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+}
+
+/* ---- The airport chart -------------------------------------------------- */
+.aptc { position: relative; margin-top: 10px; }
+.aptc__panel { position: relative; }
+.aptc__title {
+  position: absolute;
+  top: 0;
+  left: 52px;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+.aptc__legend {
+  position: absolute;
+  top: 0;
+  right: 48px;
+  display: flex;
+  gap: 10px;
+  font-size: 9.5px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+.aptc__legend span { display: inline-flex; align-items: center; gap: 4px; }
+.aptc__legend i { width: 10px; height: 2px; border-radius: 1px; }
+.aptc__legend i.is-dashed { background-image: linear-gradient(90deg, currentColor 0 4px, transparent 4px 6px); }
+.aptc__grid { stroke: color-mix(in srgb, var(--border) 70%, transparent); stroke-width: 1; }
+.aptc__grid--day { stroke: color-mix(in srgb, var(--text) 22%, transparent); }
+.aptc__thresh { stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.75; }
+.aptc__ylab { fill: var(--text-faint); font-size: 8.5px; font-family: var(--mono); text-anchor: end; }
+.aptc__rlab { font-size: 8px; font-family: var(--mono); font-weight: 700; opacity: 0.9; }
+.aptc__xlab { fill: var(--text-faint); font-size: 8.5px; font-family: var(--mono); }
+.aptc__future { fill: color-mix(in srgb, var(--accent) 4%, transparent); }
+.aptc__now { stroke: var(--accent); stroke-width: 1.4; }
+.aptc__cross { stroke: color-mix(in srgb, var(--text) 55%, transparent); stroke-width: 1; }
+.aptc__segedge { stroke: var(--panel-solid); stroke-width: 1.2; }
+.aptc__tempo { fill-opacity: 0.22; stroke-width: 1; stroke-dasharray: 3 2; }
+.aptc__seglab { fill: var(--text); font-size: 8.5px; font-family: var(--mono); font-weight: 600; }
+.aptc__cloud { fill: color-mix(in srgb, var(--text) 78%, #7d8ea3); }
+.aptc__fcloud { fill: var(--accent); fill-opacity: 0.35; stroke: var(--accent); stroke-width: 0.8; stroke-dasharray: 3 2; }
+.aptc__tcloud { fill: none; stroke-width: 1.1; stroke-dasharray: 2 2; }
+.aptc__ceil { fill: none; stroke: var(--text); stroke-width: 1.6; }
+.aptc__fline { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 3; }
+.aptc__obsline { fill: none; stroke: var(--text); stroke-width: 1.6; }
+.aptc__obsfill { fill: color-mix(in srgb, var(--text) 4%, transparent); }
+.aptc__spread { fill: color-mix(in srgb, #22c55e 9%, transparent); }
+.aptc__arrow path { stroke: #8ea0b6; stroke-width: 1.2; fill: none; }
+.aptc__arrow.is-fc path { stroke: var(--accent); }
+.aptc__wx { fill: var(--text); font-size: 9.5px; font-family: var(--mono); font-weight: 600; }
+.aptc__wx.is-fc { fill: var(--accent); }
+.aptc__tip {
+  position: absolute;
+  top: 4px;
+  z-index: 2;
+  min-width: 170px;
+  max-width: 260px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+.aptc__tip > b { font-family: var(--mono); font-variation-settings: var(--mono-axes); font-size: 12px; color: var(--text); }
+.aptc__tip > span { margin-left: 6px; font-size: 10px; color: var(--text-faint); }
+.aptc__tipsec { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--border); }
+.aptc__tipsec > em {
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+.aptc__tiprow { display: grid; grid-template-columns: 7px 74px minmax(0, 1fr); align-items: center; gap: 6px; }
+.aptc__tiprow i { width: 6px; height: 6px; border-radius: 50%; }
+.aptc__tiprow span { grid-column: 2; font-size: 10.5px; color: var(--text-dim); }
+.aptc__tiprow b { font-family: var(--mono); font-size: 10.5px; font-weight: 600; color: var(--text); text-align: right; }
+
+@media (max-width: 880px) {
+  .apt .stn__body { grid-template-columns: minmax(0, 1fr); }
+  .apt__trow { grid-template-columns: 70px 44px 44px 92px 54px minmax(0, 1fr); }
+  .apt__trow > span:nth-child(7),
+  .apt__trow > span:nth-child(8) { display: none; }
+}
+/* Decoded METAR groups: the code, what it is, what it says */
+.apt__dec { display: flex; flex-direction: column; gap: 1px; margin-bottom: 4px; font-size: 11px; }
+.apt__dec > div {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  padding: 4px 6px;
+  border-left: 2px solid transparent;
+  border-radius: var(--radius);
+}
+.apt__dec > div:nth-child(odd) { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.apt__dec code {
+  grid-row: 1;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10px;
+  color: var(--text-faint);
+  word-break: break-all;
+}
+.apt__dec span { grid-row: 1; font-size: 9.5px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-faint); text-align: right; }
+.apt__dec b { grid-column: 1 / span 2; font-weight: 500; color: var(--text); line-height: 1.35; }
+.apt__dec > .is-warn { border-left-color: #f59e0b; }
+.apt__dec > .is-bad { border-left-color: #ef4444; }
+
+/* Frequencies and navaids */
+.apt__freqs,
+.apt__navs { display: flex; flex-direction: column; gap: 1px; font-size: 11px; }
+.apt__freqs > div {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: baseline;
+  padding: 3px 6px;
+  border-radius: var(--radius);
+  color: var(--text-dim);
+}
+.apt__freqs > div:nth-child(odd),
+.apt__navs > div:nth-child(odd) { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.apt__freqs em { font-style: normal; font-family: var(--mono); font-size: 9.5px; color: var(--text-faint); }
+.apt__freqs span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.apt__freqs b,
+.apt__navs b { font-family: var(--mono); font-variation-settings: var(--mono-axes); color: var(--text); }
+.apt__navs > div {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 6px;
+  padding: 3px 6px;
+  border-radius: var(--radius);
+  color: var(--text-dim);
+}
+.apt__navs span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.apt__navs em { grid-column: 2; font-style: normal; font-family: var(--mono); font-size: 10px; color: var(--text-faint); }
+.apt__navs i { grid-row: 1 / span 2; grid-column: 3; align-self: center; font-style: normal; font-family: var(--mono); font-size: 10.5px; color: var(--text); }
+.apt__links { display: flex; gap: 10px; margin-top: 6px; font-size: 11px; }
+.apt__links a { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); text-decoration: none; }
+.apt__links a:hover { text-decoration: underline; }
+
+/* Runways to scale */
+.apt__tick { stroke: var(--border); stroke-width: 1; }
+.apt__strip2 { stroke: color-mix(in srgb, var(--text) 50%, transparent); stroke-linecap: butt; }
+.apt__strip2.is-soft { stroke: color-mix(in srgb, #4ade80 30%, var(--text-faint)); stroke-dasharray: 4 2; }
+.apt__strip2.is-best { stroke: color-mix(in srgb, #4ade80 75%, var(--text)); }
+.apt__strip2.is-closed { stroke: color-mix(in srgb, #ef4444 50%, transparent); stroke-dasharray: 3 3; }
+.apt__disp { stroke: #f59e0b; stroke-width: 1.4; }
+.apt__scalebar line { stroke: var(--text-faint); stroke-width: 1; }
+.apt__scalebar text { fill: var(--text-faint); font-size: 8.5px; font-family: var(--mono); text-anchor: middle; }
+.apt__rwylist { display: flex; flex-direction: column; gap: 1px; width: 100%; font-size: 11px; }
+.apt__rwyitem { display: flex; flex-direction: column; padding: 3px 6px; border-radius: var(--radius); color: var(--text-dim); }
+.apt__rwyitem:nth-child(odd) { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.apt__rwyitem b { font-family: var(--mono); color: var(--text); }
+.apt__rwyitem em { font-style: normal; font-family: var(--mono); font-size: 9.5px; color: var(--text-faint); }
+.apt__rwyitem.is-closed { opacity: 0.6; }
+
+/* METAR list rows that open into their decoding */
+.apt__mrow { display: block; padding: 0; }
+.apt__mhead {
+  display: grid;
+  grid-template-columns: 8px 46px minmax(0, 1fr) 14px;
+  gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  padding: 5px 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.apt__mhead:hover { background: rgba(var(--wash-rgb), 0.04); }
+.apt__mhead .stn__dot { align-self: center; }
+.apt__chev { color: var(--text-faint); transition: transform 120ms ease; align-self: center; }
+.apt__mrow.is-open .apt__chev { transform: rotate(180deg); }
+.apt__mbody { padding: 2px 6px 8px 68px; }
+
+/* TAF extras */
+.apt__txtn { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 2px 0 6px; font-size: 11px; color: var(--text-dim); }
+.apt__txtn .is-max::before,
+.apt__txtn .is-min::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; }
+.apt__txtn .is-max::before { background: #ef4444; }
+.apt__txtn .is-min::before { background: #60a5fa; }
+.apt__table--taf .apt__trow { grid-template-columns: 90px 50px 50px 104px 60px minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr) 54px; }
+.apt__words { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; line-height: 1.45; color: var(--text-dim); }
+.apt__words p { margin: 0; }
+.apt__words p.is-temp { color: var(--text-faint); font-style: italic; }
+
+/* Winds aloft: the model columns and the official FB */
+.apt__table--aloft .apt__trow { grid-template-columns: 82px repeat(var(--cols), minmax(0, 1fr)); }
+.apt__table--aloft .apt__trow > span { font-family: var(--mono); font-variation-settings: var(--mono-axes); }
+.apt__table--aloft .apt__trow--head > span { font-family: inherit; }
+.apt__table--aloft .apt__trow--head i {
+  display: block;
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text-faint);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.apt__table--aloft em { font-style: normal; color: #f87171; }
+.apt__table--aloft em.is-cold { color: #60a5fa; }
+.apt__table--aloft .is-fb { color: var(--accent); }
+.apt__gap { flex: 1; }
+
+/* Nearby: the FIR and the airports around */
+.apt__fir { display: flex; align-items: baseline; gap: 8px; margin-top: 9px; font-size: 11.5px; color: var(--text-dim); }
+.apt__fir b { font-family: var(--mono); color: var(--text); }
+.apt__table--near .apt__trow { grid-template-columns: minmax(0, 1.6fr) 74px 56px 104px 60px 70px minmax(0, 1fr) 48px; }
+.apt__table--near .apt__trow > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.apt__table--near .apt__trow > span:first-child b { font-family: var(--mono); color: var(--text); }
+.apt__trow--btn { border: 0; background: transparent; color: var(--text-dim); text-align: left; font: inherit; cursor: pointer; }
+.apt__trow--btn:hover { background: rgba(var(--wash-rgb), 0.06) !important; color: var(--text); }
+
+/* ---- The time-height chart ---------------------------------------------- */
+.aloft { position: relative; margin-top: 8px; }
+.aloft svg { display: block; }
+.aloft__cloud { fill: color-mix(in srgb, var(--text) 70%, #7d8ea3); }
+.aloft__iso { fill: none; stroke: #f87171; stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.8; }
+.aloft__iso.is-cold { stroke: #60a5fa; }
+.aloft__iso.is-zero { stroke: #3b82f6; stroke-width: 2; stroke-dasharray: none; opacity: 1; }
+.aloft__isolab { fill: var(--text-faint); font-size: 8.5px; font-family: var(--mono); }
+.aloft__frz { fill: none; stroke: #22d3ee; stroke-width: 1.6; stroke-dasharray: 6 3; }
+.aloft__trop { fill: none; stroke: #c084fc; stroke-width: 1.8; stroke-dasharray: 8 4; }
+.aloft__ground { fill: color-mix(in srgb, #8b6f47 35%, var(--panel-solid)); }
+.aloft__barb { stroke-width: 1.2; stroke-linecap: round; }
+.aloft__calm { fill: none; stroke: var(--text-faint); stroke-width: 1; }
+.aloft__tip { max-width: 330px; min-width: 240px; }
+.aloft__tip .aptc__tiprow { grid-template-columns: 7px 88px minmax(0, 1fr); }
+.aloft__lvl span em { font-style: normal; font-size: 9px; color: var(--text-faint); }
+.aloft__lvl.is-on span,
+.aloft__lvl.is-on b { color: var(--accent); }
+.aloft__legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 10px; color: var(--text-faint); }
+.aloft__legend span { display: inline-flex; align-items: center; gap: 5px; }
+.aloft__sw { width: 12px; height: 9px; border-radius: 2px; }
+.aloft__sw.is-cloud { background: color-mix(in srgb, var(--text) 45%, transparent); }
+.aloft__sw.is-turb { background: repeating-linear-gradient(45deg, rgba(245, 158, 11, 0.85) 0 2px, rgba(245, 158, 11, 0.15) 2px 5px); }
+.aloft__ln { width: 14px; height: 0; border-top: 2px solid; }
+.aloft__ln.is-zero { border-color: #3b82f6; }
+.aloft__ln.is-frz { border-color: #22d3ee; border-top-style: dashed; }
+.aloft__ln.is-trop { border-color: #c084fc; border-top-style: dashed; }
+
+@media (max-width: 880px) {
+  .apt__table--taf .apt__trow { grid-template-columns: 70px 44px 44px 92px 54px minmax(0, 1fr); }
+  .apt__table--taf .apt__trow > span:nth-child(n + 7) { display: none; }
+  .apt__table--near .apt__trow { grid-template-columns: minmax(0, 1fr) 64px 50px 92px; }
+  .apt__table--near .apt__trow > span:nth-child(n + 5) { display: none; }
+  .apt__table--aloft .apt__trow > span:nth-child(7),
+  .apt__table--aloft .apt__trow > span:nth-child(8) { display: block; }
+}
+
+/* ---- The middle used: the Airport tab's cards, the wide decoding ------- */
+.apt__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  gap: 12px;
+  align-items: start;
+  margin-top: 10px;
+}
+.apt__card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 2px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.apt__card > .apt__rwy { margin-top: 4px; }
+.apt__decwide {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.apt__decwide .apt__dec { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 2px 6px; }
+.apt__decwide .apt__dec > div:nth-child(odd) { background: transparent; }
+.apt__decwide .apt__dec > div { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.apt__decwhat {
+  margin: 4px 0 4px;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.apt__inuse {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, #4ade80 45%, var(--border));
+  border-radius: var(--radius);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.apt__inuse b { font-family: var(--mono); font-size: 13px; color: #4ade80; }
+.apt__inuse em { font-style: normal; font-family: var(--mono); color: var(--text); }
+.apt__inuse em.is-warn { color: #f59e0b; }
+.apt__inuse em.is-bad { color: #ef4444; }
+.apt__more {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+.apt__more:hover { text-decoration: underline; }
+.apt__mbody .apt__dec { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 2px 6px; }
+.apt__mbody .apt__dec > div:nth-child(odd) { background: transparent; }
+.apt__mbody .apt__dec > div { background: color-mix(in srgb, var(--text) 3%, transparent); }

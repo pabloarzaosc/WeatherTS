@@ -1,0 +1,443 @@
+/* The Frames panel (FramesPanel.tsx), the connection badge and pane note
+   (ConnectionBadge.tsx), and the timeline readout that must never clip.
+   Theme tokens and hairlines; the frame-state colours are looplive.css's
+   --ll-* tokens, so the dots match the line under the scrubber. */
+
+:root {
+  --conn-weak: #e3bd4a;
+  --conn-weak-soft: rgba(227, 189, 74, 0.14);
+  --conn-weak-border: rgba(227, 189, 74, 0.5);
+}
+:root[data-theme="light"] {
+  --conn-weak: #8a6500;
+  --conn-weak-soft: rgba(185, 138, 7, 0.12);
+  --conn-weak-border: rgba(138, 101, 0, 0.45);
+}
+
+/* -- connection ------------------------------------------------------------ */
+.connbadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.connbadge--weak {
+  border-color: var(--conn-weak-border);
+  background: var(--conn-weak-soft);
+  color: var(--conn-weak);
+}
+.connbadge:hover {
+  border-color: currentColor;
+}
+.connbadge__dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+}
+.connnote {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  padding: 3px 7px;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--danger);
+  font-size: 10.5px;
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.connnote--weak {
+  border-color: var(--conn-weak-border);
+  color: var(--conn-weak);
+}
+
+/* -- the Frames panel --------------------------------------------------------- */
+.frames {
+  position: fixed;
+  z-index: 41;
+  /* Left of the product picker (232 px wide, top-right), at its height. */
+  top: calc(var(--topbar-h) + var(--tabsbar-h) + 34px);
+  right: calc(var(--map-right) + 244px);
+  width: 352px;
+  max-width: calc(100vw - var(--map-left, 52px) - var(--map-right) - 260px);
+  min-width: 260px;
+  /* Clear of the pane's colour scale at the foot of the map. */
+  max-height: calc(100vh - var(--topbar-h) - var(--tabsbar-h) - var(--status-h) - var(--timeline-h) - 136px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 11.5px;
+}
+.frames.is-dragging {
+  opacity: 0.9;
+}
+.frames__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 8px 7px 10px;
+  border-bottom: 1px solid var(--border);
+  cursor: grab;
+  user-select: none;
+  color: var(--text-dim);
+}
+.frames__head b {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+}
+.frames__sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10.5px;
+}
+.frames__x {
+  margin-left: auto;
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  border-radius: var(--radius-chip, 4px);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.frames__x:hover {
+  color: var(--text);
+}
+
+.frames__live {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.frames__live--archive {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.frames__livetext {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+  color: var(--text-dim);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+.frames__livetext b {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.frames__note {
+  color: var(--accent);
+}
+.frames__btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color var(--t) var(--ease), color var(--t) var(--ease);
+}
+.frames__btn:hover:not(:disabled) {
+  border-color: var(--accent-ring);
+  color: var(--accent);
+}
+.frames__btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.frames__btn .is-spinning {
+  animation: frames-spin 0.9s linear infinite;
+}
+@keyframes frames-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+html[data-reduce-motion="true"] .frames__btn .is-spinning {
+  animation: none;
+}
+
+.frames__list {
+  flex: 1 1 auto;
+  min-height: 60px;
+  overflow-y: auto;
+  padding: 3px 0;
+}
+.frames__empty {
+  padding: 14px 10px;
+  color: var(--text-faint);
+}
+.frames__row {
+  border-bottom: 1px solid var(--panel-2);
+}
+.frames__row.is-open {
+  background: var(--panel-2);
+}
+.frames__line {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.frames__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px 5px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.frames__main:hover {
+  background: var(--panel-2);
+}
+.frames__row.is-shown .frames__main {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.frames__dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ll-idle);
+}
+.frames__dot.is-down { background: var(--ll-down); }
+.frames__dot.is-decode { background: var(--ll-decode); }
+.frames__dot.is-ready { background: var(--ll-ready); }
+.frames__dot.is-failed { background: var(--ll-failed); }
+.frames__dot.is-partial {
+  background: repeating-linear-gradient(135deg, var(--ll-hatch-a) 0 2px, var(--ll-hatch-b) 2px 4px);
+  border: 1px solid var(--ll-hatch-a);
+}
+.frames__time {
+  flex: none;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.frames__time small {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+.frames__tags {
+  display: inline-flex;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+.frames__tag {
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: 9.5px;
+  line-height: 15px;
+  white-space: nowrap;
+}
+.frames__tag.is-partial {
+  border-color: var(--ll-hatch-a);
+  color: var(--ll-down);
+}
+.frames__state {
+  margin-left: auto;
+  flex: none;
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+.frames__state.is-down { color: var(--ll-down); }
+.frames__state.is-decode { color: var(--ll-decode); }
+.frames__state.is-ready { color: var(--text-dim); }
+.frames__state.is-failed { color: var(--ll-failed); }
+.frames__state.is-shown { color: var(--accent); }
+.frames__more {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 24px;
+  margin-right: 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.frames__more:hover,
+.frames__more[aria-expanded="true"] {
+  border-color: var(--border);
+  color: var(--text);
+}
+.frames__menu {
+  position: absolute;
+  z-index: 3;
+  top: calc(100% - 2px);
+  right: 4px;
+  min-width: 190px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+}
+.frames__menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.frames__menu button:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.frames__menu button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.frames__busy {
+  padding: 0 10px 5px 26px;
+  color: var(--text-dim);
+  font-size: 10.5px;
+  overflow-wrap: anywhere;
+}
+.frames__dl {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 3px 8px;
+  margin: 0;
+  padding: 2px 10px 8px 26px;
+  font-size: 11px;
+}
+.frames__dl dt {
+  color: var(--text-faint);
+}
+.frames__dl dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.frames__mono {
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10.5px;
+}
+.frames__foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-top: 1px solid var(--border);
+}
+.frames__removed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.frames__link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.frames__open {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.frames__open:hover,
+.frames__open.is-on {
+  border-color: var(--accent-ring);
+  color: var(--accent);
+}
+
+@media (max-width: 820px), (max-height: 500px) {
+  .frames {
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    min-width: 0;
+  }
+}
+
+/* -- the timeline readout never clips --------------------------------------
+   The readout was a rigid block at the end of a fixed-width row: a long chip
+   ("20:01Z · cut 1/2 · scan in progress") in a narrower window pushed it past
+   the edge and the date was cut mid-word ("Mon May 20 202"). Now the chip
+   gives way first, with an ellipsis, and the date is always whole. */
+.maptimeline__readout {
+  flex: 0 1 auto; /* keeps app.css's min-width, so it still doesn't jitter */
+}
+.maptimeline__chip {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.maptimeline__valid {
+  flex: none;
+}

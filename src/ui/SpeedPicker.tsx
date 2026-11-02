@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 
 import { PLAY_SPEEDS, speedLabel } from "../lib/playSpeeds";
+import { useSetting, useSettingsStore } from "../settings/useSettingsStore";
 
 /** One click away: the speeds people reach for. */
-const QUICK = [1, 2, 5, 10, 20, 40, 80];
+const QUICK = [0.5, 1, 2, 5, 10, 20, 40, 80];
 
 /**
  * The timeline's speed control. The button shows the speed and opens a slider
- * over every step from 1x to 80x, with the usual ones as chips under it. The
+ * over every step from 0.2x to 80x, with the usual ones as chips under it, and
+ * the loop delay (the last frame held before a looping play starts over). The
  * wheel over the button moves one step without opening anything -- the quick
  * way to nudge a loop that is already playing.
  *
@@ -25,6 +27,8 @@ export function SpeedPicker({
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  // Loop delay: how long a looping play holds its last frame (MapTimeline).
+  const delay = Number(useSetting<number>("timeline.loopDelay")) || 0;
   const at = Math.max(0, PLAY_SPEEDS.indexOf(speed));
 
   useEffect(() => {
@@ -106,6 +110,21 @@ export function SpeedPicker({
               </button>
             ))}
           </div>
+          <div className="speedpick__head speedpick__head--delay">
+            <span>Loop delay</span>
+            <b>{delay ? `${delay} s` : "off"}</b>
+          </div>
+          <input
+            type="range"
+            className="speedpick__range"
+            min={0}
+            max={5}
+            step={0.5}
+            value={delay}
+            onChange={(e) => useSettingsStore.getState().set("timeline.loopDelay", Number(e.target.value))}
+            aria-label="Loop delay: hold the last frame before the loop starts again"
+            aria-valuetext={delay ? `${delay} seconds` : "off"}
+          />
         </div>
       )}
     </div>

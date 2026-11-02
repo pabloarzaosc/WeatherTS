@@ -1,7 +1,8 @@
 import type { Map as MapLibreMap, MapMouseEvent, MapTouchEvent } from "maplibre-gl";
 
 import type { NexradSite } from "../lib/nexrad";
-import { useNexradStore } from "../store/useNexradStore";
+import { isTdwrId, useNexradStore } from "../store/useNexradStore";
+import { siteIsDown } from "../store/useRadarSitesStore";
 import { markerUnderPoint } from "./clickPriority";
 
 /**
@@ -31,20 +32,31 @@ function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number): num
   return 12742 * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+/** Which radars a search for the nearest one looks at. An airport radar (TDWR)
+ *  has a fifth of the range and few of the products, so "the radar here" means a
+ *  NEXRAD unless a TDWR is what is on screen, or asked for. */
+export type RadarKind = "nexrad" | "tdwr" | "any";
+
 /** The online radar nearest a point, and how far it is. */
-export function nearestRadar(lat: number, lon: number): { site: NexradSite; km: number } | null {
+export function nearestRadar(lat: number, lon: number, kind: RadarKind = "nexrad"): { site: NexradSite; km: number } | null {
   let best: { site: NexradSite; km: number } | null = null;
   for (const site of useNexradStore.getState().sites) {
-    if (site.online === false) continue;
+    if (site.online === false || siteIsDown(site.id)) continue;
+    if (kind !== "any" && (site.type === "TDWR") !== (kind === "tdwr")) continue;
     const km = distanceKm(lat, lon, site.lat, site.lon);
     if (!best || km < best.km) best = { site, km };
   }
   return best;
 }
 
+/** What holding on the map looks for: on an airport radar, any radar; else a NEXRAD. */
+export function holdKind(): RadarKind {
+  return isTdwrId(useNexradStore.getState().site) ? "any" : "nexrad";
+}
+
 /** Switch to the radar nearest a point. Returns what happened, for the caller to show. */
-export function switchToNearestRadar(lat: number, lon: number): { text: string; ok: boolean } {
-  const near = nearestRadar(lat, lon);
+export function switchToNearestRadar(lat: number, lon: number, kind: RadarKind = holdKind()): { text: string; ok: boolean } {
+  const near = nearestRadar(lat, lon, kind);
   if (!near) return { text: "No radar list yet", ok: false };
   if (near.km > MAX_KM) return { text: `Nearest radar ${near.site.icao} is ${Math.round(near.km)} km away`, ok: false };
   const store = useNexradStore.getState();

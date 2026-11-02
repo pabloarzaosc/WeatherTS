@@ -15,7 +15,29 @@ export interface NexradSite {
   online?: boolean;
   /** Newest UTC day with a scan in the archive, once the backend has looked. */
   lastScanDay?: string;
+  /** A Brazilian radar whose volumes are coming in now from the relay, not an archive case. */
+  live?: boolean;
+  /** radar-sites: from IEM's list (NEXRAD) or the Brazilian radar's record. */
+  state?: string | null;
+  wfo?: string | null;
+  /** Metres above sea level. */
+  elev?: number | null;
+  tz?: string | null;
+  operator?: string;
+  band?: string | null;
+  /** "TDWR": one of the FAA's airport radars. Unset: a WSR-88D or a Brazilian radar. */
+  type?: string;
 }
+
+/** A wire code only a TDWR publishes (backend/tdwr.py). */
+export function isTdwrCode(code: string | null | undefined): boolean {
+  return !!code && /^(TZ[012L]|TV[012]|NVL|NET)$/.test(code);
+}
+
+/** Why the volume tools stop at an airport radar. Not "it has no Level II": the
+ *  archive does hold TDWR volumes; these tools read WSR-88D ones. */
+export const TDWR_VOLUME_NOTE =
+  "The cross section, the 3D view and detections read NEXRAD volumes: they are not available on a TDWR airport radar. Pick a NEXRAD radar.";
 
 export interface NexradProduct {
   id: string;
@@ -58,6 +80,10 @@ export interface ProductFamily {
   /** Still being checked at the selected radar. */
   checking?: boolean;
   source?: "level2" | "level3";
+  /** "derived": computed from the Level II volume (backend/radar_derived.py). */
+  group?: string;
+  /** Only a TDWR has it: hidden until a TDWR's availability fills it in. */
+  tdwrOnly?: boolean;
 }
 
 /**
@@ -81,6 +107,18 @@ export function wireCode(fam: ProductFamily, tiltSlot: string | null): string | 
 export interface NexradScan {
   key: string;
   time: number; // unix seconds (UTC)
+  /** Live Level II: the tilts this volume flies more than once (SAILS /
+   *  MRLE), with when each scan of them began (backend level2_live). */
+  reps?: Record<string, number[]>;
+  /** A frame that is the k-th scan of its tilt (of `of`) -- radarFrames.ts. */
+  rep?: number;
+  of?: number;
+  /** A frame of the volume still being written. */
+  partial?: boolean;
+  /** A frame of another radar in the loop ("Add radar", archive-l2): its site
+   *  and the product its key belongs to. Unset = the loop's own radar. */
+  site?: string;
+  product?: string;
 }
 
 export interface PaletteDef {
@@ -118,7 +156,8 @@ export async function fetchScanData(
     } catch {
       /* binary endpoint -> body may not be JSON */
     }
-    throw new Error(detail);
+    // The status rides along: 422 = a damaged file, which never gets better.
+    throw Object.assign(new Error(detail), { status: r.status });
   }
   return r.arrayBuffer();
 }
@@ -136,6 +175,8 @@ export interface SiteAvailability {
   /** The archive moment this answer is for; null for now. */
   at?: number | null;
   checkedAt: number;
+  /** A family's name at this radar where it differs (a TDWR's plain Echo Tops). */
+  labels?: Record<string, string>;
 }
 
 /** `at` (unix seconds): what the radar had at that moment, for archive playback. */
@@ -161,8 +202,33 @@ export function withAvailability(grids: ProductGrids, avail: SiteAvailability | 
     if (avail.level2Pending && f.source === "level2") return { ...f, checking: true };
     const tilts = avail.families[f.id];
     if (!tilts) return f;
-    return { ...f, tilts, unavailable: tilts.length === 0 };
+    return { ...f, label: avail.labels?.[f.id] ?? f.label, tilts, unavailable: tilts.length === 0 };
   });
+}
+
+/**
+ * What a TDWR can have, before its own answer is in: the tilts its products are
+ * always published at (backend/tdwr.py), under the same families, and nothing
+ * else. Applied the moment one is picked, so no NEXRAD code is ever asked of it.
+ */
+export function tdwrAvailability(grids: ProductGrids): SiteAvailability {
+  const families: Record<string, TiltOption[]> = {};
+  for (const f of grids) families[f.id] = [];
+  const cuts: [string, number][] = [["0", 0.5], ["1", 1.0], ["2", 2.4]];
+  families.B = cuts.map(([tilt, elev]) => ({ tilt, code: `TZ${tilt}`, elev, source: "level3" as const }));
+  families.G = cuts.map(([tilt, elev]) => ({ tilt, code: `TV${tilt}`, elev, source: "level3" as const }));
+  families.TZL = [{ tilt: null, code: "TZL", elev: null, source: "level3" }];
+  families.DVL = [{ tilt: null, code: "NVL", elev: null, source: "level3" }];
+  families.EET = [{ tilt: null, code: "NET", elev: null, source: "level3" }];
+  return { site: "", newestScan: null, cuts: [], families, labels: { EET: "Echo Tops" }, level2: false, checkedAt: Math.floor(Date.now() / 1000) };
+}
+
+/** The catalogue as an answer: where a NEXRAD starts from when a TDWR's codes are
+ *  still in place and nothing is known about it yet. */
+export function catalogueAvailability(grids: ProductGrids): SiteAvailability {
+  const families: Record<string, TiltOption[]> = {};
+  for (const f of grids) families[f.id] = f.unavailable ? [] : f.tilts;
+  return { site: "", newestScan: null, cuts: [], families, level2: false, checkedAt: Math.floor(Date.now() / 1000) };
 }
 
 export async function fetchNexradSites(): Promise<NexradSite[]> {
@@ -424,14 +490,24 @@ export async function fetchNexradScans(
   limit = 0,
   /** Unix seconds: archive playback starts here. 0/undefined = live. */
   start = 0,
+  /** The loop as a span of time (30-480 min) instead of `limit` scans. */
+  minutes = 0,
+  /** Live Level II: each volume's rescanned tilts (`reps`). */
+  sails = false,
 ): Promise<{ scans: NexradScan[]; archiveStart: string }> {
   const url =
     `${BASE}/api/nexrad/scans?site=${encodeURIComponent(site)}` +
     `&product=${encodeURIComponent(product)}` +
     (date ? `&date=${encodeURIComponent(date)}` : "") +
     (limit ? `&limit=${limit}` : "") +
-    (start ? `&start=${start}` : "");
+    (start ? `&start=${start}` : "") +
+    (minutes ? `&minutes=${minutes}` : "") +
+    (sails ? "&sails=true" : "");
   const r = await fetch(url);
-  if (!r.ok) throw new Error(`scans ${r.status}`);
+  if (!r.ok) {
+    // A refusal says why: a moment a TDWR does not have shows as the pane's note.
+    const why = r.status === 400 ? (await r.json().catch(() => null))?.detail : null;
+    throw new Error(why ? String(why) : `scans ${r.status}`);
+  }
   return r.json();
 }

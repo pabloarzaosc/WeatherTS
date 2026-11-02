@@ -1,121 +1,50 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { X, Copy, AlertTriangle, ChevronLeft, Clock, MapPin, Radio, Radar } from "lucide-react";
+import { X, Copy, AlertTriangle, ChevronLeft, Clock, MapPin, Radio, Radar, Eye, EyeOff, Crosshair, Search } from "lucide-react";
 
 import { MesoscaleList } from "./MesoscaleList";
 import { selectVisibleAlerts, useAlertStore } from "../store/useAlertStore";
-import type { AlertFeature, NwsAlert } from "../lib/nwsAlerts";
+import type { AlertFeature } from "../lib/nwsAlerts";
 import {
   alertBounds,
   alertCentroid,
-  alertInForceAt,
-  alertKind,
-  alertPriority,
   alertSummaryFacts,
-  eventColor,
   humanAlertParameters,
   param,
   formatDuration,
-  formatTimeLeft,
+  timeLeftPhrase,
 } from "../lib/nwsAlerts";
 import { useNexradStore } from "../store/useNexradStore";
 import { useAppStore } from "../store/useAppStore";
 import { useSettingsStore } from "../settings/useSettingsStore";
-import { getMap } from "../map/mapInstance";
+import { alertDrawColor, alertFilters, passesAlertFilters, tierOf } from "../lib/alertStyle";
+import { flashingIds, onFlashChange } from "../lib/alertFlash";
+import { getMap, subscribeMaps } from "../map/mapInstance";
+import { eventKey, useAlertListStore } from "../store/useAlertListStore";
+import { useMesoscaleStore } from "../store/useMesoscaleStore";
+import { alertWfo } from "../lib/alertTiers";
+import {
+  ALERT_GROUPS,
+  SEVERITY_FILTERS,
+  agePhrase,
+  alertGroup,
+  alertTags,
+  compareAlerts,
+  expiryPhrase,
+  matchesText,
+  passesSeverity,
+  placesSummary,
+  untilClock,
+  type SeverityFilter,
+} from "../lib/alertGroups";
+import { OfficeLink } from "./ForecastOfficePanel";
 import { haversine, formatDistance } from "../lib/measure";
 import type { NexradSite } from "../lib/nexrad";
-
-type AlertListFilter = "all" | "warning" | "watch" | "advisory" | "statement" | "other";
-
-const LIST_FILTERS: Array<{ id: AlertListFilter; label: string }> = [
-  { id: "all", label: "All" },
-  { id: "warning", label: "Warnings" },
-  { id: "watch", label: "Watches" },
-  { id: "advisory", label: "Advisories" },
-  { id: "statement", label: "Statements" },
-  { id: "other", label: "Other" },
-];
-
-function alertCategoryMatch(feature: AlertFeature, category: "severe" | "tornado" | "special"): boolean {
-  const event = feature.alert.event.toLowerCase();
-  if (category === "tornado") return /tornado/i.test(event);
-  if (category === "special") return /special/i.test(event);
-  if (/warning/i.test(event)) return true;
-  return /severe|extreme/i.test(feature.alert.severity);
-}
-
-function CategoryToggles({ counts }: { counts: Record<"severe" | "tornado" | "special", number> }) {
-  const filters = useAlertStore((s) => s.categoryFilters);
-  const toggle = useAlertStore((s) => s.toggleCategory);
-  return (
-    <div className="alert-list__cats">
-      <button
-        type="button"
-        className={`alert-cat${filters.severe ? " is-active" : ""}`}
-        onClick={() => toggle("severe")}
-        title="Toggle Severe/Warnings"
-      >
-        Severe <span>{counts.severe}</span>
-      </button>
-      <button
-        type="button"
-        className={`alert-cat${filters.tornado ? " is-active" : ""}`}
-        onClick={() => toggle("tornado")}
-        title="Toggle Tornado"
-      >
-        Tornado <span>{counts.tornado}</span>
-      </button>
-      <button
-        type="button"
-        className={`alert-cat${filters.special ? " is-active" : ""}`}
-        onClick={() => toggle("special")}
-        title="Toggle Special"
-      >
-        Special <span>{counts.special}</span>
-      </button>
-    </div>
-  );
-}
-
-function CategoryFilterBar({
-  counts,
-  onReset,
-}: {
-  counts: Record<"severe" | "tornado" | "special", number>;
-  onReset: () => void;
-}) {
-  return (
-    <div className="alert-list__advanced">
-      <div className="alert-list__advanced-head">
-        <span className="alert-list__advanced-title">Category visibility</span>
-        <button type="button" className="alert-list__reset" onClick={onReset}>
-          Reset
-        </button>
-      </div>
-      <CategoryToggles counts={counts} />
-    </div>
-  );
-}
 
 /** unix seconds -> "16 21:58Z", matching the timeline's chip. */
 function fmtZ(unix: number): string {
   const d = new Date(unix * 1000);
   const p = (n: number) => String(n).padStart(2, "0");
   return `${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}Z`;
-}
-
-function alertKindLabel(kind: Exclude<AlertListFilter, "all">): string {
-  switch (kind) {
-    case "warning":
-      return "Warnings";
-    case "watch":
-      return "Watches";
-    case "advisory":
-      return "Advisories";
-    case "statement":
-      return "Statements";
-    default:
-      return "Other";
-  }
 }
 
 function fmtTime(iso?: string | null): { local: string; utc: string } | null {
@@ -168,7 +97,7 @@ function NearestRadars({ feature }: { feature: AlertFeature }) {
   const picks = useMemo(() => {
     if (!center) return [] as Array<{ s: NexradSite; m: number }>;
     return sites
-      .filter((s) => s.online !== false && Number.isFinite(s.lat) && Number.isFinite(s.lon))
+      .filter((s) => s.online !== false && s.type !== "TDWR" && Number.isFinite(s.lat) && Number.isFinite(s.lon))
       .map((s) => ({ s, m: haversine(center, [s.lon, s.lat]) }))
       .sort((a, b) => a.m - b.m)
       .slice(0, 2);
@@ -217,7 +146,8 @@ function AlertDetail({
 }) {
   const a = feature.alert;
   const p = a.parameters;
-  const color = eventColor(a.event);
+  const color = alertDrawColor(a);
+  const tier = tierOf(a);
 
   const startMs = Date.parse(a.onset ?? a.effective);
   const expireMs = Date.parse(a.expires);
@@ -231,7 +161,7 @@ function AlertDetail({
     statusText = "Expired";
   } else if (now < startMs) {
     statusKind = "upcoming";
-    statusText = `Starts in ${formatTimeLeft(startMs - now)}`;
+    statusText = `Starts ${timeLeftPhrase(startMs - now)}`;
   } else {
     statusKind = "active";
     statusText = "Active now";
@@ -305,14 +235,19 @@ function AlertDetail({
         </div>
       )}
 
-      {(isEmergency || isPDS) && (
+      {(isEmergency || isPDS || tier) && (
         <div className="al-badges">
-          {isEmergency && (
+          {tier && (
+            <span className="al-tierchip" style={{ ["--chip" as string]: color }} title={tier.hint}>
+              {tier.label}
+            </span>
+          )}
+          {isEmergency && !tier && (
             <span className="al-badge al-badge--emergency">
               <AlertTriangle size={12} /> EMERGENCY
             </span>
           )}
-          {isPDS && <span className="al-badge al-badge--pds">PDS</span>}
+          {isPDS && !tier && <span className="al-badge al-badge--pds">PDS</span>}
         </div>
       )}
 
@@ -320,7 +255,7 @@ function AlertDetail({
         <Clock size={13} />
         <span className="al-status__text">{statusText}</span>
         {statusKind === "active" && (
-          <span className="al-status__cd">expires in {formatTimeLeft(expireMs - now)}</span>
+          <span className="al-status__cd">expires {timeLeftPhrase(expireMs - now)}</span>
         )}
       </div>
 
@@ -364,7 +299,11 @@ function AlertDetail({
             </span>
           ))}
         </div>
-        {a.senderName && <p className="al-sender">{a.senderName}</p>}
+        {a.senderName && (
+          <p className="al-sender">
+            {a.senderName} <OfficeLink wfo={alertWfo(a)} />
+          </p>
+        )}
       </section>
 
       <section className="al-section">
@@ -386,82 +325,153 @@ function AlertDetail({
   );
 }
 
-/** Each alert's priority, worked out once: it reads the whole text, and the
- *  list is sorted again at every frame of a playing timeline. */
-const PRIORITY = new WeakMap<NwsAlert, number>();
-function priorityOf(alert: NwsAlert): number {
-  let p = PRIORITY.get(alert);
-  if (p === undefined) {
-    p = alertPriority(alert);
-    PRIORITY.set(alert, p);
-  }
-  return p;
+function sortAlerts(features: AlertFeature[]): AlertFeature[] {
+  return [...features].sort((a, b) => compareAlerts(a.alert, b.alert));
 }
 
-function sortAlerts(features: AlertFeature[]): AlertFeature[] {
-  return [...features].sort((a, b) => {
-    const priority = priorityOf(b.alert) - priorityOf(a.alert);
-    if (priority !== 0) return priority;
-    return Date.parse(a.alert.expires) - Date.parse(b.alert.expires);
-  });
+/** When each alert id first reached the list (ms), for the slide-in glow.
+ *  Module-level so an alert that came in while the detail was open still
+ *  slides in when the list comes back; the first fill is the silent baseline. */
+const firstSeen = new Map<string, number>();
+let baselineDone = false;
+const NEW_MS = 10_000;
+
+/** A map frame in lon/lat, for "in view". */
+type View = [number, number, number, number] | null;
+
+function useMapView(enabled: boolean): View {
+  const [view, setView] = useState<View>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    const read = () => {
+      const m = getMap();
+      if (!m) return;
+      const b = m.getBounds();
+      setView([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
+    };
+    let bound: ReturnType<typeof getMap> = null;
+    const bind = () => {
+      bound?.off("moveend", read);
+      bound = getMap();
+      bound?.on("moveend", read);
+      read();
+    };
+    bind();
+    const unsub = subscribeMaps(bind);
+    return () => {
+      unsub();
+      bound?.off("moveend", read);
+    };
+  }, [enabled]);
+  return enabled ? view : null;
+}
+
+function inView(f: AlertFeature, v: View): boolean {
+  if (!v) return true;
+  const b = alertBounds(f.geometry);
+  if (!b) return false;
+  return b[0][0] <= v[2] && b[1][0] >= v[0] && b[0][1] <= v[3] && b[1][1] >= v[1];
 }
 
 /**
- * One alert of the list. Its facts come from parsing the whole description,
- * so a row is drawn again only when its alert or the minute changes: the list
- * redrew every row every second (the "expires in" clock) and at every frame
- * of a playing timeline -- 100-280 ms a frame with a few hundred alerts.
+ * One alert of the list: colour stripe, name, tier, places, age, hail / wind,
+ * end time, the office link, Focus on map and Hide on map. Drawn again only
+ * when its alert, the minute or its flags change (a playing timeline redraws
+ * the list every frame).
  */
 const AlertRow = memo(function AlertRow({
   feature,
   minute,
+  flashing,
+  fresh,
+  hidden,
   onSelect,
 }: {
   feature: AlertFeature;
   minute: number;
+  flashing: boolean;
+  fresh: boolean;
+  hidden: boolean;
   onSelect: (id: string) => void;
 }) {
   const a = feature.alert;
   const now = minute * 60_000;
-  const color = eventColor(a.event);
-  const facts = alertSummaryFacts(a, now).slice(0, 4);
-  const expires = Date.parse(a.expires);
-  const upper = `${a.event} ${a.headline ?? ""} ${a.description}`.toUpperCase();
-  const tornadoThreat = param(a.parameters, "tornadoDamageThreat");
-  const flashThreat = param(a.parameters, "flashFloodDamageThreat");
-  const isEmergency =
-    upper.includes("TORNADO EMERGENCY") ||
-    upper.includes("FLASH FLOOD EMERGENCY") ||
-    tornadoThreat === "CATASTROPHIC" ||
-    flashThreat === "CATASTROPHIC";
-  const isPDS = upper.includes("PARTICULARLY DANGEROUS SITUATION") || tornadoThreat === "CONSIDERABLE";
+  const color = alertDrawColor(a);
+  const tier = tierOf(a);
+  const tags = alertTags(a);
+  const wfo = alertWfo(a);
+  const hideAlert = useAlertListStore((s) => s.hideAlert);
+  const focus = () => {
+    const b = alertBounds(feature.geometry);
+    const map = getMap();
+    if (map && b) map.fitBounds(b, { padding: 64, maxZoom: 10.5, duration: 700, essential: true });
+  };
+  const upper = `${a.event} ${a.headline ?? ""}`.toUpperCase();
+  const isEmergency = upper.includes("EMERGENCY") && /TORNADO|FLASH FLOOD/.test(upper);
+  return (
+    <div
+      className={`alrow${flashing ? " is-flashing" : ""}${fresh ? " is-new" : ""}${hidden ? " is-hidden" : ""}`}
+      style={{ ["--al" as string]: color }}
+    >
+      <button type="button" className="alrow__main" onClick={() => onSelect(a.id)} title="Full text">
+        <span className="alrow__top">
+          <b className="alrow__event">{a.event}</b>
+          {tier ? (
+            <span className="al-tierchip" style={{ ["--chip" as string]: color }} title={tier.hint}>
+              {tier.label}
+            </span>
+          ) : isEmergency ? (
+            <span className="alert-list__flag alert-list__flag--emergency">Emergency</span>
+          ) : null}
+          <span className="alrow__age">{agePhrase(a, now).replace(/^Issued /, "")}</span>
+        </span>
+        <span className="alrow__places">{placesSummary(a)}</span>
+        <span className="alrow__facts">
+          {tags.map((t) => (
+            <span key={t.key} className={`alpt__tag${t.hot ? " is-hot" : ""}`}>
+              {t.text}
+            </span>
+          ))}
+          <span className="alrow__until">{expiryPhrase(a, now) === "Expired" ? "Expired" : untilClock(a, now)}</span>
+          {!feature.geometry && <span className="alrow__nomap">No map polygon</span>}
+        </span>
+      </button>
+      <span className="alrow__acts">
+        <OfficeLink wfo={wfo} className="wfo-link" />
+        <button type="button" className="alrow__act" onClick={focus} title="Focus on map" aria-label="Focus on map" disabled={!feature.geometry}>
+          <Crosshair size={13} />
+        </button>
+        <button
+          type="button"
+          className="alrow__act"
+          onClick={() => hideAlert(a.id, !hidden)}
+          title={hidden ? "Show on map" : "Hide on map"}
+          aria-label={hidden ? "Show on map" : "Hide on map"}
+        >
+          {hidden ? <EyeOff size={13} /> : <Eye size={13} />}
+        </button>
+      </span>
+    </div>
+  );
+});
+
+function EyeButton({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
   return (
     <button
       type="button"
-      className="alert-list__row"
-      data-emergency={isEmergency ? "true" : "false"}
-      data-pds={isPDS ? "true" : "false"}
-      style={{ borderLeftColor: color }}
-      onClick={() => onSelect(a.id)}
+      className={`algrp__eye${on ? "" : " is-off"}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      title={on ? `Hide ${label} on the map` : `Show ${label} on the map`}
+      aria-label={on ? `Hide ${label} on the map` : `Show ${label} on the map`}
+      aria-pressed={!on}
     >
-      <span className="alert-list__event">{a.event}</span>
-      {(isEmergency || isPDS) && (
-        <span className={`alert-list__flag ${isEmergency ? "alert-list__flag--emergency" : "alert-list__flag--pds"}`}>
-          {isEmergency ? "Emergency" : "PDS"}
-        </span>
-      )}
-      {facts.map((fact) => (
-        <span key={fact.key} className="alert-list__fact">
-          <b>{fact.label}:</b> {fact.value}
-        </span>
-      ))}
-      {!Number.isNaN(expires) && (
-        <span className="alert-list__expires">Expires in {formatTimeLeft(expires - now)}</span>
-      )}
-      {!feature.geometry && <span className="alert-list__nomap">No map polygon</span>}
+      {on ? <Eye size={13} /> : <EyeOff size={13} />}
     </button>
   );
-});
+}
 
 function AlertList({
   features,
@@ -469,8 +479,6 @@ function AlertList({
   message,
   now,
   timeFilter,
-  categoryCounts,
-  onResetCategories,
   onSelect,
 }: {
   features: AlertFeature[];
@@ -478,23 +486,61 @@ function AlertList({
   message: string | null;
   now: number;
   timeFilter: number | null;
-  categoryCounts: Record<"severe" | "tornado" | "special", number>;
-  onResetCategories: () => void;
   onSelect: (id: string) => void;
 }) {
+  const hiddenGroups = useAlertListStore((s) => s.hiddenGroups);
+  const hiddenTypes = useAlertListStore((s) => s.hiddenTypes);
+  const hiddenIds = useAlertListStore((s) => s.hiddenIds);
+  const severity = useAlertListStore((s) => s.severity);
+  const text = useAlertListStore((s) => s.text);
+  const inViewOn = useAlertListStore((s) => s.inView);
+  const toggleGroup = useAlertListStore((s) => s.toggleGroup);
+  const toggleType = useAlertListStore((s) => s.toggleType);
+  const setSeverity = useAlertListStore((s) => s.setSeverity);
+  const setText = useAlertListStore((s) => s.setText);
+  const setInView = useAlertListStore((s) => s.setInView);
+  const showAll = useAlertListStore((s) => s.showAll);
+  const mds = useMesoscaleStore((s) => s.mds);
+  const mdOn = useAppStore((s) => s.layers["spc-md"]?.visible ?? false);
+  const setLayerVisible = useAppStore((s) => s.setLayerVisible);
+  const view = useMapView(inViewOn);
 
-  const [filter, setFilter] = useState<AlertListFilter>("all");
-  const sorted = sortAlerts(features);
-  const visible = filter === "all" ? sorted : sorted.filter((feature) => alertKind(feature.alert.event) === filter);
-  const groups =
-    filter === "all"
-      ? (["warning", "watch", "advisory", "statement", "other"] as const)
-          .map((kind) => ({
-            kind,
-            alerts: visible.filter((feature) => alertKind(feature.alert.event) === kind),
-          }))
-          .filter((group) => group.alerts.length > 0)
-      : [{ kind: filter as Exclude<AlertListFilter, "all">, alerts: visible }];
+  // New alerts glow while their map flash runs, and slide in when they reach the list.
+  const [flashing, setFlashing] = useState<Set<string>>(() => new Set(flashingIds()));
+  useEffect(() => onFlashChange(() => setFlashing(new Set(flashingIds()))), []);
+  const nowMs = Date.now();
+  for (const f of features) if (!firstSeen.has(f.alert.id)) firstSeen.set(f.alert.id, baselineDone ? nowMs : 0);
+  if (features.length) baselineDone = true;
+  // drop the glow class once its 10 s are over
+  const [, setTick] = useState(0);
+  const freshCount = features.filter((f) => nowMs - (firstSeen.get(f.alert.id) ?? 0) < NEW_MS).length;
+  useEffect(() => {
+    if (!freshCount) return;
+    const t = window.setTimeout(() => setTick((n) => n + 1), NEW_MS + 50);
+    return () => window.clearTimeout(t);
+  }, [freshCount]);
+
+  const minute = Math.floor((timeFilter !== null ? timeFilter * 1000 : now) / 60_000);
+  const shown = features.filter((f) => passesSeverity(f.alert, severity) && matchesText(f.alert, text, alertWfo(f.alert)) && inView(f, view));
+  const narrowed = severity !== "any" || text.trim() !== "" || inViewOn;
+
+  const groups = ALERT_GROUPS.map((g) => {
+    const alerts = sortAlerts(shown.filter((f) => alertGroup(f.alert) === g.id));
+    const types = new Map<string, { event: string; alerts: AlertFeature[] }>();
+    for (const f of alerts) {
+      const k = eventKey(f.alert.event);
+      const t = types.get(k) ?? { event: f.alert.event, alerts: [] };
+      t.alerts.push(f);
+      types.set(k, t);
+    }
+    return { ...g, alerts, types: [...types.entries()] };
+  });
+  const mdLive = mds.filter((md) => {
+    const t = timeFilter ?? now / 1000;
+    return md.validStartUnix == null || md.validEndUnix == null || (md.validStartUnix <= t && t <= md.validEndUnix);
+  }).length;
+  const anyHidden = hiddenGroups.length + hiddenTypes.length + hiddenIds.length > 0;
+  const emptyText = status === "loading" && features.length === 0 ? "Loading" : inViewOn ? "None in view" : narrowed ? "None match" : "None";
 
   return (
     <>
@@ -506,46 +552,103 @@ function AlertList({
           <span className="alert-list__count">
             {status === "loading"
               ? "Loading..."
-              : timeFilter !== null
-                ? // the controller's message counts everything fetched, which is
-                  // the wrong number once the timeline is holding a past frame
-                  `${features.length} in force`
-                : message ?? `${features.length} active`}
+              : narrowed
+                ? `${shown.length} of ${features.length} ${timeFilter !== null ? "in force" : "active"}`
+                : timeFilter !== null
+                  ? `${features.length} in force`
+                  : message ?? `${features.length} active`}
           </span>
         </div>
       </div>
 
-      <div className="alert-list__filters" role="tablist" aria-label="Alert filter">
-        {LIST_FILTERS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={`alert-list__filter${filter === item.id ? " is-active" : ""}`}
-            onClick={() => setFilter(item.id)}
-          >
-            {item.label}
+      <div className="alfilt">
+        <label className="evl__search alfilt__search">
+          <Search size={13} />
+          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Filter: county, event, office, text" aria-label="Filter the alert list" />
+          {text && (
+            <button type="button" className="alfilt__clear" onClick={() => setText("")} aria-label="Clear the filter">
+              <X size={12} />
+            </button>
+          )}
+        </label>
+        <div className="alfilt__row">
+          <select className="alfilt__sev" value={severity} onChange={(e) => setSeverity(e.target.value as SeverityFilter)} aria-label="Severity">
+            {SEVERITY_FILTERS.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+          <button type="button" className={`alfilt__chip${inViewOn ? " is-on" : ""}`} onClick={() => setInView(!inViewOn)} aria-pressed={inViewOn} title="List only the alerts inside the map view">
+            In view
           </button>
-        ))}
+          {anyHidden && (
+            <button type="button" className="alfilt__chip" onClick={showAll} title="Show every hidden group, type and alert on the map again">
+              Show all
+            </button>
+          )}
+        </div>
+        <span className="alfilt__note">Filters change the list only; the eyes change the map.</span>
       </div>
 
-      <CategoryFilterBar counts={categoryCounts} onReset={onResetCategories} />
-
       <div className="alert-list__body">
-        {/* SPC and WPC discussions sit above the warnings: on a chase day the
-            question "is a watch coming" is answered here, not in the list. */}
-        <MesoscaleList />
         {status === "error" && <div className="alert-list__empty">{message ?? "Unable to load alerts."}</div>}
-        {status !== "error" && visible.length === 0 && (
-          <div className="alert-list__empty">No active alerts in this filter.</div>
-        )}
-        {groups.map((group) => (
-          <section key={group.kind} className="alert-list__group">
-            {filter === "all" && <h3 className="alert-list__group-title">{alertKindLabel(group.kind)}</h3>}
-            {group.alerts.map((feature) => (
-              <AlertRow key={feature.alert.id} feature={feature} minute={Math.floor(now / 60_000)} onSelect={onSelect} />
-            ))}
-          </section>
-        ))}
+        {groups.map((g) => {
+          if (g.id === "discussion") {
+            return (
+              <section key={g.id} className="algrp">
+                <header className="algrp__head">
+                  <EyeButton on={mdOn} onClick={() => setLayerVisible("spc-md", !mdOn)} label="discussions" />
+                  <span className="algrp__label">{g.label}</span>
+                  <span className="algrp__count">{mdLive}</span>
+                  {mdLive === 0 && <span className="algrp__none">{inViewOn ? "None in view" : "None"}</span>}
+                </header>
+                {/* SPC and WPC discussions: on a chase day "is a watch coming" is answered here. */}
+                <MesoscaleList />
+              </section>
+            );
+          }
+          const groupHidden = hiddenGroups.includes(g.id);
+          return (
+            <section key={g.id} className={`algrp${groupHidden ? " is-hidden" : ""}`}>
+              <header className="algrp__head">
+                <EyeButton on={!groupHidden} onClick={() => toggleGroup(g.id)} label={g.label.toLowerCase()} />
+                <span className="algrp__label">{g.label}</span>
+                <span className="algrp__count">{g.alerts.length}</span>
+                {g.alerts.length === 0 && <span className="algrp__none">{emptyText}</span>}
+                {groupHidden && g.alerts.length > 0 && <span className="algrp__none">Hidden on map</span>}
+              </header>
+              {!groupHidden &&
+                g.types.map(([k, t]) => {
+                  const typeHidden = hiddenTypes.includes(k);
+                  return (
+                    <div key={k} className={`altype${typeHidden ? " is-hidden" : ""}`}>
+                      <div className="altype__head">
+                        <EyeButton on={!typeHidden} onClick={() => toggleType(k)} label={t.event} />
+                        <span className="altype__sw" style={{ background: alertDrawColor(t.alerts[0].alert) }} />
+                        <span className="altype__label">{t.event}</span>
+                        <span className="algrp__count">{t.alerts.length}</span>
+                        {typeHidden && <span className="algrp__none">Hidden on map</span>}
+                      </div>
+                      {!typeHidden &&
+                        t.alerts.map((feature) => (
+                          // At a past instant of the timeline times count from that instant.
+                          <AlertRow
+                            key={feature.alert.id}
+                            feature={feature}
+                            minute={minute}
+                            flashing={flashing.has(feature.alert.id)}
+                            fresh={nowMs - (firstSeen.get(feature.alert.id) ?? 0) < NEW_MS}
+                            hidden={hiddenIds.includes(feature.alert.id)}
+                            onSelect={onSelect}
+                          />
+                        ))}
+                    </div>
+                  );
+                })}
+            </section>
+          );
+        })}
       </div>
     </>
   );
@@ -562,31 +665,19 @@ function AlertList({
 export function AlertPanel() {
   // Colours come from eventColor(), which reads Settings: subscribing here
   // repaints the list and the detail the moment one is changed.
-  useSettingsStore((s) => s.values);
+  const settingsValues = useSettingsStore((s) => s.values);
   const selectedId = useAlertStore((s) => s.selectedId);
   const selectedIds = useAlertStore((s) => s.selectedIds);
   const allFeatures = useAlertStore((s) => s.features);
   const timeFilter = useAlertStore((s) => s.timeFilter);
   const categoryFilters = useAlertStore((s) => s.categoryFilters);
-  const setCategoryFilter = useAlertStore((s) => s.setCategoryFilter);
-  // the list follows the timeline for the same reason the map does
-  const timelineFeatures = useMemo(
-    () => (timeFilter === null ? allFeatures : allFeatures.filter((feature) => alertInForceAt(feature.alert, timeFilter))),
-    [allFeatures, timeFilter],
-  );
-  const features = useMemo(
-    () => selectVisibleAlerts({ features: allFeatures, timeFilter, categoryFilters }),
-    [allFeatures, timeFilter, categoryFilters],
-  );
-  const categoryCounts = useMemo(() => {
-    const counts = { severe: 0, tornado: 0, special: 0 };
-    for (const feature of timelineFeatures) {
-      if (alertCategoryMatch(feature, "severe")) counts.severe += 1;
-      if (alertCategoryMatch(feature, "tornado")) counts.tornado += 1;
-      if (alertCategoryMatch(feature, "special")) counts.special += 1;
-    }
-    return counts;
-  }, [timelineFeatures]);
+  // Settings' filters (types switched off, states, offices, only active)
+  // change the list as they change the map.
+  const features = useMemo(() => {
+    const f = alertFilters();
+    const t = timeFilter ?? Date.now() / 1000;
+    return selectVisibleAlerts({ features: allFeatures, timeFilter, categoryFilters }).filter((x) => passesAlertFilters(x.alert, f, t));
+  }, [allFeatures, timeFilter, categoryFilters, settingsValues]);
   const active = useAlertStore((s) => s.active);
   const status = useAlertStore((s) => s.status);
   const message = useAlertStore((s) => s.message);
@@ -594,12 +685,6 @@ export function AlertPanel() {
   const selectMany = useAlertStore((s) => s.selectMany);
   const listOpen = useAlertStore((s) => s.listOpen);
   const setListOpen = useAlertStore((s) => s.setListOpen);
-  const resetCategories = () => {
-    setCategoryFilter("severe", true);
-    setCategoryFilter("tornado", true);
-    setCategoryFilter("special", true);
-  };
-
   const ids = selectedIds.length > 0 ? selectedIds : selectedId ? [selectedId] : [];
   const selectedFeatures = sortAlerts(
     ids
@@ -693,8 +778,6 @@ export function AlertPanel() {
           message={message}
           now={now}
           timeFilter={timeFilter}
-          categoryCounts={categoryCounts}
-          onResetCategories={resetCategories}
           onSelect={onSelectAlert}
         />
       )}

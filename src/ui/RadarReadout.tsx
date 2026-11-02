@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { getMap, subscribeMaps } from "../map/mapInstance";
+import { getMap, getMapById, subscribeMaps } from "../map/mapInstance";
 import { useAppStore } from "../store/useAppStore";
 import { useNexradStore } from "../store/useNexradStore";
 import { useRadarSample } from "./useRadarSample";
@@ -28,7 +28,7 @@ export function RadarReadout() {
       return;
     }
     const update = () => {
-      const map = getMap();
+      const map = (cursor.pane ? getMapById(cursor.pane) : null) ?? getMap();
       if (!map) return;
       // project() is canvas-relative; this card is positioned against the
       // viewport, so the canvas offset has to be added.

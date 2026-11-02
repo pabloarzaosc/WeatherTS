@@ -3,10 +3,41 @@ import { AlertTriangle, Layers, Loader2, Radio } from "lucide-react";
 
 import { useAppStore } from "../../store/useAppStore";
 import { LayerPower } from "../LayerPower";
+import { DetectionsOverlayRow } from "../RadarDetectionsCard";
+import { RadarOfficeRow } from "../ForecastOfficePanel";
 import { Select } from "../Select";
-import { frameChoicesFor, useNexradStore } from "../../store/useNexradStore";
+import { useNexradStore } from "../../store/useNexradStore";
+import { LoopLength } from "../LoopLength";
+import { FramesButton } from "../FramesPanel";
 import { getMap } from "../../map/mapInstance";
+import { isBrazilSite } from "../../lib/brazilRadar";
 import { useObsStore } from "../../store/useObsStore";
+import { useProductInfoStore } from "../../store/useProductInfoStore";
+import { VelocityOptions } from "../VelocityOptions";
+import { RadarDisplayOptions } from "../RadarDisplayOptions";
+import { AllRadarsButton, RadarSiteInfo } from "../RadarSiteInfo";
+import { siteClass, siteIsDown, useRadarSitesStore } from "../../store/useRadarSitesStore";
+
+/** A radar's live standing as a hint in the site picker (radar-sites). */
+function siteHint(id: string): string | undefined {
+  const c = siteClass(id);
+  return c === "down" ? "down" : c === "stale" ? "no new data" : c === "late" ? "late" : undefined;
+}
+
+/** Opens the product info panel; the Shift readout needs no switch. */
+function ProductInfoRow() {
+  const open = useProductInfoStore((s) => s.open);
+  const setOpen = useProductInfoStore((s) => s.setOpen);
+  return (
+    <div className="sfcobs__toggle-row">
+      <span>
+        Product info
+        <small style={{ color: "var(--text-faint)", marginLeft: 6 }}>hold Shift over the map for the full readout</small>
+      </span>
+      <Toggle on={open} onClick={() => setOpen(!open)} />
+    </div>
+  );
+}
 
 const LAYER = "nexrad";
 
@@ -106,7 +137,6 @@ export function RadarView() {
   const scans = useNexradStore((s) => s.scans);
   const scan = useNexradStore((s) => s.scan);
   const warm = useNexradStore((s) => s.warm);
-  const frames = useNexradStore((s) => s.frames);
   const product = useNexradStore((s) => s.product);
   const archiveTime = useNexradStore((s) => s.archiveTime);
   const setArchiveTime = useNexradStore((s) => s.setArchiveTime);
@@ -126,7 +156,6 @@ export function RadarView() {
   const setThreshold = useNexradStore((s) => s.setThreshold);
   const autoUpdate = useNexradStore((s) => s.autoUpdate);
   const setAutoUpdate = useNexradStore((s) => s.setAutoUpdate);
-  const setFrames = useNexradStore((s) => s.setFrames);
   const loading = useNexradStore((s) => s.loading);
   const error = useNexradStore((s) => s.error);
   const loadCatalog = useNexradStore((s) => s.loadCatalog);
@@ -141,7 +170,26 @@ export function RadarView() {
     if (s) getMap()?.flyTo({ center: [s.lon, s.lat], zoom: 7.2, essential: true });
   };
 
-  const usSites = sites.filter((s) => s.country === "US");
+  const usSites = sites.filter((s) => s.country === "US" && s.type !== "TDWR");
+  const tdwrSites = sites.filter((s) => s.type === "TDWR");
+  const brVolumes = sites.filter((s) => isBrazilSite(s.id));
+  const otherSites = sites.filter((s) => s.country !== "US" && !isBrazilSite(s.id));
+  // radar-sites: favourites first, and each radar's live standing as its hint
+  useRadarSitesStore((s) => s.feed);
+  const favourites = useRadarSitesStore((s) => s.favourites);
+  const favSites = favourites.map((id) => sites.find((s) => s.id === id)).filter((s): s is NonNullable<typeof s> => !!s);
+  const inArchive = archiveTime !== null || archiveDate !== null;
+
+  /** One picker for every radar: a NEXRAD, or the Brazilian radar kept from
+   *  an archive volume, both open in the radar viewer. */
+  const pick = (value: string) => {
+    const id = value || null;
+    selectSite(id);
+    if (id) {
+      if (!enabled) setLayerVisible(LAYER, true);
+      jumpTo(id);
+    }
+  };
 
   return (
     <div className="sfcobs">
@@ -172,60 +220,69 @@ export function RadarView() {
       )}
 
       <label className="sfcobs__field">
-        <span className="sfcobs__label">Radar site ({usSites.length})</span>
+        <span className="sfcobs__label siteinfo__label">
+          Radar site ({sites.length})
+          <AllRadarsButton />
+        </span>
         <Select
           value={site ?? ""}
           aria-label="Radar site"
           options={[
-            { value: "", label: "— pick a site (or click one on the map) —" },
+            { value: "", label: "— pick a radar (or click one on the map) —" },
+            ...(favSites.length ? [{ value: "__fav", label: "Favourites", disabled: true }] : []),
+            ...favSites.map((s) => ({
+              value: s.id,
+              label: `${s.icao} — ${s.name}`,
+              hint: siteHint(s.id),
+              disabled: siteIsDown(s.id),
+              tone: siteIsDown(s.id) ? ("warn" as const) : undefined,
+            })),
+            ...(brVolumes.length ? [{ value: "__br", label: "Brazil", disabled: true }] : []),
+            ...brVolumes.map((s) => ({
+              value: s.id,
+              label: `${s.icao} — ${s.name}`,
+              hint: s.live ? "live" : "archive",
+            })),
+            ...(brVolumes.length ? [{ value: "__us", label: "United States", disabled: true }] : []),
             ...usSites.map((s) => ({
               value: s.id,
               label: `${s.icao} — ${s.name}`,
-              hint: s.online === false ? "offline" : undefined,
-              disabled: s.online === false,
-              tone: s.online === false ? ("warn" as const) : undefined,
+              hint: siteHint(s.id) ?? (s.online === false ? "offline" : undefined),
+              disabled: siteIsDown(s.id) || (s.online === false && !inArchive),
+              tone: siteIsDown(s.id) || s.online === false ? ("warn" as const) : undefined,
+            })),
+            ...(tdwrSites.length ? [{ value: "__tdwr", label: "TDWR · airport radars", disabled: true }] : []),
+            ...tdwrSites.map((s) => ({
+              value: s.id,
+              label: `${s.icao} — ${s.name}`,
+              hint: siteHint(s.id) ?? (s.online === false ? "offline" : undefined),
+              disabled: siteIsDown(s.id) || (s.online === false && !inArchive),
+              tone: siteIsDown(s.id) || s.online === false ? ("warn" as const) : undefined,
+            })),
+            ...(otherSites.length ? [{ value: "__other", label: "Other", disabled: true }] : []),
+            ...otherSites.map((s) => ({
+              value: s.id,
+              label: `${s.icao} — ${s.name}`,
+              hint: siteHint(s.id) ?? (s.online === false ? "offline" : undefined),
+              disabled: siteIsDown(s.id) || (s.online === false && !inArchive),
+              tone: siteIsDown(s.id) || s.online === false ? ("warn" as const) : undefined,
             })),
           ]}
-          onChange={(value) => {
-            const id = value || null;
-            selectSite(id);
-            if (id) {
-              if (!enabled) setLayerVisible(LAYER, true);
-              jumpTo(id);
-            }
-          }}
+          onChange={pick}
         />
       </label>
 
-      {scan?.meta.vcp != null && (
-        <div className="sfcobs__vcp">
-          <div className="sfcobs__row">
-            <span>VCP</span>
-            <b style={{ fontFamily: "var(--mono)" }}>{scan.meta.vcp}</b>
-          </div>
-          {scan.meta.mode && (
-            <div className="sfcobs__row">
-              <span style={{ color: "var(--text-faint)", fontSize: 11 }}>{scan.meta.mode}</span>
-            </div>
-          )}
-        </div>
-      )}
+      {/* The radar's name + star, its live standing, VCP and the folded
+          Site information (radar-sites: RadarSiteInfo.tsx). */}
+      <RadarSiteInfo />
 
-      <label className="sfcobs__field">
-        <span className="sfcobs__label">
-          Loop length{product.startsWith("L2") ? " — super-res, ~7 MB/frame" : ""}
-        </span>
-        <Select
-          value={String(frames)}
-          onChange={(value) => setFrames(Number(value))}
-          aria-label="How many frames"
-          options={frameChoicesFor(product).map((n) => ({
-            value: String(n),
-            label: `${n} frames`,
-            hint: n >= 200 ? "heavy" : undefined,
-          }))}
-        />
-      </label>
+      {/* The NWS office whose area holds this radar: its page (ForecastOfficePanel). */}
+      <RadarOfficeRow />
+
+      {/* The loop as a span of time, 30 min to 8 h (LoopLength.tsx). */}
+      <LoopLength />
+      {/* Every frame of the loop: state, details, download, remove (FramesPanel.tsx). */}
+      <FramesButton />
 
       {/* Products + tilt now live on the map, top-right (RadarProductPanel):
           the grids here were cramped and duplicated that control. */}
@@ -249,6 +306,7 @@ export function RadarView() {
         </span>
         <Toggle on={showTracks} onClick={() => setShowTracks(!showTracks)} />
       </div>
+      <DetectionsOverlayRow />
 
       <div className="sfcobs__section">Display</div>
       <div className="sfcobs__toggle-row">
@@ -260,6 +318,7 @@ export function RadarView() {
         </span>
         <Toggle on={showReadout} onClick={() => setShowReadout(!showReadout)} />
       </div>
+      <ProductInfoRow />
       <div className="sfcobs__toggle-row">
         <span>Smooth radar data</span>
         <Toggle on={smooth} onClick={() => setSmooth(!smooth)} />
@@ -287,38 +346,38 @@ export function RadarView() {
           />
         </label>
       )}
+      {/* Gate filter, flash, trail, pane opacity, scan line (display-opts). */}
+      <RadarDisplayOptions />
+      <VelocityOptions />
 
       <div className="sfcobs__section">Timeline</div>
       <div className="sfcobs__toggle-row">
         <span>Auto update</span>
         <Toggle on={autoUpdate} onClick={() => setAutoUpdate(!autoUpdate)} />
       </div>
-      {/* Level 2 frames are whole ~7 MB volumes and the source keeps only ~48 h,
-          so a whole day (~2 GB) simply isn't on offer -- the control goes away
-          rather than sitting there failing. */}
-      {!isL2 && (
-        <label className="sfcobs__field">
-          <span className="sfcobs__label">
-            Whole day{archiveDate ? " — every scan" : ""}
-          </span>
-          <input
-            type="date"
-            value={archiveDate ?? ""}
-            max={new Date().toISOString().slice(0, 10)}
-            onChange={(e) => void setArchiveDate(e.target.value || null)}
-          />
-        </label>
-      )}
+      {/* A Level II day comes out of the whole archive (archive-l2, back to
+          1991) and loads from the frame on screen outward; Level III's from
+          March 2022, warmed before play. */}
+      <label className="sfcobs__field">
+        <span className="sfcobs__label">
+          Whole day{archiveDate ? " — every scan" : ""}
+        </span>
+        <input
+          type="date"
+          value={archiveDate ?? ""}
+          min={isL2 ? "1991-06-01" : tdwrSites.some((s) => s.id === site) ? "2013-06-25" : "2022-03-01"}
+          max={new Date().toISOString().slice(0, 10)}
+          onChange={(e) => void setArchiveDate(e.target.value || null, null)}
+        />
+      </label>
 
       <label className="sfcobs__field">
         <span className="sfcobs__label">
           Start from{archiveTime !== null ? " — archive" : " — live"}
-          {isL2 ? " (last 48 h)" : ""}
         </span>
         <input
           type="datetime-local"
           value={archiveTime !== null ? toLocalInput(archiveTime) : ""}
-          min={isL2 ? toLocalInput(Math.floor(Date.now() / 1000) - 48 * 3600) : undefined}
           max={toLocalInput(Math.floor(Date.now() / 1000))}
           onChange={(e) => {
             const v = e.target.value;

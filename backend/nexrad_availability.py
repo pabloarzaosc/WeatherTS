@@ -27,6 +27,7 @@ from typing import Any, Optional
 
 import nexrad_core as n3
 import nexrad_level2 as n2
+import tdwr
 
 _CACHE: dict[str, tuple[float, dict]] = {}
 # A radar can change mode between volumes: re-checked after three minutes.
@@ -63,6 +64,16 @@ def site_availability(site: str, quick: bool = False, at: Optional[int] = None) 
     hit = _CACHE.get(ck)
     if hit and time.time() - hit[0] < ttl:
         return hit[1]
+    if tdwr.is_tdwr(sid):
+        # Level III is all a TDWR has: the quick answer is the whole answer.
+        lock = _LOCKS.setdefault(ck, threading.Lock())
+        with lock:
+            hit = _CACHE.get(ck)
+            if hit and time.time() - hit[0] < ttl:
+                return hit[1]
+            out = _check_tdwr(sid, at)
+            _CACHE[ck] = (time.time(), out)
+            return out
     if quick:
         got = _QUICK.get(ck)
         if got and time.time() - got[0] < ttl:
@@ -83,10 +94,11 @@ def site_availability(site: str, quick: bool = False, at: Optional[int] = None) 
 def _newest(sid: str, code: str, since: datetime, until: Optional[datetime] = None) -> Optional[int]:
     """The newest scan of a code after `since` -- and no later than `until`."""
     end = until or datetime.now(timezone.utc)
-    after = f"{sid}_{code}_{since:%Y_%m_%d_%H_%M_%S}"
     for day in sorted({end.date(), since.date()}, reverse=True):
+        name = tdwr.archive_id(sid, f"{day:%Y-%m-%d}")
+        after = f"{name}_{code}_{since:%Y_%m_%d_%H_%M_%S}"
         r = n3._PROBE_SESSION.get(  # noqa: SLF001
-            n3.S3, params={"list-type": "2", "prefix": f"{sid}_{code}_{day:%Y_%m_%d}", "start-after": after},
+            n3.S3, params={"list-type": "2", "prefix": f"{name}_{code}_{day:%Y_%m_%d}", "start-after": after},
             timeout=(8, 20),
         )
         keys = re.findall(r"<Key>([^<]+)</Key>", r.text)
@@ -97,11 +109,93 @@ def _newest(sid: str, code: str, since: datetime, until: Optional[datetime] = No
     return None
 
 
+# key -> the angle in its header: a scan's angle never changes.
+_TDWR_ELEV: dict[str, Optional[float]] = {}
+
+
+def _tdwr_elev(sid: str, code: str, unix: int) -> Optional[float]:
+    when = datetime.fromtimestamp(unix, timezone.utc)
+    key = f"{tdwr.archive_id(sid, f'{when:%Y-%m-%d}')}_{code}_{when:%Y_%m_%d_%H_%M_%S}"
+    if key not in _TDWR_ELEV:
+        try:
+            _TDWR_ELEV[key] = n3.l3_elevation(key)
+        except Exception:  # noqa: BLE001 - the nominal angle stands in
+            return None
+        while len(_TDWR_ELEV) > 512:
+            _TDWR_ELEV.pop(next(iter(_TDWR_ELEV)))
+    return _TDWR_ELEV[key]
+
+
+def _check_tdwr(sid: str, at: Optional[int]) -> dict[str, Any]:
+    """What an airport radar publishes: its own Level III codes under the same
+    families, and every other family empty (no Level II, nothing derived from it,
+    no dual-pol). The cuts differ from site to site (0.3 at TMEM, 0.5 at TBWI)
+    and are read from each code's newest scan."""
+    anchor = datetime.fromtimestamp(at, timezone.utc) if at is not None else None
+    since = (anchor or datetime.now(timezone.utc)) - timedelta(hours=2)
+    until = anchor + timedelta(minutes=20) if anchor is not None else None
+    when = at if at is not None else time.time()
+
+    codes = [c for fam in tdwr.FAMILY_CODES.values() for c in fam]
+    with ThreadPoolExecutor(len(codes)) as pool:
+        newest = dict(zip(codes, pool.map(lambda c: _newest(sid, c, since, until), codes)))
+    # What the bucket stopped keeping: the NWS feed has it live.
+    if at is None:
+        for code in tdwr.FEED_DIRS:
+            if newest.get(code) is None:
+                keys = n3.feed_keys(sid, code)
+                newest[code] = n3.key_time(keys[-1]) if keys else None
+    ref = newest.get("TZ0") or max((v for v in newest.values() if v), default=None)
+
+    def has(code: str) -> bool:
+        got = newest.get(code)
+        if got is None or ref is None:
+            return False
+        lag = _FLAT_LAG if tdwr.PRODUCTS[code]["tilt"] is None else _SLOT_LAG
+        return got >= ref - lag
+
+    tilted = [c for c in codes if tdwr.PRODUCTS[c]["tilt"] is not None and has(c)]
+    with ThreadPoolExecutor(max(1, len(tilted))) as pool:
+        angles = dict(zip(tilted, pool.map(lambda c: _tdwr_elev(sid, c, int(newest[c])), tilted)))
+
+    families: dict[str, list[dict]] = {f["id"]: [] for f in n2.merged_catalog(n3.product_catalog())}
+    cuts: set[float] = set()
+    for fid, fam_codes in tdwr.FAMILY_CODES.items():
+        rows = []
+        for code in fam_codes:
+            if not has(code):
+                continue
+            spec = tdwr.PRODUCTS[code]
+            angle = angles.get(code)
+            if angle is not None:
+                cuts.add(round(angle, 1))
+            rows.append({"tilt": spec["tilt"], "code": code, "source": "level3",
+                         "elev": round(angle, 1) if angle is not None else spec["elev"]})
+        families[fid] = rows
+
+    return {
+        "site": n3.icao_for(sid),
+        "live": ref is not None and abs(when - ref) < _STALE_S,
+        "at": at,
+        "newestScan": ref,
+        "volumeUnix": None,
+        "cuts": sorted(cuts),
+        "families": families,
+        "level2": False,
+        "level2Pending": False,
+        "tdwr": True,
+        # product 41 is plain echo tops, not the WSR-88D's enhanced ones
+        "labels": {"EET": "Echo Tops"},
+        "checkedAt": int(time.time()),
+    }
+
+
 def _check(sid: str, with_level2: bool = True, at: Optional[int] = None, ck: str = "") -> dict[str, Any]:
     catalog = n2.merged_catalog(n3.product_catalog())
 
     l3_codes = sorted({n3._DERIVED_SOURCE.get(t["code"], t["code"])  # noqa: SLF001
-                       for fam in catalog if fam.get("source") != "level2" for t in fam["tilts"]} | {"N0B"})
+                       for fam in catalog if fam.get("source") != "level2" and not fam.get("tdwrOnly")
+                       for t in fam["tilts"]} | {"N0B"})
     # Now, or the moment archive playback starts: the two hours before it, and
     # the first minutes of the loop that runs on from it.
     anchor = datetime.fromtimestamp(at, timezone.utc) if at is not None else None
@@ -157,9 +251,19 @@ def _check(sid: str, with_level2: bool = True, at: Optional[int] = None, ck: str
             out.append(tilt)
         return out
 
+    before_l3 = at is not None and at < n3.ARCHIVE_START_UNIX
     families: dict[str, list[dict]] = {}
     for fam in catalog:
         fid = fam["id"]
+        if fam.get("derived"):
+            # Computed from the volume (radar_derived.py): a volume product needs
+            # only a volume; a tilted one the cuts that carry what it is made of
+            # (velocity for VROT and SRV, correlation for PTDS).
+            if fam.get("needs"):
+                families[fid] = l2_tilts(fam["codeBase"], fam["needs"], set())
+            else:
+                families[fid] = [dict(t) for t in fam["tilts"]] if level2 else []
+            continue
         if fam.get("source") == "level2":
             moment = fid[2:] if fid.startswith("L2") else fid
             families[fid] = l2_tilts(moment, moment, set())
@@ -176,8 +280,10 @@ def _check(sid: str, with_level2: bool = True, at: Optional[int] = None, ck: str
             angle = by_slot.get(t["tilt"])
             tilts.append({"tilt": t["tilt"], "code": t["code"], "source": "level3",
                           "elev": round(angle, 1) if angle is not None else t["elev"]})
-        if fid in n2.L2_MOMENTS and tilts:
+        if fid in n2.L2_MOMENTS and (tilts or before_l3):
             # Storm-relative velocity is made from velocity, so it needs velocity's cuts.
+            # Before Level III's archive begins, Level II's archive (1991 on) is
+            # the only one: reflectivity and velocity come from it at every cut.
             moment = "G" if fid == "S" else fid
             tilts += l2_tilts(fid, moment, {t["tilt"] for t in tilts})
         tilts.sort(key=lambda t: t["elev"] if t["elev"] is not None else 0)

@@ -42,6 +42,20 @@ SATS = {
     "goes19": "gcp-public-data-goes-19",
     "goes18": "gcp-public-data-goes-18",
 }
+# "goes19" / "goes18" stand for GOES-East / -West. A past frame (archive-l2)
+# reads the satellite that held the slot then: GOES-16 was East until GOES-19
+# took over on 2025-04-07, GOES-17 West until GOES-18 on 2023-01-04. GLM data
+# begins in 2017; before that the window is simply empty.
+_EAST_19_FROM = 1744038000  # 2025-04-07 15:00Z
+_WEST_18_FROM = 1672833600  # 2023-01-04 12:00Z
+
+
+def _bucket(sat: str, t: float) -> str:
+    if sat == "goes19" and t < _EAST_19_FROM:
+        return "gcp-public-data-goes-16"
+    if sat == "goes18" and t < _WEST_18_FROM:
+        return "gcp-public-data-goes-17"
+    return SATS[sat]
 # Halfway between the two sub-satellite points (75.2 W and 137.0 W). GOES-East
 # keeps from there east to 30 E, past the edge of its view at Africa's coast;
 # GOES-West the rest, which runs west across the antimeridian to ~150 E.
@@ -120,7 +134,8 @@ def _fetch(bucket: str, key: str) -> np.ndarray:
     try:
         body = net.get(f"{sat_abi.GCS}/{bucket}/{key}").content
     except Exception:  # noqa: BLE001 - the same file on AWS
-        body = net.get(f"https://{sat_abi.S3[bucket]}.s3.amazonaws.com/{key}").content
+        aws = sat_abi.S3.get(bucket) or bucket.replace("gcp-public-data-goes-", "noaa-goes")
+        body = net.get(f"https://{aws}.s3.amazonaws.com/{key}").content
     arr = decode(body)
     net.disk_put("glm", ck, arr.tobytes())
     return arr
@@ -206,7 +221,7 @@ def flashes(sats: list[str], start: float, end: float,
     newest = 0.0
     both = len(sats) > 1
     for sat in sats:
-        bucket = SATS[sat]
+        bucket = _bucket(sat, start)
         got: list[np.ndarray] = []
         waiting: list[Future] = []
         for ts, key in _files(bucket, start, end):
@@ -315,7 +330,7 @@ def prefetch(sat: str, start: float, end: float, bbox) -> dict:
     queued = 0
     total = 0
     for s in _sats(sat, bbox):
-        bucket = SATS[s]
+        bucket = _bucket(s, start)
         for _ts, key in _files(bucket, start, end):
             total += 1
             arr, fut = _file(bucket, key, now=False)

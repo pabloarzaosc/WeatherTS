@@ -2,9 +2,11 @@ import { useEffect, useRef } from "react";
 import maplibregl, { type GeoJSONSource, type Map as MapLibreMap, type MapMouseEvent, type Marker } from "maplibre-gl";
 
 import { getMap } from "../map/mapInstance";
+import { volumeKey } from "../lib/radarFrames";
 import { useNexradStore } from "../store/useNexradStore";
 import { useXsectStore } from "../store/useXsectStore";
 import { CrossSectionPanel } from "./CrossSectionPanel";
+import { AnalysisHost } from "./PaneWindows";
 
 const SRC = "xsect-src";
 const LINE = "xsect-line";
@@ -92,7 +94,13 @@ export function CrossSectionTool() {
   const site = useNexradStore((s) => s.site);
   const scan = useNexradStore((s) => s.scans[s.index] ?? null);
   useEffect(() => {
-    const key = scan?.key?.startsWith("L2") ? scan.key : "";
+    // A SAILS rescan frame slices its volume; the volume still being written
+    // is not whole yet, so the section takes the newest whole one.
+    if (scan?.partial) {
+      useXsectStore.getState().setFrame(site, null, "");
+      return;
+    }
+    const key = scan?.key?.startsWith("L2") ? volumeKey(scan.key) : "";
     useXsectStore.getState().setFrame(site, scan?.time ?? null, key);
   }, [site, scan]);
 
@@ -184,5 +192,10 @@ export function CrossSectionTool() {
   );
 
   // The section covers the map, so it steps aside while a new line is drawn.
-  return a && b && !drawing ? <CrossSectionPanel /> : null;
+  // In a pane of its own when one holds it (panes-compare), else over the map.
+  return a && b && !drawing ? (
+    <AnalysisHost kind="xsect">
+      <CrossSectionPanel />
+    </AnalysisHost>
+  ) : null;
 }

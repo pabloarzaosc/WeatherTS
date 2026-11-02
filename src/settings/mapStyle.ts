@@ -7,7 +7,6 @@ import { mapInk } from "../map/mapInk";
 import { useAppStore } from "../store/useAppStore";
 import { useAcarsStore } from "../store/useAcarsStore";
 import { useLsrStore } from "../store/useLsrStore";
-import { ALERT_COLOR_EVENTS, alertColorKey } from "./schema";
 import { getSetting, useSettingsStore } from "./useSettingsStore";
 
 /**
@@ -104,12 +103,19 @@ function mapRules(): Rule[] {
 function radarRules(): Rule[] {
   const ss = num("radar.siteScale");
   const tw = num("storms.trackWidth");
-  const selected = color("storms.selectedColor");
-  const forecast = color("storms.forecastColor");
+  // The default white tracks vanish over a light basemap: dark ink there,
+  // unless a colour of one's own was picked in Settings.
+  const lightMap = mapInk().tone === "light";
+  const own = useSettingsStore.getState().values;
+  const trackInk = (key: string, onLight: string) => (lightMap && !(key in own) ? onLight : color(key));
+  const selected = trackInk("storms.selectedColor", "#a86f00");
+  const forecast = trackInk("storms.forecastColor", "#0d1218");
+  const past = trackInk("storms.pastColor", "#1b2633");
   return [
     {
       layers: ["nexrad-sites-label"],
-      layout: { visibility: visibility("radar.siteLabels"), "text-size": +(11 * ss).toFixed(2) },
+      // an airport radar's tag (TDWR) a size down from a NEXRAD's pill
+      layout: { visibility: visibility("radar.siteLabels"), "text-size": ["case", ["==", ["get", "kind"], "tdwr"], +(10 * ss).toFixed(2), +(11 * ss).toFixed(2)] },
     },
     {
       layers: ["nexrad-ring-line"],
@@ -130,7 +136,7 @@ function radarRules(): Rule[] {
     },
     {
       layers: ["nexrad-storm-past"],
-      paint: { "line-color": color("storms.pastColor"), "line-opacity": 0.45, "line-width": +(1.2 * tw).toFixed(3) },
+      paint: { "line-color": past, "line-opacity": lightMap ? 0.55 : 0.45, "line-width": +(1.2 * tw).toFixed(3) },
     },
     {
       layers: ["nexrad-storm-fcst"],
@@ -144,43 +150,71 @@ function radarRules(): Rule[] {
         "line-width": ["case", [">=", ["get", "minutes"], 60], +(2.2 * tw).toFixed(3), +(1.5 * tw).toFixed(3)],
       },
     },
-    { layers: ["nexrad-storm-dot"], paint: { "circle-stroke-color": ["case", ["get", "selected"], selected, "#ffffff"] } },
+    {
+      layers: ["nexrad-storm-dot"],
+      paint: { "circle-stroke-color": ["case", ["get", "selected"], selected, lightMap ? "#0d1218" : "#ffffff"] },
+    },
     { layers: ["nexrad-storm-label"], layout: { visibility: visibility("storms.labels") } },
   ];
 }
 
 const priority: ExpressionSpecification = ["coalesce", ["get", "priority"], 0];
 
+/** "#060a10" -> "rgba(6,10,16,0.75)": the dark edge keeps its old see-through. */
+function rgba(hex: string, alpha: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
 function alertRules(): Rule[] {
   const lw = num("alerts.lineWidth");
-  const match: unknown[] = ["match", ["downcase", ["coalesce", ["get", "event"], ""]]];
-  for (const e of ALERT_COLOR_EVENTS) match.push(e.event, color(alertColorKey(e.event)));
-  match.push(["get", "color"]);
-  const colorExpr = match as ExpressionSpecification;
+  const edge = num("alerts.casingWidth");
+  const edgeColor = rgba(color("alerts.casingColor"), 0.75);
+  // Colours are baked onto each feature by alertStyle.alertMapData: the
+  // type's colour from Settings, or its intensity tier's. A Settings edit
+  // redraws the source (AlertController), so the layers just read it.
+  const colorExpr: ExpressionSpecification = ["get", "color"];
+  // Each type's own outline width (its Settings page), 1x by default.
+  const typeMul: ExpressionSpecification = ["coalesce", ["get", "lineMul"], 1];
+  // A type with no outline, or no dark edge, gets no casing.
+  const edged: ExpressionSpecification = ["all", ["coalesce", ["get", "border"], true], [">", typeMul, 0]];
   // Same ranking as the module draws, scaled.
   const strokeWidth: ExpressionSpecification = [
     "*",
     lw,
+    typeMul,
     ["case", ["get", "isEmergency"], 1.8, ["get", "isPDS"], 1.3, 1],
     ["case", ["coalesce", ["get", "convective"], false], 1.3, 1],
     ["interpolate", ["linear"], priority, 0, 0.5, 350, 0.65, 650, 0.85, 900, 1.1, 1200, 1.4],
   ];
+  const watchW: ExpressionSpecification = ["*", lw, typeMul, 1.5];
+  const advisoryW: ExpressionSpecification = ["*", lw, typeMul, 2.2];
   return [
     { layers: ["alerts-fill"], paint: { "fill-color": colorExpr } },
     {
       layers: ["alerts-casing"],
       layout: { visibility: visibility("alerts.casing") },
-      paint: { "line-width": ["+", strokeWidth, 1.6] },
+      paint: { "line-width": ["case", edged, ["+", strokeWidth, edge], 0], "line-color": edgeColor },
     },
     {
       layers: ["alerts-outline"],
-      paint: {
-        "line-color": ["case", ["get", "isEmergency"], color("alerts.emergencyColor"), colorExpr],
-        "line-width": strokeWidth,
-      },
+      paint: { "line-color": colorExpr, "line-width": strokeWidth },
     },
     // The watches' dashes and the advisories' dots take the colours of their fill.
-    { layers: ["alerts-watch-line", "alerts-advisory-line"], paint: { "line-color": colorExpr } },
+    { layers: ["alerts-watch-line"], paint: { "line-color": colorExpr, "line-width": watchW } },
+    { layers: ["alerts-advisory-line"], paint: { "line-color": colorExpr, "line-width": advisoryW } },
+    {
+      // The module shows and hides these two (outlineWatches), so the switch
+      // here works through the width rather than the visibility.
+      layers: ["alerts-watch-casing"],
+      paint: { "line-width": on("alerts.casing") ? ["case", edged, ["+", watchW, edge], 0] : 0, "line-color": edgeColor },
+    },
+    {
+      layers: ["alerts-advisory-casing"],
+      paint: { "line-width": on("alerts.casing") ? ["case", edged, ["*", lw, typeMul, 1.1], 0] : 0, "line-color": edgeColor },
+    },
   ];
 }
 

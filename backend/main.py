@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import math
 import os
 import struct
 import sys
@@ -33,10 +34,18 @@ import cpc_hazards
 import raob_core
 import stations
 import surface_obs
+import aviation
+import aviation_world
+import brazil_radar
+import radar_relay_client
 import nexrad_core
+import tdwr
+import radar_status
 import observations
 import nexrad_level2
 import radar_xsect
+import radar_volume3d
+import radar_detect
 import nexrad_availability
 import nexrad_storms
 import storm_attributes
@@ -189,6 +198,24 @@ def _warm_satellite() -> None:
 
 
 app.router.on_startup.append(_warm_satellite)
+
+
+# The Brazilian radars stay out of the released app (Pablo, 2026-11-02): the
+# packaged backend offers none of them, whatever the store holds, unless
+# WEATHERTS_BR_RADARS=1. A dev run (not frozen) keeps them, for the CEMADEN demo.
+BR_RADARS_ON = os.environ.get("WEATHERTS_BR_RADARS") == "1" or not getattr(sys, "frozen", False)
+
+
+def _follow_radar_relay() -> None:
+    """The Brazilian radars live from the WeatherTS radar relay, in the
+    background, when WEATHERTS_RADAR_RELAY names one: its radars in the picker,
+    the ones the app looks at (radar_relay_client.touch) downloaded. Relay or
+    not, relayed volumes past the retention are pruned once, in a thread."""
+    if BR_RADARS_ON:
+        radar_relay_client.start()
+
+
+app.router.on_startup.append(_follow_radar_relay)
 
 
 @app.get("/health")
@@ -408,7 +435,7 @@ def spc_mesoscale():
 
 @app.get("/api/nexrad/storms")
 def nexrad_storm_tracks(
-    site: str = Query(..., min_length=3, max_length=4),
+    site: str = Query(..., min_length=3, max_length=10),
     unix: int | None = Query(None, ge=0),
 ):
     """SCIT storm cells (past + forecast tracks) and mesocyclone detections.
@@ -416,6 +443,11 @@ def nexrad_storm_tracks(
     `unix` picks the storm scan nearest that instant so the tracks follow a
     scrubbed radar loop instead of always showing the latest volume.
     """
+    if brazil_radar.is_br(site):
+        r = brazil_radar.RADARS.get(site.upper(), {})
+        return {"meta": {"site": site.upper(), "siteLat": r.get("lat", 0.0), "siteLon": r.get("lon", 0.0),
+                         "maxRangeKm": 250.0, "validUnix": None, "key": None, "cellCount": 0, "mesoCount": 0,
+                         "attributedCount": 0}, "cells": [], "mesos": []}
     try:
         return nexrad_storms.build_storms(site, unix)
     except ValueError as exc:
@@ -426,7 +458,7 @@ def nexrad_storm_tracks(
 
 @app.get("/api/nexrad/storms/history")
 def nexrad_storm_history(
-    site: str = Query(..., min_length=3, max_length=4),
+    site: str = Query(..., min_length=3, max_length=10),
     cell: str = Query(..., min_length=1, max_length=4),
     volumes: int = Query(storm_attributes.DEFAULT_HISTORY_VOLUMES, ge=2, le=40),
 ):
@@ -435,6 +467,8 @@ def nexrad_storm_history(
     Oldest sample first. Empty is a normal answer -- the live feed only reaches
     back about a day, and a cell only appears in the scans it was tracked in.
     """
+    if brazil_radar.is_br(site):
+        return {"site": site.upper(), "cell": cell.upper(), "samples": []}
     try:
         return {"site": site.upper(), "cell": cell.upper(),
                 "samples": storm_attributes.fetch_history(site, cell, volumes)}
@@ -444,10 +478,12 @@ def nexrad_storm_history(
 
 @app.get("/api/nexrad/vwp")
 def nexrad_vwp_profile(
-    site: str = Query(..., min_length=3, max_length=4),
+    site: str = Query(..., min_length=3, max_length=10),
     columns: int = Query(12, ge=1, le=nexrad_vwp.MAX_COLUMNS),
 ):
     """VAD Wind Profile: the radar's own wind profile, one column per volume."""
+    if brazil_radar.is_br(site):
+        raise HTTPException(status_code=404, detail="No VAD wind profile for this radar.")
     try:
         return nexrad_vwp.build_vwp(site, columns)
     except ValueError as exc:
@@ -519,9 +555,43 @@ def nexrad_vwp_panel(
 @app.get("/api/nexrad/sites")
 def nexrad_sites():
     try:
-        return {"sites": nexrad_core.list_sites()}
+        out = nexrad_core.list_sites()
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
+    # The Brazilian radars beside the NEXRADs: online where a volume is kept.
+    try:
+        if BR_RADARS_ON:
+            out = out + brazil_radar.sites()
+    except Exception:  # noqa: BLE001 - the NEXRAD list stands alone
+        pass
+    try:
+        return {"sites": out}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/nexrad/site-status")
+def nexrad_site_status():
+    """Every radar's live standing, NEXRAD and TDWR (radar_status): ok / late / stale / down / unknown."""
+    return radar_status.statuses()
+
+
+@app.get("/api/nexrad/site-status/detail")
+def nexrad_site_status_detail(site: str = Query(...)):
+    """One radar's standing with its reasons: RDA alarms, the office's outage
+    notice (FTM), and when its newest Level II chunk / Level III scan came in."""
+    try:
+        return radar_status.site_detail(site)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/nexrad/site-scans")
+def nexrad_site_scans(ids: str = Query("")):
+    """When each listed radar's newest 0.5 deg reflectivity came in (the labels' blink)."""
+    return {"scans": radar_status.newest_scans(ids.split(","))}
 
 
 @app.get("/api/nexrad/availability")
@@ -529,8 +599,17 @@ def nexrad_availability_route(site: str = Query(...), quick: bool = Query(False)
     """Every product and tilt this radar is publishing now, at its real angle.
     `quick` answers from Level III alone first (see nexrad_availability); `at`
     asks what it had at that moment, for archive playback."""
+    if brazil_radar.is_br(site):
+        radar_relay_client.touch(site)
+        try:
+            return brazil_radar.availability(site.upper(), at or None)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=str(exc))
     try:
-        return nexrad_availability.site_availability(site, quick, at or None)
+        out = nexrad_availability.site_availability(site, quick, at or None)
+        if isinstance(out, dict) and isinstance(out.get("families"), dict):
+            brazil_radar.empty_families(out["families"])
+        return out
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
 
@@ -538,6 +617,8 @@ def nexrad_availability_route(site: str = Query(...), quick: bool = Query(False)
 @app.get("/api/nexrad/cuts")
 def nexrad_cuts(site: str = Query(...), at: int = Query(0, ge=0)):
     """The elevations this radar is flying: every cut, and the one below 0.5 deg if it has one."""
+    if brazil_radar.is_br(site):
+        return brazil_radar.cuts(site.upper(), at or None)
     try:
         return nexrad_level2.site_cuts(site, at or None)
     except Exception as exc:  # noqa: BLE001
@@ -553,7 +634,8 @@ def nexrad_meta():
         # One product list, each moment from its best source (Level III unless
         # Level II genuinely wins: CC, ZDR, SW, PHI, CFP). No more picking the
         # worse source of a product that's in both.
-        "grids": nexrad_level2.merged_catalog(nexrad_core.product_catalog()),
+        # ...and the families only the Brazilian radars' volumes make.
+        "grids": nexrad_level2.merged_catalog(nexrad_core.product_catalog()) + (brazil_radar.extra_catalog() if BR_RADARS_ON else []),
         "palettes": nexrad_core.list_palettes(),
         "defaultProduct": nexrad_core.DEFAULT_PRODUCT,
     }
@@ -576,8 +658,14 @@ def nexrad_data(
     site: str = Query(...),
     product: str = Query(nexrad_core.DEFAULT_PRODUCT),
     key: str = Query(""),
+    dealias: str = Query("", max_length=8),
+    motion: str = Query("", max_length=16),
 ):
     """Binary polar scan.
+
+    `dealias` (region | vad | off) and `motion` (auto | sti | <from deg>/<kt>)
+    apply to Level II velocity, SRV, VROT and PTDS; they are folded into the
+    product code (radar_derived.with_options), which the caches key on.
 
     Layout: [4-byte header len][JSON header][az f32 * (nAz+1)][lut f32 * 256]
             [codes u8 * nAz*nGates]
@@ -587,10 +675,27 @@ def nexrad_data(
     try:
         # "L2..." products come from a live Level II volume (super-res); the rest
         # from Level III. Same wire format either way.
-        if product.upper().startswith("L2"):
+        if brazil_radar.is_br(site):
+            out = brazil_radar.polar(site.upper(), product.upper(), key or "")
+        elif tdwr.is_tdwr(site):
+            # An airport radar is Level III only: a code held over from another
+            # radar is answered under its own code for that moment, and a moment
+            # it does not have is refused (tdwr.to_tdwr).
+            out = nexrad_core.polar_data(site, product, key or None)
+        elif product.upper().startswith("L2"):
+            if dealias or motion:
+                import radar_derived  # noqa: PLC0415
+
+                product = radar_derived.with_options(product, dealias, motion)
             out = nexrad_level2.polar_data_l2(site, product.upper(), key or "")
         else:
             out = nexrad_core.polar_data(site, product, key or None)
+    except tdwr.NotOnTdwr as exc:
+        # 400, not 422: the frame is fine, this radar just has no such moment.
+        raise HTTPException(status_code=400, detail=str(exc))
+    except nexrad_core.UndecodableScan as exc:
+        # Permanent: 422, so the app drops the frame instead of retrying it.
+        raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
 
@@ -605,9 +710,69 @@ def nexrad_data(
     return Response(
         content=body,
         media_type="application/octet-stream",
-        # a published scan never changes -- let the browser keep it
-        headers={"Cache-Control": "public, max-age=86400"},
+        # a published scan never changes -- let the browser keep it; a tilt of
+        # the volume still being written that isn't scanned yet will
+        headers={"Cache-Control": "no-store" if out["meta"].get("pending")
+                 else "public, max-age=86400"},
     )
+
+
+@app.get("/api/radar/file/info")
+def radar_file_info(site: str = Query(..., max_length=16), key: str = Query(..., max_length=96)):
+    """What a loop frame's original radar file is: name, bytes, source
+    (radar_files.py). The Frames panel's details row."""
+    import radar_files  # noqa: PLC0415
+
+    try:
+        return radar_files.describe(site, key)
+    except radar_files.FileError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc).strip("'\""))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/radar/file")
+def radar_file(site: str = Query(..., max_length=16), key: str = Query(..., max_length=96)):
+    """A loop frame's original radar file (Level II volume, Level III product,
+    kept Brazilian volume), as an attachment."""
+    import radar_files  # noqa: PLC0415
+
+    try:
+        name, raw = radar_files.original(site, key)
+    except radar_files.FileError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc).strip("'\""))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+    return Response(
+        content=raw,
+        media_type="application/zip" if name.endswith(".zip") else "application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{name}"',
+            # Already compressed (bzip2 records): GZipMiddleware leaves it be.
+            "Content-Encoding": "identity",
+            "Cache-Control": "no-store" if "_partial" in name else "public, max-age=86400",
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
+    )
+
+
+@app.get("/api/net/probe")
+def net_probe():
+    """Whether the backend reaches the internet, and how fast: one small HEAD to
+    the Level III bucket (the app's connection badge asks when requests fail)."""
+    import time as _t  # noqa: PLC0415
+
+    t0 = _t.perf_counter()
+    try:
+        r = nexrad_core._SESSION.head(nexrad_core.S3, timeout=(4, 6))
+        ok = r.status_code < 500
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "ms": round((_t.perf_counter() - t0) * 1000), "error": type(exc).__name__}
+    return {"ok": ok, "ms": round((_t.perf_counter() - t0) * 1000)}
 
 
 @app.get("/api/nexrad/xsect")
@@ -619,16 +784,32 @@ def nexrad_xsect(
     at: float | None = Query(None, gt=0),
     key: str = Query(""),
     top: float = Query(16.0, ge=4, le=25),
+    dealias: str = Query("off", pattern="^(off|region|vad)$"),
+    motion: str = Query("", max_length=24),
 ):
     """A vertical cross-section, A to B, through the Level II volume nearest
     `at` (or `key`, or the newest). Layout: [4-byte header len][JSON header]
     [codes u8 * rows*cols], top row first; the header carries the lut."""
+    if tdwr.is_tdwr(site):
+        raise HTTPException(status_code=422, detail=tdwr.LEVEL2_NOTE)
     try:
         pa = tuple(float(x) for x in a.split(","))
         pb = tuple(float(x) for x in b.split(","))
         if len(pa) != 2 or len(pb) != 2:
             raise ValueError("a and b must be lat,lon")
-        out = radar_xsect.cross_section(site, pa, pb, fam.upper(), at, key, top)
+        if brazil_radar.is_br(site):
+            fu = fam.upper()
+            if fu not in radar_xsect.SECTION_SPECS:
+                raise ValueError(f"Unknown moment {fam}")
+            st = brazil_radar.stack(site.upper(), key, at, fu)
+            label, units, kind = radar_xsect.SECTION_SPECS[fu]
+            mo = st.get("motion")
+            out = radar_xsect.section(st, pa, pb, fam=fu, label=label, units=units, kind=kind,
+                                      site_label=site.upper()[3:], key=st["key"], scan_unix=st["unix"],
+                                      motion=(mo["speedKt"], mo["toward"]) if mo else None, top_km=top)
+        else:
+            out = radar_xsect.cross_section(site, pa, pb, fam.upper(), at, key, top,
+                                            dealias=dealias, motion=motion)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
@@ -638,6 +819,95 @@ def nexrad_xsect(
     return Response(content=body, media_type="application/octet-stream", headers={"Cache-Control": "no-store"})
 
 
+@app.get("/api/radar/volume3d")
+def radar_volume3d_route(
+    site: str = Query(...),
+    fam: str = Query("B", min_length=1, max_length=1),
+    at: float | None = Query(None, gt=0),
+    key: str = Query(""),
+    fill: str = Query("none", pattern="^(none|neighbor)$"),
+    bbox: str = Query("", description="west,south,east,north (lon/lat)"),
+    lightning: bool = Query(True),
+    part: str = Query("all", pattern="^(all|glm)$"),
+    rid: str = Query("", max_length=48),
+    dealias: str = Query("off", pattern="^(off|region|vad)$"),
+    motion: str = Query("", max_length=24),
+    look: str = Query("smooth", pattern="^(smooth|beams)$"),
+):
+    """The 3D view's voxel box (backend/radar_volume3d.py): every tilt of the
+    Level II volume nearest `at` (or `key`, or the newest whole one) on a grid
+    over `bbox` -- or around the radar without one -- gzipped. A box out of the
+    radar's range answers 422 with the reason. `rid` names the request for
+    /api/radar/volume3d/progress."""
+    if tdwr.is_tdwr(site):
+        radar_volume3d._say(rid, stage="error", error=tdwr.LEVEL2_NOTE)
+        raise HTTPException(status_code=422, detail=tdwr.LEVEL2_NOTE)
+    box = None
+    if bbox:
+        try:
+            box = tuple(float(v) for v in bbox.split(","))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="bbox must be west,south,east,north")
+        if len(box) != 4:
+            raise HTTPException(status_code=400, detail="bbox must be west,south,east,north")
+    try:
+        body = radar_volume3d.volume3d(site, fam=fam.upper(), at=at, key=key, fill=fill, bbox=box,
+                                       lightning=lightning, part=part, rid=rid, compress=True,
+                                       dealias=dealias, motion=motion, look=look)
+    except radar_volume3d.BoxError as exc:
+        radar_volume3d._say(rid, stage="error", error=str(exc))
+        raise HTTPException(status_code=422, detail=str(exc))
+    except ValueError as exc:
+        radar_volume3d._say(rid, stage="error", error=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        radar_volume3d._say(rid, stage="error", error=str(exc))
+        raise HTTPException(status_code=502, detail=str(exc))
+    return Response(content=body, media_type="application/octet-stream",
+                    headers={"Content-Encoding": "gzip", "Cache-Control": "no-store"})
+
+
+@app.get("/api/radar/volume3d/progress")
+def radar_volume3d_progress(rid: str = Query(..., max_length=48)):
+    """Where a 3D volume request is: its stage, the radars downloading, the
+    building's steps -- for the view's loading pill."""
+    return radar_volume3d.progress(rid) or {"stage": "waiting"}
+
+
+@app.get("/api/radar/detections")
+def radar_detections(
+    site: str = Query(..., min_length=3, max_length=12),
+    key: str = Query("", max_length=160),
+    at: float | None = Query(None, gt=0),
+    trail: bool = Query(False),
+):
+    """Storm detections computed from the radar's own volume: mesocyclones and
+    weaker circulations (base, top, Vrot, track), the strongest velocity
+    couplets at the low tilts, and tornado debris signatures. The Level II (or
+    kept Brazilian) volume is `key` when it names one, else the one at or just
+    before `at`, else the newest; results are kept per (site, volume). `trail`
+    also reads the volume before when it is not kept, so tracks come back."""
+    if tdwr.is_tdwr(site):
+        raise HTTPException(status_code=422, detail=tdwr.LEVEL2_NOTE)
+    try:
+        return radar_detect.detections(site, key or "", at, trail)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+def _loop_window(scans: list[dict], minutes: int, start: int) -> list[dict]:
+    """A loop of `minutes`: back from the newest scan (live), or on from
+    `start` (archive). 0 = as listed."""
+    if not minutes or not scans:
+        return scans
+    if start:
+        return [s for s in scans if s["time"] < start + minutes * 60]
+    newest = max(s["time"] for s in scans)
+    return [s for s in scans if s["time"] >= newest - minutes * 60]
+
+
 @app.get("/api/nexrad/scans")
 def nexrad_scans(
     site: str = Query(...),
@@ -645,21 +915,92 @@ def nexrad_scans(
     date: str = Query(""),
     limit: int = Query(0, ge=0, le=500),
     start: int = Query(0, ge=0),
+    minutes: int = Query(0, ge=0, le=480),
+    sails: bool = Query(False),
 ):
+    """`minutes` makes the loop a span of time (30 min to 8 h) instead of a
+    count; `sails` adds each live Level II volume's rescanned tilts
+    (``reps``: {slot: [unix of each scan]}, level2_live.reps_for)."""
+    if brazil_radar.is_br(site):
+        radar_relay_client.touch(site)
+        got = brazil_radar.scans(site.upper(), max(limit, 120) if minutes else limit, start or None)
+        return {"scans": _loop_window(got, minutes, start), "archiveStart": None}
+    # An airport radar: Level III whatever the code asked for.
+    if tdwr.is_tdwr(site):
+        try:
+            product = tdwr.to_tdwr(product)
+        except tdwr.NotOnTdwr as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
     try:
         # Level II frames are whole volumes: live off the chunk bucket, which
         # keeps about two days, and archive playback out of the archive. Each
         # is 7-16 MB, so the loop is capped tighter than the Level III one.
-        if product.upper().startswith("L2"):
-            vols = nexrad_level2.list_volumes(site, min(limit or 30, nexrad_level2.MAX_LOOP),
-                                              start=start or None)
-            return {"scans": [{"key": v["key"], "time": v["time"]} for v in vols],
+        if product.upper().startswith("L2") and date:
+            # A whole UTC day out of the archive (archive-l2), back to 1991:
+            # every volume but the fragments.
+            day = [v for v in nexrad_level2.archive_day(site, date) if not v["partial"]]
+            return {"scans": [{"key": v["key"], "time": v["time"]} for v in day],
                     "archiveStart": nexrad_core.ARCHIVE_START}
+        if product.upper().startswith("L2"):
+            # A volume every 4-10 min: an 8 h loop is up to ~124 of them.
+            n = min(math.ceil(minutes / 4) + 4, 130) if minutes else min(limit or 30, nexrad_level2.MAX_LOOP)
+            vols = _loop_window(nexrad_level2.list_volumes(site, n, start=start or None), minutes, start)
+            rows = [{"key": v["key"], "time": v["time"]} for v in vols]
+            if sails and not start:
+                import level2_live  # noqa: PLC0415
+
+                with ThreadPoolExecutor(16) as ex:
+                    reps = list(ex.map(lambda v: level2_live.reps_for(site, int(v["vol"])), vols))
+                for row, rp in zip(rows, reps):
+                    if rp:
+                        row["reps"] = rp
+            return {"scans": rows, "archiveStart": nexrad_core.ARCHIVE_START}
+        n = min(minutes + 10, 500) if minutes else limit
         return {
-            "scans": nexrad_core.list_scans(site, product, date or None, limit,
-                                            start=start or None),
+            "scans": _loop_window(nexrad_core.list_scans(site, product, date or None, n,
+                                                         start=start or None), minutes, start),
             "archiveStart": nexrad_core.ARCHIVE_START,
         }
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/nexrad/archive/day")
+def nexrad_archive_day(site: str = Query(..., max_length=8), date: str = Query(..., max_length=10)):
+    """Every Level II volume of a UTC day in the public archive (back to 1991),
+    for the Archive panel's list: key, start time, bytes, and whether the file
+    is a fragment. `level3` says whether Level III products exist that day.
+    An airport radar lists its Level III scans the same way."""
+    try:
+        if tdwr.is_tdwr(site):
+            return {
+                "site": nexrad_core.icao_for(site),
+                "date": date,
+                "volumes": nexrad_core.tdwr_day(site, date),
+                "level3": True,
+                "tdwr": True,
+            }
+        vols = nexrad_level2.archive_day(site, date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {
+        "site": nexrad_level2.icao_for(site),
+        "date": date,
+        "volumes": [{"key": v["key"], "time": v["time"], "size": v["size"], "partial": v["partial"]} for v in vols],
+        "level3": date >= nexrad_core.ARCHIVE_START,
+    }
+
+
+@app.get("/api/nexrad/l2/live")
+def nexrad_l2_live(site: str = Query(...)):
+    """The Level II volume being written now: cuts in, megabytes so far and
+    expected, the tilts already whole (level2_live.status)."""
+    import level2_live  # noqa: PLC0415
+
+    try:
+        return level2_live.status(site)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
 
@@ -678,6 +1019,8 @@ def nexrad_render(
             "bounds": out["bounds"],
             "meta": out["meta"],
         }
+    except tdwr.NotOnTdwr as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc))
 
@@ -687,6 +1030,104 @@ def nexrad_render(
 # ---------------------------------------------------------------------------
 
 nexrad_core.warm_site_status()
+
+
+# ---------------------------------------------------------------------------
+# Aviation (aviation.py): the AWC's products and the FAA's TFRs, read through
+# here because neither answers a browser from another origin; and the rest of
+# the world's (aviation_world.py): OurAirports, the FIRs, the GFS aloft.
+# ---------------------------------------------------------------------------
+def _avn(make, *args):
+    try:
+        return make(*args)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Aviation data unavailable: {exc}")
+
+
+@app.get("/api/aviation/metars")
+def aviation_metars():
+    """Every airport's newest METAR worldwide, with its flight category."""
+    return _avn(aviation.metars)
+
+
+@app.get("/api/aviation/tafs")
+def aviation_tafs(at: int = Query(0, ge=0, description="the instant to read each TAF at (unix s); now when 0")):
+    """Each TAF's forecast at one instant: what prevails, and the worst a TEMPO or PROB allows."""
+    return _avn(aviation.taf_points, at or None)
+
+
+@app.get("/api/aviation/pireps")
+def aviation_pireps():
+    return _avn(aviation.pireps)
+
+
+@app.get("/api/aviation/sigmets")
+def aviation_sigmets():
+    return _avn(aviation.sigmets)
+
+
+@app.get("/api/aviation/gairmets")
+def aviation_gairmets():
+    return _avn(aviation.gairmets)
+
+
+@app.get("/api/aviation/cwas")
+def aviation_cwas():
+    return _avn(aviation.cwas)
+
+
+@app.get("/api/aviation/tcf")
+def aviation_tcf():
+    return _avn(aviation.tcf)
+
+
+@app.get("/api/aviation/tfrs")
+def aviation_tfrs():
+    return _avn(aviation.tfrs)
+
+
+@app.get("/api/aviation/winds")
+def aviation_winds(level: str = Query("low"), fcst: str = Query("06"),
+                   source: str = Query("fb", pattern="^(fb|gfs)$"),
+                   height: int = Query(30000, ge=1000, le=60000), lead: float = Query(6, ge=0, le=120)):
+    """Winds and temperatures aloft: the FB forecast decoded onto its US
+    stations, or the GFS at one altitude on a grid over the whole world."""
+    if source == "gfs":
+        return _avn(aviation_world.gfs_aloft, height, lead)
+    return _avn(aviation.winds_aloft, level, fcst)
+
+
+@app.get("/api/aviation/firs")
+def aviation_firs():
+    """The world's flight information regions."""
+    return _avn(aviation_world.firs)
+
+
+@app.get("/api/aviation/profile")
+def aviation_profile(lat: float = Query(..., ge=-90, le=90), lon: float = Query(..., ge=-180, le=180),
+                     elev: float = Query(None), model: str = Query("gfs", pattern="^(gfs|ecmwf|icon)$")):
+    """The air over one place hour by hour: winds, temperatures, cloud, icing, turbulence."""
+    return _avn(aviation_world.profile, lat, lon, elev, model)
+
+
+@app.get("/api/aviation/airspace")
+def aviation_airspace(kind: str = Query("class", pattern="^(class|sua|artcc)$")):
+    """US airspace outlines: classes B/C/D, special use airspace, ARTCC boundaries."""
+    return _avn(aviation.airspace, kind)
+
+
+@app.get("/api/aviation/airport")
+def aviation_airport(icao: str = Query(..., min_length=2, max_length=10), hours: float = Query(24, ge=1, le=360),
+                     model: str = Query("gfs", pattern="^(gfs|ecmwf|icon)$")):
+    """One airport's page: runways, METARs, TAF, nearby PIREPs, advisories, winds aloft."""
+    return _avn(aviation.airport, icao, hours, model)
+
+
+@app.get("/api/aviation/search")
+def aviation_search(q: str = Query(..., min_length=1, max_length=60)):
+    return {"airports": _avn(aviation.search, q)}
 
 
 @app.get("/api/obs/catalog")

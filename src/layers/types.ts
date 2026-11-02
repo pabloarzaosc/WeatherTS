@@ -6,6 +6,7 @@ export type LayerCategoryId =
   | "alerts"
   | "chasers"
   | "outlooks"
+  | "aviation"
   | "reference"
   | "boundaries"
   | "weather";
@@ -23,6 +24,7 @@ export const LAYER_CATEGORIES: LayerCategoryMeta[] = [
   { id: "chasers", label: "Chasers" },
   { id: "outlooks", label: "Outlooks" },
   { id: "weather", label: "Weather Products" }, // reserved for future phases
+  { id: "aviation", label: "Aviation" },
   { id: "boundaries", label: "Political Boundaries" },
   { id: "reference", label: "Reference & Grid" },
 ];
@@ -51,8 +53,16 @@ export interface LayerModule {
 
   /** Add this module's source(s) + map layer(s). May be async (e.g. fetch). */
   addTo(map: MapLibreMap): void | Promise<void>;
-  /** Remove everything this module added. Must be safe if already absent. */
-  removeFrom(map: MapLibreMap): void;
+  /**
+   * Remove everything this module added. Must be safe if already absent.
+   *
+   * `styleSwap` is set when the map's style was just replaced and the module
+   * goes straight back on (LayerManager.reset). Whatever is tied to this map
+   * still goes -- store and map listeners, timers, DOM markers -- but not what
+   * it shares with other panes or what the user has open: the alerts already
+   * read, a selected report. A theme flip is not the layer being turned off.
+   */
+  removeFrom(map: MapLibreMap, styleSwap?: boolean): void;
   /** Apply opacity (0..1) to this module's map layers. */
   setOpacity(map: MapLibreMap, opacity: number): void;
   /** MapLibre layer ids this module owns, bottom -> top, used for z-ordering. */

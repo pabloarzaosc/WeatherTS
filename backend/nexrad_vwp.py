@@ -32,6 +32,7 @@ from nexrad_core import (
     _HTTP_TIMEOUT,
     _SESSION,
     _utc_unix,
+    icao_for,
     key_time,
     list_scans,
 )
@@ -175,7 +176,7 @@ def build_vwp(site: str, columns: int = 12) -> dict:
 
     scans = list_scans(site, PRODUCT, limit=columns)
     if not scans:
-        raise RuntimeError(f"No VAD wind profile available for K{site}.")
+        raise RuntimeError(f"No VAD wind profile available for {icao_for(site)}.")
 
     cols: list[dict] = []
     for s in scans:
@@ -183,13 +184,13 @@ def build_vwp(site: str, columns: int = 12) -> dict:
         if c is not None:
             cols.append(c)
     if not cols:
-        raise RuntimeError(f"K{site} published VAD scans but none carried a readable profile.")
+        raise RuntimeError(f"{icao_for(site)} published VAD scans but none carried a readable profile.")
 
     heights = sorted({lv["altFt"] for c in cols for lv in c["levels"]})
     latest = cols[-1]
     out = {
         "meta": {
-            "site": f"K{site}",
+            "site": icao_for(site),
             "siteLat": latest["siteLat"],
             "siteLon": latest["siteLon"],
             "columns": len(cols),

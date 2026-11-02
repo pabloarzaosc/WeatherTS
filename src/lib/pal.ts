@@ -43,6 +43,12 @@ export interface PalTable {
   units: string | null; // e.g. "DBZ"
   step: number | null; // legend tick spacing
   rf: RGBA | null; // range-folded colour
+  /** `Scale:` / `Offset:` as written. NOT applied to the stops: in GR and WCT
+   *  files they convert the source program's internal units (m/s, mm, km) into
+   *  the table's units, which is what our decoder already hands over. The
+   *  importer (colorTables.ts) reads them to tell what units a file is in. */
+  scale: number | null;
+  offset: number | null;
 }
 
 const rgba = (r: number, g: number, b: number, a = 255): RGBA => ({ r, g, b, a });
@@ -59,6 +65,8 @@ export function parsePal(text: string): PalTable {
   let units: string | null = null;
   let step: number | null = null;
   let rf: RGBA | null = null;
+  let scale: number | null = null;
+  let offset: number | null = null;
 
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.split(";")[0].trim();
@@ -86,10 +94,18 @@ export function parsePal(text: string): PalTable {
         if (n.length >= 3) rf = rgba(n[0], n[1], n[2]);
         continue;
       }
+      if (key === "scale") {
+        if (Number.isFinite(n[0]) && n[0] !== 0) scale = n[0];
+        continue;
+      }
+      if (key === "offset") {
+        if (Number.isFinite(n[0])) offset = n[0];
+        continue;
+      }
 
       const solid = key.startsWith("solidcolor");
       const isColor = solid || key.startsWith("color");
-      if (!isColor) continue; // Scale:, Offset:, Legend: ... -- not ours to use
+      if (!isColor) continue; // Label:, Decimals:, Legend: ... -- not ours to use
 
       const withAlpha = key.endsWith("4");
       const stride = withAlpha ? 4 : 3;
@@ -122,7 +138,74 @@ export function parsePal(text: string): PalTable {
   }
 
   entries.sort((a, b) => a.v - b.v);
-  return { entries, product, units, step, rf };
+  return { entries, product, units, step, rf, scale, offset };
+}
+
+// ---------------------------------------------------------------------------
+// Writing tables back out (colour table editor, Export .pal, the importer's
+// Fix Scale). The output is plain GR syntax, so it opens in GR and here alike.
+// ---------------------------------------------------------------------------
+
+/** A number as a .pal writes it: no float noise, no trailing zeros. */
+export function palNum(v: number): string {
+  if (!Number.isFinite(v)) return "0";
+  const s = Number(v.toFixed(4)).toString();
+  return s === "-0" ? "0" : s;
+}
+
+const rgbText = (c: RGBA) => `${Math.round(c.r)} ${Math.round(c.g)} ${Math.round(c.b)}`;
+const rgbaText = (c: RGBA) => `${rgbText(c)} ${Math.round(c.a)}`;
+
+export interface PalHeader {
+  product?: string | null;
+  units?: string | null;
+  step?: number | null;
+  scale?: number | null;
+  offset?: number | null;
+  rf?: RGBA | null;
+  /** First line, as a `;` comment. */
+  comment?: string | null;
+}
+
+/** Entries (+ header) as .pal text. A colour with any transparency is written
+ *  as Color4/SolidColor4 so the alpha survives the trip. */
+export function writePal(entries: PalEntry[], h: PalHeader = {}): string {
+  const out: string[] = [];
+  if (h.comment) out.push(`; ${h.comment.replace(/\r?\n/g, " ")}`);
+  if (h.product) out.push(`Product: ${h.product}`);
+  if (h.units) out.push(`Units: ${h.units}`);
+  if (h.step && h.step > 0) out.push(`Step: ${palNum(h.step)}`);
+  if (h.scale != null) out.push(`Scale: ${palNum(h.scale)}`);
+  if (h.offset != null) out.push(`Offset: ${palNum(h.offset)}`);
+  if (h.rf) out.push(`RF: ${rgbText(h.rf)}`);
+  for (const e of [...entries].sort((a, b) => a.v - b.v)) {
+    const alpha = e.c1.a < 255 || (e.c2 !== null && e.c2.a < 255);
+    const kw = `${e.solid ? "SolidColor" : "Color"}${alpha ? "4" : ""}`;
+    const col = alpha ? rgbaText : rgbText;
+    const second = !e.solid && e.c2 ? `  ${col(e.c2)}` : "";
+    out.push(`${kw}: ${palNum(e.v)}  ${col(e.c1)}${second}`);
+  }
+  return `${out.join("\n")}\n`;
+}
+
+/** Deep copy, so an edit never reaches a table someone else holds. */
+export function cloneEntries(entries: PalEntry[]): PalEntry[] {
+  return entries.map((e) => ({ v: e.v, c1: { ...e.c1 }, c2: e.c2 ? { ...e.c2 } : null, solid: e.solid }));
+}
+
+/** Every stop moved from v to v * scale + offset (the colour scale and offset,
+ *  and the importer's unit fixes). A negative scale would turn the table
+ *  around; it is kept positive by the callers. */
+export function moveEntries(entries: PalEntry[], scale: number, offset: number): PalEntry[] {
+  return cloneEntries(entries).map((e) => ({ ...e, v: e.v * scale + offset }));
+}
+
+/** The stops alone, as one comparable string: two files with the same colours
+ *  at the same values are the same table whatever their names and comments. */
+export function palSignature(entries: PalEntry[]): string {
+  return entries
+    .map((e) => `${palNum(e.v)}:${rgbaText(e.c1)}${e.c2 ? `>${rgbaText(e.c2)}` : ""}${e.solid ? "s" : ""}`)
+    .join("|");
 }
 
 /**
@@ -130,9 +213,14 @@ export function parsePal(text: string): PalTable {
  * Colouring a vertex is then an index + 4 array reads.
  */
 export interface PalLut {
-  lut: Uint8Array; // 256 * 4
+  lut: Uint8Array; // steps * 4 (LUT_STEPS unless asked otherwise)
   vmin: number;
   vmax: number;
+  /** Categories (the hydrometeor classes): coloured from the table at the
+   *  exact value. The 256 samples sit between the class codes -- 60 rounds to
+   *  the sample at 59.96, which is the class below -- so a ramp's LUT painted
+   *  rain as wet snow. A handful of distinct values, so each is looked up once. */
+  exact?: { entries: PalEntry[]; cache: Map<number, number> };
 }
 
 const lerp = (a: number, b: number, t: number) => Math.round(a + (b - a) * t);
@@ -178,17 +266,29 @@ export function colorAt(table: PalTable, v: number): RGBA {
   return rgba(px[0], px[1], px[2], px[3]);
 }
 
-export function buildLut(table: PalTable, steps = 256): PalLut {
+/** Samples in a radar colour lookup: one per ~0.07 dBZ on a 75 dBZ table. */
+export const LUT_STEPS = 1024;
+
+export function buildLut(table: PalTable, steps = LUT_STEPS, categorical = false): PalLut {
   const { entries } = table;
   if (entries.length === 0) throw new Error("empty palette");
   const vmin = entries[0].v;
   const vmax = entries[entries.length - 1].v;
   const span = vmax - vmin || 1;
+  const w = span / (steps - 1);
   const lut = new Uint8Array(steps * 4);
   for (let i = 0; i < steps; i++) {
-    sample(entries, vmin + (i / (steps - 1)) * span, lut, i * 4);
+    // lookup() rounds, so sample i answers for values up to half a step
+    // either side of its own. It is taken just past the TOP of that window:
+    // a value sitting exactly on a hard break (a 60.0 dBZ gate where a band
+    // starts at 60) then gets the band above, as the table says, not the
+    // colour the band below ends in. Sampled at its middle, about one gate in
+    // five of a stepped table (Winter, Steps, SolidColor bands) took the
+    // wrong band. Radar values come in steps (0.5 dBZ, 0.5 m/s, 1/16 dB)
+    // wider than a sample, so a value just under a break still lands below.
+    sample(entries, i === 0 ? vmin : vmin + (i + 0.5) * w + w * 1e-6, lut, i * 4);
   }
-  return { lut, vmin, vmax };
+  return categorical ? { lut, vmin, vmax, exact: { entries, cache: new Map() } } : { lut, vmin, vmax };
 }
 
 /** Value -> RGBA (0..255). Out-of-range clamps; NaN is fully transparent. */
@@ -197,8 +297,23 @@ export function lookup(p: PalLut, v: number, out: Uint8Array, off = 0): void {
     out[off] = out[off + 1] = out[off + 2] = out[off + 3] = 0;
     return;
   }
+  if (p.exact) {
+    let packed = p.exact.cache.get(v);
+    if (packed === undefined) {
+      const px = new Uint8Array(4);
+      sample(p.exact.entries, v, px, 0);
+      packed = ((px[0] << 24) | (px[1] << 16) | (px[2] << 8) | px[3]) >>> 0;
+      p.exact.cache.set(v, packed);
+    }
+    out[off] = packed >>> 24;
+    out[off + 1] = (packed >>> 16) & 255;
+    out[off + 2] = (packed >>> 8) & 255;
+    out[off + 3] = packed & 255;
+    return;
+  }
+  const n = p.lut.length / 4 - 1;
   const t = (v - p.vmin) / (p.vmax - p.vmin || 1);
-  const i = Math.max(0, Math.min(255, Math.round(t * 255))) * 4;
+  const i = Math.max(0, Math.min(n, Math.round(t * n))) * 4;
   out[off] = p.lut[i];
   out[off + 1] = p.lut[i + 1];
   out[off + 2] = p.lut[i + 2];

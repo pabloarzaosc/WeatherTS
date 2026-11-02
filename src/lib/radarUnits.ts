@@ -56,6 +56,16 @@ export const UNITS_BY_KIND: Record<string, UnitOption[]> = {
     { id: "in", label: "in", factor: 1, decimals: 2, step: 1 },
     { id: "mm", label: "mm", factor: IN_TO_MM, decimals: 1, step: 25 },
   ],
+  // The Brazilian radars' hail size and rain rate arrive in millimetres.
+  mehs: [
+    { id: "mm", label: "mm", factor: 1, decimals: 0, step: 10 },
+    { id: "in", label: "in", factor: 1 / IN_TO_MM, decimals: 2, step: 0.5 },
+    { id: "cm", label: "cm", factor: 0.1, decimals: 1, step: 1 },
+  ],
+  rate: [
+    { id: "mmh", label: "mm/h", factor: 1, decimals: 1, step: 25 },
+    { id: "inh", label: "in/h", factor: 1 / IN_TO_MM, decimals: 2, step: 1 },
+  ],
 };
 
 /** What a kind shows until somebody chooses otherwise. */
@@ -66,6 +76,8 @@ export const DEFAULT_UNIT: Record<string, string> = {
   tops: "kft",
   precip: "in",
   storm_precip: "in",
+  mehs: "mm",
+  rate: "mmh",
 };
 
 /** Products that have something to choose, in the order the settings list
@@ -77,6 +89,8 @@ export const UNIT_CHOICES: { kind: string; label: string }[] = [
   { kind: "tops", label: "Echo tops" },
   { kind: "precip", label: "One hour precip" },
   { kind: "storm_precip", label: "Storm total precip" },
+  { kind: "mehs", label: "Hail size (MEHS)" },
+  { kind: "rate", label: "Rain rate" },
 ];
 
 export function unitFor(kind: string | undefined, chosen: Record<string, string>): UnitOption | null {

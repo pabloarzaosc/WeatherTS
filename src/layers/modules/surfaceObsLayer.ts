@@ -648,7 +648,7 @@ export const surfaceObsLayer: LayerModule = {
     const nearestRadars = (at: [number, number]) => {
       const { sites } = useNexradStore.getState();
       return sites
-        .filter((r) => r.online !== false && Number.isFinite(r.lat) && Number.isFinite(r.lon))
+        .filter((r) => r.online !== false && r.type !== "TDWR" && Number.isFinite(r.lat) && Number.isFinite(r.lon))
         .map((r) => ({ ...r, d: (r.lat - at[1]) ** 2 + ((r.lon - at[0]) * Math.cos((at[1] * Math.PI) / 180)) ** 2 }))
         .sort((a, b) => a.d - b.d)
         .slice(0, 2);

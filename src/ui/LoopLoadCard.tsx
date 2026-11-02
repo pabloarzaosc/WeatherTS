@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { X } from "lucide-react";
 
+import { frameState, framesRev, subscribeFrames } from "../lib/radarFrameStatus";
 import { useAppStore } from "../store/useAppStore";
-import { useNexradStore } from "../store/useNexradStore";
+import { scanId, stopWarming, useNexradStore } from "../store/useNexradStore";
 import { selectObsProduct, useObsStore } from "../store/useObsStore";
 import { selectSatProduct, selectSatRegion, selectSatSatellite, useSatStore } from "../store/useSatStore";
 import { useTimelineStore } from "../store/useTimelineStore";
@@ -54,16 +55,38 @@ export function LoopLoadCard() {
   const radarSite = useNexradStore((s) => s.site);
   const radarProduct = useNexradStore((s) => s.product);
   const radarArchive = useNexradStore((s) => s.archiveDate);
+  const radarList = useNexradStore((s) => s.scans);
+  // Where the frames are (radarFrameStatus.ts): "6 downloading · 3 decoding".
+  useSyncExternalStore(subscribeFrames, framesRev);
 
   const jobs: Job[] = [];
   if (playing && driver === "radar" && radarScans > 1 && radarWarm < radarScans) {
+    let down = 0;
+    let decoding = 0;
+    if (radarSite) {
+      for (const f of radarList) {
+        const st = frameState(scanId(radarSite, radarProduct, f.key));
+        if (st === "down") down++;
+        else if (st === "decode") decoding++;
+      }
+    }
     jobs.push({
       id: "radar",
-      title: "Loading radar loop",
-      detail: [radarSite, radarProduct, radarArchive].filter(Boolean).join(" · "),
+      title: `Loading frames ${radarWarm}/${radarScans}`,
+      detail: [
+        down ? `${down} downloading` : "",
+        decoding ? `${decoding} decoding` : "",
+        radarSite,
+        radarProduct,
+        radarArchive,
+      ].filter(Boolean).join(" · "),
       done: radarWarm,
       total: radarScans,
-      stop: () => useTimelineStore.getState().stop(),
+      // Stops the play and the frames still queued; those already out finish.
+      stop: () => {
+        stopWarming();
+        useTimelineStore.getState().stop();
+      },
     });
   }
   if (satOn && satArmed && satTotal > 1 && satLoaded < satTotal) {
@@ -112,7 +135,7 @@ export function LoopLoadCard() {
               <div className="loopload__text">
                 <div className="dayload__title">{job.title}</div>
                 <div className="dayload__sub loopload__sub">
-                  {job.done} of {job.total} frames{job.detail ? ` · ${job.detail}` : ""}
+                  {job.id === "radar" ? job.detail : `${job.done} of ${job.total} frames${job.detail ? ` · ${job.detail}` : ""}`}
                 </div>
               </div>
               <button

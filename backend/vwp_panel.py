@@ -33,6 +33,7 @@ import numpy as np
 from matplotlib.lines import Line2D
 from matplotlib.patches import Circle
 
+from nexrad_core import icao_for
 import nexrad_vwp
 import sharppy_renderer
 import vwp_sounding
@@ -452,7 +453,7 @@ def _draw_map(fig, rect, site_lat, site_lon, site_id, product="N0B", span=2.2):
     ax.set_xlim(site_lon - span / math.cos(math.radians(site_lat)) / 2, 
                 site_lon + span / math.cos(math.radians(site_lat)) / 2)
     ax.set_ylim(site_lat - span / 2, site_lat + span / 2)
-    ax.text(0.03, 0.95, f"K{site_id}", transform=ax.transAxes, color=FG, fontsize=12,
+    ax.text(0.03, 0.95, icao_for(site_id), transform=ax.transAxes, color=FG, fontsize=12,
             fontweight="bold", ha="left", va="top", zorder=4)
     return ax
 
@@ -541,7 +542,7 @@ def render_vwp_panel(
     trace = _trace_from_vad(vad_levels, site_elev)
     if len(trace) < 2:
         raise vwp_sounding.NoProfileError(
-            f"K{site} published a VAD but it carried too few usable levels to plot."
+            f"{icao_for(site)} published a VAD but it carried too few usable levels to plot."
         )
     vad_top_agl = trace[-1]["z"]
 
@@ -645,7 +646,7 @@ def render_vwp_panel(
     out = {
         "png": buf.getvalue(),
         "meta": {
-            "site": f"K{site}",
+            "site": icao_for(site),
             "lat": meta["lat"],
             "lon": meta["lon"],
             "validUnix": valid,

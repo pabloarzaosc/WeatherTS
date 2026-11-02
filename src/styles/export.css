@@ -1,0 +1,257 @@
+/* The Export page (src/ui/ExportPage.tsx) and its "Saved ..." toast. It sits
+   in the Customize Animation dialog's shell (.animov / .animod) and uses its
+   buttons; hairline rows, theme tokens, no fills beyond the panel's own. */
+
+.exp {
+  width: min(580px, 100%);
+}
+.exp__scope {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+.exp__opts {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+/* The dialog's segmented buttons share the row equally; here they size to
+   their words, on one line. */
+.exp .animseg__btn {
+  flex: none;
+  padding: 7px 12px;
+  white-space: nowrap;
+}
+.exp__opts .animtoggle {
+  flex: none;
+  padding: 7px 12px;
+  margin-left: auto;
+}
+
+.exp__row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.exp__row.is-busy {
+  border-color: var(--accent-ring);
+}
+.exp__rowhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.exp__icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--accent);
+}
+.exp__what {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.exp__what b {
+  font-size: 13px;
+  color: var(--text);
+}
+.exp__what span {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  overflow-wrap: anywhere;
+}
+.exp__go {
+  flex: none;
+  min-width: 104px;
+}
+
+.exp__prog {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 9px;
+}
+.exp__track {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+}
+.exp__fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--t-fast) linear;
+}
+.exp__progtext {
+  flex: none;
+  font-size: 11.5px;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  color: var(--text);
+}
+.exp__cancel,
+.exp__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.exp__cancel:hover,
+.exp__link:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.exp__done {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--accent-text);
+}
+.exp__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.exp__note {
+  flex-basis: 100%;
+  color: var(--text-faint);
+}
+.exp__err {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--danger);
+}
+
+.exp__set {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+}
+.exp__setlabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+.exp__fps {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  color: var(--text-dim);
+}
+.exp__fps .animslider {
+  flex: 1;
+}
+.exp__fps span {
+  flex: none;
+  min-width: 46px;
+  text-align: right;
+}
+.exp__hint {
+  margin: 12px 0 6px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.exp-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--dock-h) + 14px);
+  transform: translateX(-50%);
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 32px);
+  padding: 7px 8px 7px 14px;
+  border: 1px solid var(--accent-ring);
+  border-radius: var(--radius);
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  color: var(--text-dim);
+  animation: fade-up var(--t) var(--ease-out) both;
+}
+.exp-toast__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.exp-toast__text b {
+  color: var(--text);
+  font-weight: 600;
+}
+.exp-toast__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.exp-toast__btn:hover {
+  border-color: var(--accent-ring);
+}
+.exp-toast__x {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.exp-toast__x:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
+@media (max-width: 520px) {
+  .exp__rowhead {
+    flex-wrap: wrap;
+  }
+  .exp__go {
+    width: 100%;
+  }
+  .exp__set {
+    flex-wrap: wrap;
+  }
+}

@@ -396,4 +396,150 @@ Color4:  2.5  230   0 200 255
 Color4:  3.5  255 160 255 255
 Color4:  5.0  255 255 255 255"""
 
+# Hail size (MEHS, mm): nothing under 5 mm, green to yellow at 20 (marginal),
+# red at 25-40 (severe: 2.5 cm and up), magenta and white for giant hail.
+PAL_TABLES["MEHS"] = """Product: MEHS
+Units: MM
+Step: 10
+Color4: 0     0   0   0   0
+Color4: 4.9   0   0   0   0
+Color:  5     70 190  90
+Color:  10    40 160  60
+Color:  15   200 220  40
+Color:  20   255 220   0
+Color:  25   255 150   0
+Color:  32   255  40  20
+Color:  40   200   0  80
+Color:  50   230   0 230
+Color:  65   160  80 255
+Color:  80   255 255 255
+Color:  100  255 255 255"""
+
+# Probability of severe hail (%), in the 10 % steps the algorithm reports.
+PAL_TABLES["POSH"] = """Product: POSH
+Units: PERCENT
+Step: 10
+SolidColor4: 0   0   0   0   0
+SolidColor: 10  90 160 255
+SolidColor: 20  40 200 200
+SolidColor: 30  60 200  80
+SolidColor: 40 180 220  40
+SolidColor: 50 255 220   0
+SolidColor: 60 255 160   0
+SolidColor: 70 255  80   0
+SolidColor: 80 230   0   0
+SolidColor: 90 200   0 140
+SolidColor: 100 255 255 255"""
+
+# Rain rate (mm/h): light rain in blues, heavy in yellow-red, torrential in magenta.
+PAL_TABLES["RATE"] = """Product: RATE
+Units: MM/H
+Step: 10
+Color4: 0     0   0   0   0
+Color4: 0.2  120 170 220 140
+Color:  1     70 140 230
+Color:  2     30 100 220
+Color:  5     40 190 100
+Color:  10    20 150  40
+Color:  20   240 220  20
+Color:  35   255 150   0
+Color:  50   240  40  20
+Color:  75   190   0  90
+Color:  100  230   0 230
+Color:  150  255 180 255
+Color:  200  255 255 255"""
+
+# --- Products computed from Level II volumes (radar_derived.py). CREF, ET and
+# VIL share the reflectivity / echo-top / VIL kinds (and tables) with Level III.
+#
+# VIL density (g/m^3): faint below 1, cool to 2.5, yellow at 3, orange at 3.5
+# (the classic severe-hail line, Amburn & Wolf 1997), red-magenta for giant hail.
+PAL_TABLES["DVIL"] = """Product: DVIL
+Units: G/M3
+Step: 0.5
+Color4: 0     0   0   0   0
+Color4: 0.5 110 110 120 120
+Color:  1.0  90 140 200
+Color:  1.5  40 120 230
+Color:  2.0  30 180 110
+Color:  2.5 140 210  40
+Color:  3.0 250 220  20
+Color:  3.5 255 140   0
+Color:  4.0 235  40  30
+Color:  4.5 200   0 120
+Color:  5.0 220  60 230
+Color:  6.0 255 255 255"""
+
+# Rotational velocity (kt): nothing under 15 (turbulence), faint greys and cool
+# colours for weak shear, yellow at 40 (strong), red at 60 (significant-tornado
+# range), then magenta, violet and white -- the same 30/50/65/80 progression
+# as the rotation markers.
+PAL_TABLES["VROT"] = """Product: VROT
+Units: KT
+Step: 10
+Color4: 0     0   0   0   0
+Color4: 14.9  0   0   0   0
+Color4: 15   90 100 110  90
+Color4: 22  100 150 190 200
+Color:  30   60 190 120
+Color:  40  250 210  20
+Color:  50  255 120   0
+Color:  60  230  20  30
+Color:  70  210   0 160
+Color:  80  170  60 255
+Color:  100 255 255 255"""
+
+# Tornado debris score (0-100), thermal: nothing under 60, dark red to orange
+# toward 90 (significant), gold at 95 (detection), white at 100.
+PAL_TABLES["PTDS"] = """Product: PTDS
+Units: SCORE
+Step: 10
+Color4: 0     0   0   0   0
+Color4: 59.9  0   0   0   0
+Color4: 60   60  10  20 150
+Color:  70  110  20  30
+Color:  80  175  40  10
+Color:  88  235 100   0
+Color:  90  255 140   0
+Color:  95  255 200  40
+Color:  98  255 240 170
+Color:  100 255 255 255"""
+
+# --- Built-in alternates the colour table menu and ] / [ step through.
+#
+# "Winter" for reflectivity: snow and light rain live under 35 dBZ, where the
+# default ramp spends three shades of grey. 5-dBZ bands from ice blue through
+# blue and violet to pink up to 35, then yellow, orange and red for the
+# convective cores; nothing under 0.
+PAL_TABLES["REF_WINTER"] = """Product: BR
+Units: DBZ
+Step: 5
+SolidColor4: -30   0   0   0   0
+SolidColor: 0    214 240 255
+SolidColor: 5    168 216 250
+SolidColor: 10   118 180 246
+SolidColor: 15    70 132 236
+SolidColor: 20    88  92 222
+SolidColor: 25   140  82 214
+SolidColor: 30   226 128 214
+Color: 35  255 236  80   255 198  24
+Color: 45  255 156   0   255 100   0
+Color: 55  232  28  28   166   0   0
+Color: 65  240 120 240
+SolidColor: 75  255 255 255"""
+
+# "Steps" for the tornado debris score: hard bands instead of the thermal ramp.
+# Nothing under 70, two muted bands to 90, red bands from 90 (significant),
+# then magenta ramping to white from 95 (detection).
+PAL_TABLES["PTDS_STEPS"] = """Product: PTDS
+Units: SCORE
+Step: 5
+SolidColor4: 0   0   0   0   0
+SolidColor: 70   122 112 142
+SolidColor: 80   250 170  30
+SolidColor: 90   196  10  22
+SolidColor: 92.5 255  52  52
+Color: 95  255   0 255   255 255 255
+SolidColor: 100  255 255 255"""
+
 PAL_TABLES.update(PAL_FILES)

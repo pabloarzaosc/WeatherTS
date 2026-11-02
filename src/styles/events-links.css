@@ -1,0 +1,156 @@
+/* Notable events (Archive panel), the event chip in the pane header, the map
+   dots' hover card. Hairlines and theme tokens only. */
+
+.evl__tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.evl__tab {
+  padding: 6px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  text-align: center;
+}
+.evl__tab + .evl__tab { border-left: 1px solid var(--border); }
+.evl__tab:hover { color: var(--text-dim); }
+.evl__tab.is-on { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--text); }
+.evl__tab em {
+  margin-left: 4px;
+  font-style: normal;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.evl__search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--text-faint);
+}
+.evl__search:focus-within { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.evl__search input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+.evl__search input::placeholder { color: var(--text-faint); }
+
+.evl__cats .sfx__chip { display: inline-flex; align-items: center; gap: 5px; }
+.evl__dot {
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  vertical-align: 1px;
+}
+.mesoev__name .evl__dot { margin-right: 6px; }
+
+.evl__map {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.evl__map input { margin: 0; accent-color: var(--accent); }
+.evl__map span { margin-left: auto; font-size: 10px; color: var(--text-faint); }
+
+.evl__list { max-height: 340px; }
+.evl__item { display: flex; flex-direction: column; border-bottom: 1px solid var(--border); }
+.evl__item:last-child { border-bottom: 0; }
+.evl__item > .mesoev__row { border-bottom: 0; }
+.evl__item.is-on { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.evl__dv {
+  margin-left: 6px;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--accent);
+}
+
+.evl__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 0 10px 9px;
+}
+.evl__detail p { margin: 0; font-size: 11.5px; line-height: 1.45; color: var(--text-dim); }
+.evl__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  font-family: var(--mono);
+  font-variation-settings: var(--mono-axes);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.evl__acts { display: flex; flex-wrap: wrap; gap: 5px; }
+.evl__acts .sfx__chip { display: inline-flex; align-items: center; gap: 5px; }
+
+.evl__link {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: -3px 10px 7px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+.evl__link:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+
+.evl__none { padding: 10px; font-size: 11.5px; color: var(--text-faint); }
+
+/* The pane header: the event being played, after the product's name. */
+.panehead__event {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--radius-sm);
+  color: var(--accent-text);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Hover card over an event dot. */
+.evdot-pop .maplibregl-popup-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-solid);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.evdot-pop .maplibregl-popup-tip { display: none; }
+.evdot-pop b { font-weight: 700; }
+.evdot-pop span { color: var(--text-dim); font-size: 10.5px; }

@@ -1,24 +1,15 @@
-import { Radio } from "lucide-react";
+import { MESO_EVENTS } from "../../lib/mesoEvents";
+import { useArchiveStore } from "../../store/useArchiveStore";
 
-import { getMap } from "../../map/mapInstance";
-import { MESO_EVENTS, RADAR_ARCHIVE_FROM, type MesoEvent } from "../../lib/mesoEvents";
-import { useAppStore } from "../../store/useAppStore";
-import { useNexradStore } from "../../store/useNexradStore";
-import { selectObsFrame, selectObsProduct, useObsStore } from "../../store/useObsStore";
-
-const LAYER = "observations";
 const DAY = 86_400;
 
-/** "2013-05-31" for an instant, in UTC (what a date input holds). */
-function isoDay(unix: number): string {
-  return new Date(unix * 1000).toISOString().slice(0, 10);
-}
-
 /** "31 May 2013 23Z". */
-function when(unix: number): string {
+export function archiveWhen(unix: number, minutes = false): string {
   const d = new Date(unix * 1000);
   const mo = d.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" });
-  return `${d.getUTCDate()} ${mo} ${d.getUTCFullYear()} ${String(d.getUTCHours()).padStart(2, "0")}Z`;
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${d.getUTCDate()} ${mo} ${d.getUTCFullYear()} ${hh}${minutes ? `:${mm}` : ""}Z`;
 }
 
 /** The convective day (12Z to 11Z) an instant falls in, by its start. */
@@ -27,72 +18,13 @@ function dayStart(unix: number): number {
 }
 
 /**
- * The mesoanalysis archive's part of the Models panel: the day to open
- * ("day"), and the days worth opening ("events"). Its hours are the frames of
- * the Hour picker and of the map's timeline, like any analysis's.
+ * The days worth opening: one click turns the mesoanalysis and the radar on at
+ * the hour that mattered and puts the map over it.
  */
-export function MesoArchive({ range, part }: { range: { from: number; to: number }; part: "day" | "events" }) {
-  const archiveAt = useObsStore((s) => s.archiveAt);
-  const setArchiveAt = useObsStore((s) => s.setArchiveAt);
-  const frames = useObsStore((s) => s.frames);
-  const frame = useObsStore(selectObsFrame);
-  const product = useObsStore(selectObsProduct);
-
-  // The day on screen: from its frames once they are here, else the moment picked.
-  const shown = frames.length ? frames[0].unix : archiveAt != null ? dayStart(archiveAt) : null;
-  const current = frame?.unix ?? archiveAt;
-  const picked = MESO_EVENTS.find((e) => shown != null && dayStart(e.at) === shown) ?? null;
-
-  const open = (e: MesoEvent) => {
-    const app = useAppStore.getState();
-    if (!app.layers[LAYER]?.visible) app.setLayerVisible(LAYER, true);
-    // A day picked for its storms opens on what made them, unless a severe
-    // product is already on.
-    if (product?.group !== "Severe Weather") useObsStore.getState().setField("stp_eff");
-    setArchiveAt(e.at);
-    getMap()?.flyTo({ center: e.center, zoom: e.zoom, duration: 1200, essential: true });
-  };
-
-  const openRadar = (e: MesoEvent) => {
-    if (!e.radar) return;
-    useAppStore.getState().setLayerVisible("nexrad", true);
-    useNexradStore.getState().openAt(e.radar, current ?? e.at);
-  };
-
-  const pickDay = (value: string) => {
-    if (!value) return;
-    const [y, m, d] = value.split("-").map(Number);
-    // The afternoon of the day picked: where a severe day's environment peaks.
-    const at = Date.UTC(y, m - 1, d, 21) / 1000;
-    setArchiveAt(Math.min(Math.max(at, range.from), range.to));
-  };
-
-  if (part === "day") {
-    return (
-      <div className="sfx__block">
-        <div className="sfx__head">
-          <span>Day</span>
-          <b>{current != null ? when(current) : "—"}</b>
-        </div>
-        <label className="sfcobs__field">
-          <input
-            type="date"
-            value={shown != null ? isoDay(shown) : ""}
-            min={isoDay(range.from)}
-            max={isoDay(range.to)}
-            onChange={(e) => pickDay(e.target.value)}
-            aria-label="Day to open"
-          />
-        </label>
-        <div className="sfx__ends">
-          <span>
-            Opens from 12Z to 11Z the next morning, SPC's convective day, on the afternoon. Every hour since January
-            2005: the RUC until May 2012, the RAP since.
-          </span>
-        </div>
-      </div>
-    );
-  }
+export function NotableDays() {
+  const at = useArchiveStore((s) => s.at);
+  const openEvent = useArchiveStore((s) => s.openEvent);
+  const picked = MESO_EVENTS.find((e) => dayStart(e.at) === dayStart(at)) ?? null;
 
   return (
     <div className="sfx__block">
@@ -107,28 +39,22 @@ export function MesoArchive({ range, part }: { range: { from: number; to: number
             type="button"
             role="listitem"
             className={`mesoev__row${picked?.id === e.id ? " is-on" : ""}`}
-            onClick={() => open(e)}
-            title={`Open ${when(e.at)}`}
+            onClick={() => void openEvent(e)}
+            title={`Open ${archiveWhen(e.at)} with the K${e.radar} radar`}
           >
             <span className="mesoev__name">{e.name}</span>
             <span className="mesoev__sub">
-              <span>{e.place}</span>
-              <span className="mesoev__when">{when(e.at)}</span>
+              <span>
+                {e.place} · K{e.radar}
+              </span>
+              <span className="mesoev__when">{archiveWhen(e.at)}</span>
             </span>
           </button>
         ))}
       </div>
-      {picked && picked.radar && picked.at >= RADAR_ARCHIVE_FROM ? (
-        <div className="sfx__chips">
-          <button type="button" className="sfx__chip sfx__chip--wide" onClick={() => openRadar(picked)}>
-            <Radio size={11} /> Radar from K{picked.radar} at this hour
-          </button>
-        </div>
-      ) : picked ? (
-        <div className="sfx__ends">
-          <span>The app's radar archive starts in March 2022, so this day has the analysis only.</span>
-        </div>
-      ) : null}
+      <div className="sfx__ends">
+        <span>Opens the mesoanalysis at the hour that mattered and the radar that saw it.</span>
+      </div>
     </div>
   );
 }

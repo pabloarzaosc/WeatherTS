@@ -19,6 +19,7 @@ import {
   type SpcOutlookType,
 } from "../../lib/outlooks";
 import { useOutlookStore } from "../../store/useOutlookStore";
+import { allMaps } from "../../map/mapInstance";
 import { getSetting } from "../../settings/useSettingsStore";
 import { markerUnderPoint } from "../clickPriority";
 
@@ -418,12 +419,15 @@ function createOutlookLayer(product: OutlookProduct, variant: string): LayerModu
       await load(map);
     },
 
-    removeFrom(map) {
+    removeFrom(map, styleSwap) {
       generations.set(map, (generations.get(map) ?? 0) + 1);
       state.get(map)?.unsub();
       state.delete(map);
       for (const layer of [prevId, lineId, casingId, hatchId, fillId]) if (map.getLayer(layer)) map.removeLayer(layer);
       for (const source of [prevSourceId, sourceId]) if (map.getSource(source)) map.removeSource(source);
+      // Taken off one pane only (its chip's x, or the pane closing): the
+      // other panes still show it, so its data and legend stay (panes-layout).
+      if (styleSwap || allMaps().some((m) => m !== map && m.getSource(sourceId))) return;
       useOutlookStore.getState().clearMeta(id);
       useOutlookStore.getState().setData(id, null);
     },

@@ -3,7 +3,7 @@ import { AlertTriangle, ChevronRight, Loader2, Search, X } from "lucide-react";
 
 import { useAppStore } from "../../store/useAppStore";
 import { LayerPower } from "../LayerPower";
-import { MesoArchive } from "./MesoArchive";
+import { useArchiveStore } from "../../store/useArchiveStore";
 import { Select } from "../Select";
 import { fhText, type ObsCatalog, type ObsProduct, type ObsView } from "../../lib/observations";
 import {
@@ -293,18 +293,32 @@ export function ObservationsView() {
           value={source}
           onChange={setSource}
           aria-label="Model"
-          options={(catalog?.sources ?? []).map((s) => ({
+          options={(catalog?.sources ?? []).filter((s) => !s.archive).map((s) => ({
             value: s.id,
             label: s.label,
             hint: `${s.products.length} products`,
             group: s.group,
           }))}
-          placeholder={source}
+          placeholder={src?.label ?? source}
         />
         {src && <div className="sfx__ends"><span>{src.note}</span></div>}
       </div>
 
-      {archive && <MesoArchive range={archive} part="day" />}
+      {archive && (
+        <div className="sfx__block">
+          <div className="sfx__ends">
+            <span>
+              The map is on the mesoanalysis archive. Its day, hour and radar are set in the Archive panel of the
+              catalog.
+            </span>
+          </div>
+          <div className="sfx__chips">
+            <button type="button" className="sfx__chip sfx__chip--wide" onClick={() => useArchiveStore.getState().backToLive()}>
+              Back to live analyses
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="sfx__block">
         <div className="sfx__head">
@@ -361,8 +375,6 @@ export function ObservationsView() {
           <span>Hover the map for the value under the pointer</span>
         </div>
       </div>
-
-      {archive && <MesoArchive range={archive} part="events" />}
 
       {!forecast && !archive && (
       <div className="sfx__block">
